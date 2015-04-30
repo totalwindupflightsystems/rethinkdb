@@ -5,6 +5,8 @@
 #include <string>
 
 std::map<std::string, const std::string> static_web_assets = {
+#if 0
+	// ATN: TODO: support > 65535 character strings
     { "/cluster-min.js", {
       "window.VERSION = '2.0.1';\n"
       "var capitalize, form_data_as_object, humanize_table_status;\n"
@@ -142198,5 +142200,6 @@ std::map<std::string, const std::string> static_web_assets = {
       "  visibility : visible\\9; /* Target only IE7 and IE8 with this hack */\n"
       "  opacity    : 0.5;\n"
       "}\n",
-      1303 } },
+      1303 }},
+#endif
 };
