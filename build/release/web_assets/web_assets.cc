@@ -5,7 +5,7 @@
 #include <string>
 
 std::map<std::string, const std::string> static_web_assets = {
-    { "/cluster-min.js", {
+    { "/cluster-min.js", std::string(
       "window.VERSION = '2.0.3';\n"
       "var capitalize, form_data_as_object, humanize_table_status;\n"
       "\n"
@@ -804,7 +804,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "    AbstractModal.prototype.error_template = Handlebars.templates['error_inp"
       "ut-template'];\n"
-      "\n" + (std::string)
+      "\n"
       "    AbstractModal.prototype.events = {\n"
       "      'click .cancel': 'cancel_modal',\n"
       "      'click .close_modal': 'cancel_modal',\n"
@@ -1604,7 +1604,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      return this.add_table_dialog.render();\n"
       "    };\n"
       "\n"
-      "    DatabaseView.prototype.initialize = function() {\n" + (std::string)
+      "    DatabaseView.prototype.initialize = function() {\n"
       "      this.$el.html(this.template.main(this.model.toJSON()));\n"
       "      this.tables_views = [];\n"
       "      this.collection = new Tables();\n"
@@ -2035,7 +2035,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    ShardAssignmentsView.prototype.template = Handlebars.templates['shard_as"
       "signments-template'];\n"
       "\n"
-      "    ShardAssignmentsView.prototype.initialize = function(data) {\n"
+      "    ShardAssignmentsView.prototype.initialize = function(data) {\n",
+      65479) + std::string(
       "      this.listenTo(this.model, 'change:info_unavailable', this.set_warnings"
       ");\n"
       "      if (data.collection != null) {\n"
@@ -2404,7 +2405,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      } else {\n"
       "        this.indexes = new Indexes(_.map(result, function(index) {\n"
       "          return new Index(index);\n"
-      "        }));\n" + (std::string)
+      "        }));\n"
       "      }\n"
       "      if ((_ref = this.table_view) != null) {\n"
       "        _ref.set_indexes(this.indexes);\n"
@@ -3204,7 +3205,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        this.$('.no_index').hide();\n"
       "      }\n"
       "      this.listenTo(this.collection, 'add', (function(_this) {\n"
-      "        return function(index) {\n" + (std::string)
+      "        return function(index) {\n"
       "          var added, new_view, position, view, _i, _len, _ref;\n"
       "          new_view = new TableView.SecondaryIndexView({\n"
       "            model: index,\n"
@@ -3989,7 +3990,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    ServerMainView.prototype.rename_server = function(event) {\n"
       "      event.preventDefault();\n"
       "      if (this.rename_modal != null) {\n"
-      "        this.rename_modal.remove();\n"
+      "        this.rename_modal.remove();\n",
+      65479) + std::string(
       "      }\n"
       "      this.rename_modal = new UIComponents.RenameItemModal({\n"
       "        model: this.model\n"
@@ -4004,7 +4006,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      });\n"
       "    };\n"
       "\n"
-      "    ServerMainView.prototype.initialize = function() {\n" + (std::string)
+      "    ServerMainView.prototype.initialize = function() {\n"
       "      this.title = new ServerView.Title({\n"
       "        model: this.model\n"
       "      });\n"
@@ -4804,7 +4806,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      var constructing, constructing_class, issue_class, issues, section_cla"
       "ss, template_model;\n"
       "      issues = this.model.get('num_sindex_issues') > 1;\n"
-      "      constructing = this.model.get('num_sindexes_constructing');\n" + (std::string)
+      "      constructing = this.model.get('num_sindexes_constructing');\n"
       "      if (issues || constructing) {\n"
       "        section_class = 'problems-detected';\n"
       "        issue_class = issues ? 'bad' : 'good';\n"
@@ -5604,7 +5606,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      query = args.query;\n"
       "      broken_query = args.broken_query;\n"
       "      query = query.replace(/^\\s*$[\\n\\r]{1,}/gm, '');\n"
-      "      query = query.replace(/\\s*$/, '');\n" + (std::string)
+      "      query = query.replace(/\\s*$/, '');\n"
       "      if (window.localStorage != null) {\n"
       "        if (this.state.history.length === 0 || this.state.history[this.state"
       ".history.length - 1].query !== query && this.regex.white.test(query) === fal"
@@ -5866,7 +5868,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "    Container.prototype.pair_char = function(event, stack) {\n"
       "      var char_to_insert, last_element_incomplete_type, last_key, next_char,"
-      " num_not_closed_bracket, num_quote, opening_char, previous_char;\n"
+      " num_not_closed_bracket, num_quote, opening_char, previous_char;\n",
+      65461) + std::string(
       "      if ((event != null ? event.which : void 0) != null) {\n"
       "        if (this.codemirror.getSelection() !== '' && event.type === 'keypres"
       "s') {\n"
@@ -6404,7 +6407,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "                  if (event.shiftKey === true) {\n"
       "                    this.current_highlighted_extra_suggestion--;\n"
       "                  } else {\n"
-      "                    this.current_highlighted_extra_suggestion++;\n" + (std::string)
+      "                    this.current_highlighted_extra_suggestion++;\n"
       "                  }\n"
       "                  if (this.current_highlighted_extra_suggestion >= this.extr"
       "a_suggestions.length) {\n"
@@ -7204,7 +7207,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "              if (char in this.stop_char.opening) {\n"
       "                stack_stop_char.push(char);\n"
       "              } else if (char in this.stop_char.closing) {\n"
-      "                if (stack_stop_char[stack_stop_char.length - 1] === this.sto" + (std::string)
+      "                if (stack_stop_char[stack_stop_char.length - 1] === this.sto"
       "p_char.closing[char]) {\n"
       "                  stack_stop_char.pop();\n"
       "                  if (stack_stop_char.length === 0) {\n"
@@ -7586,7 +7589,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "                if (((_ref5 = element.body) != null ? (_ref6 = _ref5[0]) != "
       "null ? (_ref7 = _ref6.name) != null ? _ref7.length : void 0 : void 0 : void "
       "0) != null) {\n"
-      "                  this.cursor_for_auto_completion.ch -= element.body[0].name"
+      "                  this.cursor_for_auto_completion.ch -= element.body[0].name",
+      65469) + std::string(
       ".length;\n"
       "                  this.current_extra_suggestion = element.body[0].name;\n"
       "                }\n"
@@ -8004,7 +8008,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        this.non_rethinkdb_query = '';\n"
       "        this.index = 0;\n"
       "        this.raw_queries = this.separate_queries(this.raw_query);\n"
-      "        this.queries = this.separate_queries(this.query);\n" + (std::string)
+      "        this.queries = this.separate_queries(this.query);\n"
       "        if (this.queries.length === 0) {\n"
       "          error = this.query_error_template({\n"
       "            no_query: true\n"
@@ -8804,7 +8808,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      }\n"
       "    };\n"
       "\n"
-      "    TableView.prototype.handle_mouseup = function(event) {\n" + (std::string)
+      "    TableView.prototype.handle_mouseup = function(event) {\n"
       "      if (this.mouse_down === true) {\n"
       "        this.mouse_down = false;\n"
       "        $('body').toggleClass('resizing', false);\n"
@@ -9463,7 +9467,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "        this.floating_metadata = false;\n"
       "        this.$('.metadata').removeClass('floating_metadata');\n"
       "        if (this.container.state.pause_at != null) {\n"
-      "          this.unpause_feed('automatic');\n"
+      "          this.unpause_feed('automatic');\n",
+      65494) + std::string(
       "        }\n"
       "      }\n"
       "      if (!this.floating_metadata && pos < scroll) {\n"
@@ -9604,7 +9609,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "    ResultViewWrapper.prototype.activate_profiler = function(event) {\n"
       "      event.preventDefault();\n"
-      "      if (this.container.options_view.state === 'hidden') {\n" + (std::string)
+      "      if (this.container.options_view.state === 'hidden') {\n"
       "        return this.container.toggle_options({\n"
       "          cb: (function(_this) {\n"
       "            return function() {\n"
@@ -10404,7 +10409,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      this.initialize = __bind(this.initialize, this);\n"
       "      return Container.__super__.constructor.apply(this, arguments);\n"
       "    }\n"
-      "\n" + (std::string)
+      "\n"
       "    Container.prototype.className = 'sidebar-container';\n"
       "\n"
       "    Container.prototype.template = Handlebars.templates['sidebar-container-t"
@@ -11204,7 +11209,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        }\n"
       "        if (options.height_in_units != null) {\n"
       "          this.HEIGHT_IN_UNITS = options.height_in_units;\n"
-      "        }\n" + (std::string)
+      "        }\n"
       "        if (options.width != null) {\n"
       "          this.WIDTH_IN_PIXELS = options.width;\n"
       "        }\n"
@@ -11433,7 +11438,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "      return this.databases = databases;\n"
       "    };\n"
       "\n"
-      "    AddDatabaseModal.prototype.render = function() {\n"
+      "    AddDatabaseModal.prototype.render = function() {\n",
+      65463) + std::string(
       "      AddDatabaseModal.__super__.render.call(this, {\n"
       "        modal_title: \"Add database\",\n"
       "        btn_primary_text: \"Add\"\n"
@@ -12004,7 +12010,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      $('.reconfigure-modal').toggleClass('expanded');\n"
       "      return $('.expandbox').toggleClass('expanded');\n"
       "    };\n"
-      "\n" + (std::string)
+      "\n"
       "    ReconfigureModal.prototype.render = function() {\n"
       "      ReconfigureModal.__super__.render.call(this, $.extend(this.model.toJSO"
       "N(), {\n"
@@ -12804,7 +12810,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        onselect: function(obj) {\n"
       "          return window.app.navigate('#' + obj.type + '/' + obj.id, {\n"
       "            trigger: true\n"
-      "          });\n" + (std::string)
+      "          });\n"
       "        }\n"
       "      });\n"
       "    };\n"
@@ -13477,8 +13483,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  return Driver;\n"
       "\n"
       "})();\n",
-      457792 } },
-    { "/cluster.css", {
+      64947 ) },
+    { "/cluster.css", std::string(
       "article,\n"
       "aside,\n"
       "details,\n"
@@ -14277,7 +14283,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "button,\n"
       "select,\n"
       "textarea {\n"
-      "  font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif;\n" + (std::string)
+      "  font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif;\n"
       "}\n"
       "label {\n"
       "  display: block;\n"
@@ -15077,7 +15083,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  z-index: 2;\n"
       "}\n"
       ".nav-pills.nav-stacked > li > a {\n"
-      "  margin-bottom: 3px;\n" + (std::string)
+      "  margin-bottom: 3px;\n"
       "}\n"
       ".nav-pills.nav-stacked > li:last-child > a {\n"
       "  margin-bottom: 1px;\n"
@@ -15877,7 +15883,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ".ion-code-download:before,\n"
       ".ion-code-working:before,\n"
       ".ion-coffee:before,\n"
-      ".ion-compass:before,\n" + (std::string)
+      ".ion-compass:before,\n"
       ".ion-compose:before,\n"
       ".ion-connection-bars:before,\n"
       ".ion-contrast:before,\n"
@@ -16261,7 +16267,8 @@ std::map<std::string, const std::string> static_web_assets = {
       ".ion-play:before,\n"
       ".ion-playstation:before,\n"
       ".ion-plus:before,\n"
-      ".ion-plus-circled:before,\n"
+      ".ion-plus-circled:before,\n",
+      65459) + std::string(
       ".ion-plus-round:before,\n"
       ".ion-podium:before,\n"
       ".ion-pound:before,\n"
@@ -16677,7 +16684,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "}\n"
       ".ion-android-notifications-none:before {\n"
       "  content: \"\\f399\";\n"
-      "}\n" + (std::string)
+      "}\n"
       ".ion-android-notifications-off:before {\n"
       "  content: \"\\f39a\";\n"
       "}\n"
@@ -17477,7 +17484,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  content: \"\\f426\";\n"
       "}\n"
       ".ion-ios-filing:before {\n"
-      "  content: \"\\f429\";\n" + (std::string)
+      "  content: \"\\f429\";\n"
       "}\n"
       ".ion-ios-filing-outline:before {\n"
       "  content: \"\\f428\";\n"
@@ -18277,7 +18284,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ".ion-social-apple-outline:before {\n"
       "  content: \"\\f226\";\n"
       "}\n"
-      ".ion-social-bitcoin:before {\n" + (std::string)
+      ".ion-social-bitcoin:before {\n"
       "  content: \"\\f2af\";\n"
       "}\n"
       ".ion-social-bitcoin-outline:before {\n"
@@ -19077,7 +19084,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "201,79,71, 1));\n"
       "  background-image: -o-linear-gradient(bottom, rgba(216,93,85,1), rgba(201,7"
       "9,71, 1));\n"
-      "  background-image: linear-gradient(bottom, rgba(216,93,85,1), rgba(201,79,7" + (std::string)
+      "  background-image: linear-gradient(bottom, rgba(216,93,85,1), rgba(201,79,7"
       "1, 1));\n"
       "}\n"
       "button.btn.btn-resolve-issues {\n"
@@ -19211,7 +19218,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "VpZ2h0PSIxMDAlIiB2aWV3Qm94PSIwIDAgMSAxIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIj"
       "48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQtdWNnZy1nZW5lcmF0ZWQiIGdyYWRpZW50VW5pdHM9In"
       "VzZXJTcGFjZU9uVXNlIiB4MT0iMCUiIHkxPSIxMDAlIiB4Mj0iMCUiIHkyPSIwJSI+PHN0b3Agb2"
-      "Zmc2V0PSIiIHN0b3AtY29sb3I9InJnYigxMTMsMTgxLDkzKSIgc3RvcC1vcGFjaXR5PSIxIi8+PH"
+      "Zmc2V0PSIiIHN0b3AtY29sb3I9InJnYigxMTMsMTgxLDkzKSIgc3RvcC1vcGFjaXR5PSIxIi8+PH",
+      65485) + std::string(
       "N0b3Agb2Zmc2V0PSIiIHN0b3AtY29sb3I9InJnYig5OSwxNjcsNzgpIiBzdG9wLW9wYWNpdHk9Ij"
       "EiLz48L2xpbmVhckdyYWRpZW50PjxyZWN0IHg9IjAiIHk9IjAiIHdpZHRoPSIxIiBoZWlnaHQ9Ij"
       "EiIGZpbGw9InVybCgjZ3JhZC11Y2dnLWdlbmVyYXRlZCkiIC8+PC9zdmc+);\n"
@@ -19877,7 +19885,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "}\n"
       "#dashboard_container #cluster_status_container .panel > div:first-child {\n"
       "  padding: 20px;\n"
-      "  text-overflow: ellipsis;\n" + (std::string)
+      "  text-overflow: ellipsis;\n"
       "}\n"
       "#dashboard_container #cluster_status_container .panel h3 {\n"
       "  margin-top: 0;\n"
@@ -20677,7 +20685,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  z-index: 201;\n"
       "  top: 10px;\n"
       "  left: 0px;\n"
-      "  width: 0;\n" + (std::string)
+      "  width: 0;\n"
       "  height: 0;\n"
       "  border-left: 10px solid transparent;\n"
       "  border-right: 10px solid transparent;\n"
@@ -21477,7 +21485,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  margin-left: 0px;\n"
       "}\n"
       "#dataexplorer .results .json_tree .large_result {\n"
-      "  white-space: pre;\n" + (std::string)
+      "  white-space: pre;\n"
       "}\n"
       "#dataexplorer .results .json_table_container {\n"
       "  width: 888px;\n"
@@ -21572,7 +21580,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  margin: 3px 2px 0px 2px;\n"
       "  display: block;\n"
       "}\n"
-      "#dataexplorer .results .json_table_container .json_table .jta_arrow_v {\n"
+      "#dataexplorer .results .json_table_container .json_table .jta_arrow_v {\n",
+      65454) + std::string(
       "  background: url('images/arrow_down.png') no-repeat;\n"
       "  float: left;\n"
       "}\n"
@@ -22277,7 +22286,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "}\n"
       "#database-view .section.list-view.table-list li.table .status .label-failure"
       " {\n"
-      "  background: left center no-repeat url('images/red-light_glow_small.png');\n" + (std::string)
+      "  background: left center no-repeat url('images/red-light_glow_small.png');\n"
       "}\n"
       "#table-view .section.tree-view.server-assignments li.server .server-info,\n"
       ".reconfigure-modal .section.tree-view.server-assignments li.server .server-i"
@@ -23077,7 +23086,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  transition: 0 .15s ease-out;\n"
       "  -webkit-transition-property: color,text-shadow;\n"
       "  -moz-transition-property: color,text-shadow;\n"
-      "  -o-transition-property: color,text-shadow;\n" + (std::string)
+      "  -o-transition-property: color,text-shadow;\n"
       "  -ms-transition-property: color,text-shadow;\n"
       "  transition-property: color,text-shadow;\n"
       "}\n"
@@ -23649,7 +23658,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  height: 100%;\n"
       "  color: #ffffff;\n"
       "  float: left;\n"
-      "  font-size: 12px;\n"
+      "  font-size: 12px;\n",
+      65465) + std::string(
       "  text-align: center;\n"
       "  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.25);\n"
       "  -webkit-box-shadow: inset 0 -1px 0 rgba(0,0,0,.15);\n"
@@ -23877,7 +23887,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "#updates_container .settings .release_link a {\n"
       "  font-weight: normal;\n"
       "  color: #0088cc;\n"
-      "}\n" + (std::string)
+      "}\n"
       "#updates_container .changeul {\n"
       "  padding: 0px;\n"
       "  margin: 0px;\n"
@@ -24209,8 +24219,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  background-color: transparent;\n"
       "  color: #f7ae41;\n"
       "}\n",
-      280252 } },
-    { "/favicon.ico", {
+      18389 ) },
+    { "/favicon.ico", std::string(
       "\0\0\1\0\2\0\x10\x10\0\0\1\0\b\0h\5\0\0&\0\0\0  \0\0\1\0 \0\xa8\x10\0\0\x8e\5"
       "\0\0(\0\0\0\x10\0\0\0 \0\0\0\1\0\b\0\0\0\0\0\0\1\0\0\x12\v\0\0\x12\v\0\0\0\1"
       "\0\0\0\1\0\0\"\"\"\0$$$\0&&&\0'''\0+++\0,,,\0---\0\x30\x30\x30\0\x33\x33\x33"
@@ -24413,8 +24423,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\0",
-      5686 } },
-    { "/index.html", {
+      5686 ) },
+    { "/index.html", std::string(
       "<!DOCTYPE html>\n"
       "<html>\n"
       "    <head>\n"
@@ -24503,8 +24513,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "        <div class=\"alert global_loading\">Loading...</div>\n"
       "    </body>\n"
       "</html>\n",
-      3542 } },
-    { "/fonts/copse-regular-webfont.eot", {
+      3542 ) },
+    { "/fonts/copse-regular-webfont.eot", std::string(
       "\vo\0\0Gn\0\0\2\0\2\0\4\0\0\0\2\0\5\3\b\0\0\2\0\4\1\0\x90\1\0\0\4\0LP\3\0\0\x80"
       "\0\0\0\0\0\0\0\0\0\0\0\0\1\0\0\0\0\0\0\0\t\x93\x13\x41\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\n"
@@ -25303,7 +25313,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x93\x63\x33\2\xc9<uT\xc7\xc2\x81\xe7\x99@\xc7\x43\xb0^kI\xe2\x1f\x19\x8bM\xe4"
       "\xf4\x91\xe1\x45\x1cp\xa0\xb6r\"\x19\xcd\x12\x9d\xf1L\xcdSic\xb2\xa5nE\x85\xa5"
       "Dc\xcc\xa0\x10\x82\xeb&A-\xca\xfc\xda\x11&a\xd2\x39\0\xce\x42\xe9\x99\xf\x9e"
-      "!\xc7yWs$R\x88\xd8-\"\5\xac\x9d\0\xae\n" + (std::string)
+      "!\xc7yWs$R\x88\xd8-\"\5\xac\x9d\0\xae\n"
       "C\xde\x35\x98\4k\xec\xed\xef\xd3\xc4+\xc3\xc5\xe2\xf4\xe9\x90\xb8:\x85U\xe4\xb1"
       "o\x86/\xb9\xa6\xd3\xa5\xb1\xa0\xde\xb9\xd1\xc1\x90\t\x89I\x8ek\xcc\x93\xfa-\x1c"
       "\x83\xd5\xac\xc1\x65\x82\x11\x37\x97Ga\xd8\x38\xf3y.0\x12RS\x93\x81h*\xd1\x42"
@@ -25649,8 +25659,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xc7\x91\x30\xbf\x44\xb2\xdc\x13\x36\t\x16\xc0\0J\x13\x16J\xde\xf3\5\n"
       "\x16\xf4\xb3\x8a\xce\x65\xbel[\t\"\xcb\x84Z\f\xe2\xc1/\xc8\x99\xfa\xe]J\v\x86"
       "c\2\x83\xc3\x32\x45~\xe0",
-      28427 } },
-    { "/fonts/copse-regular-webfont.svg", {
+      28427 ) },
+    { "/fonts/copse-regular-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -26449,7 +26459,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " 60 23q52 0 67 -14t15 -23v-428q0 -41 -72 -41t-72 27v151h-337l18 -477h284 q14"
       "3 0 191 17t77.5 47t43.5 85q4 20 43 20h6q13 0 31 -3q62 -9 63 -38v-8q-14 -102 "
       "-45.5 -177.5t-46.5 -96.5h-1020q-27 0 -27 59q0 51 24 75q8 8 32 8h3q5 -1 11 -1"
-      "q22 0 45 2q29 2 45 7q29 9 29 34l-17 447h-391l-194 -490h112q26 0 26 -58q0 -52" + (std::string)
+      "q22 0 45 2q29 2 45 7q29 9 29 34l-17 447h-391l-194 -490h112q26 0 26 -58q0 -52"
       " -13.5 -67.5 t-22.5 -15.5h-387q-25 0 -25 57zM526 785h326l-23 565v1q0 13 -17 "
       "13q-57 0 -77 -51z\" />\n"
       "<glyph unicode=\"&#xc7;\" horiz-adv-x=\"1277\" d=\"M103 730v4q0 386 194 596q"
@@ -26608,7 +26618,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "59h516q26 0 26 -64q0 -48 -13.5 -62.5t-22.5 -14.5h-169v-809 q0 -575 -519 -575"
       "q-280 0 -402 152q-112 139 -112 437v779q0 16 -13 16h-163q-28 0 -38 54q-2 14 -"
       "3 26zM445 1757v2q0 93 79 127q24 10 55 10q30 0 55 -10q26 -12 44 -30q40 -40 40"
-      " -99t-40 -99q-38 -38 -84 -38q-76 0 -112.5 39t-36.5 98zM898 1757q0 95 80 129 "
+      " -99t-40 -99q-38 -38 -84 -38q-76 0 -112.5 39t-36.5 98zM898 1757q0 95 80 129 ",
+      65504) + std::string(
       "q25 10 55 10q59 0 99 -40q38 -38 38 -99q0 -94 -82 -127q-25 -10 -55 -10q-92 0 "
       "-125 82q-10 25 -10 55z\" />\n"
       "<glyph unicode=\"&#xdd;\" horiz-adv-x=\"1284\" d=\"M-31 1424q0 49 14 65t25 1"
@@ -26997,8 +27008,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "000z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      92121 } },
-    { "/fonts/copse-regular-webfont.ttf", {
+      26617 ) },
+    { "/fonts/copse-regular-webfont.ttf", std::string(
       "\0\1\0\0\0\x11\1\0\0\4\0\x10\x46\x46TMb \2\x93\0\0\1\x1c\0\0\0\x1cGDEF\1\x10"
       "\0\4\0\0\1\x38\0\0\0 OS/2H\xb5\x9f\xb1\0\0\1X\0\0\0`cmap\xee|\xdeV\0\0\1\xb8"
       "\0\0\1\xc2\x63vt \b\xec\f\xbe\0\0\3|\0\0\0\x1c\x66pgmS\xb4/\xa7\0\0\3\x98\0\0"
@@ -27797,7 +27808,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\2\x9cS\x19\x1d:O(&;]\"\n"
       "\3\x9f.\x15\xe\4\b\1U\xfc\xe5=0 =0 \x17\a\n"
       "\2\x9a\1\x32\xe\1\xf1_\"\n"
-      "O<;(&R\x19\0\0\0\2\xff\xa4\xfeH\1\xbf\6\f\0\x1f\0/\0\x8d\0\xb2\x12\1\0+\xb4\n" + (std::string)
+      "O<;(&R\x19\0\0\0\2\xff\xa4\xfeH\1\xbf\6\f\0\x1f\0/\0\x8d\0\xb2\x12\1\0+\xb4\n"
       "\4\0$\4+\xb0\n"
       "\x10\xb1\x10\3\xe9\xb0\x1c/\xb4\6\4\0\x14\4+\xb2\6\x1c\n"
       "+\xb3\0\6\4\t+\xb0,/\xb4$\4\0\xf\4+\1\xb0\x30/\xb0\b\xd6\xb1\x18\6\xe9\xb0\x18"
@@ -28597,7 +28608,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "+\xb3@\x1b\x17\t+\xb3@\x1b\x1e\t+\xb2\x31\x1b\n"
       "+\xb3@1\x12\t+\xb3\v\x1b\x31\b+\xb4\0\t\0\x17\4+\xb0\0/\xb4\v\t\0\x17\4+\xb3"
       "9\x1b\x31\b+\xb4\x41\t\0\x17\4+\xb1J\1+\xb1\x31\0\x11\x12\xb2\5\xf$999\xb1\x41"
-      "\x1b\x11\x12\xb1=E99\0\xb1+\"\x11\x12\xb0$9\xb1\3\xf\x11\x12\xb0\x41\x39\x30" + (std::string)
+      "\x1b\x11\x12\xb1=E99\0\xb1+\"\x11\x12\xb0$9\xb1\3\xf\x11\x12\xb0\x41\x39\x30"
       "1\x13\x35\x34\x37\x36\x33\x32\x17\x16\x17\x16\x15\x14\a\6#\"&\x17\x34\x33!2\x15"
       "\x14+\1\x11\x33\x32\x15\x14\6#!\"5476;\1\x16\x33\x32\x37\x36\x37\x36\x35\x11"
       "4+\1\"'&\1\x34\x37\x36\x33\x32\x17\x16\x15\x14\a\6#\"'&#O\x18\x1f\x1e\x19\x1a"
@@ -29397,7 +29408,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\f\f\f\x1c\x12:64\r\v. \2\rLU{@.,,-=<&$\xbd\xb6\x33\r\v\v\xe\xe\f\x1c\x16\x16"
       "V2\r\v\4\n"
       "\f\xe\f\x1c\xfe\xd4W\x1e\xe\f\x16&\x13\xe\x1f\x1a\x1b!\x15\x15\x12)21R\x98\xf9"
-      "4\r\f\1\0\1\0\0\0\0\3\xe8\3\xe8\0\3\0\0\x31\x11!\x11\3\xe8\3\xe8\xfc\x18\0\1" + (std::string)
+      "4\r\f\1\0\1\0\0\0\0\3\xe8\3\xe8\0\3\0\0\x31\x11!\x11\3\xe8\3\xe8\xfc\x18\0\1"
       "\0\0\0\1\0\0\x41\x11\x93\a_\xf<\xf5\0\x1f\b\0\0\0\0\0\xcc\xbe\x8d\x83\0\0\0\0"
       "\xcc\xbe\x8d\x83\xff\xa4\xfe\x1d\b\0\a\xc7\0\0\0\b\0\2\0\0\0\0\0\0\0\1\0\0\a"
       "\xc7\xfd\xf5\0\0\b\v\xff\xa4\xff\x18\b\0\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xe3"
@@ -29502,8 +29513,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb0\3 E\xb0\3+D\xb0\4 E\xb2\3]\2+\xb0\3+D\1\xb0\5 E\xb0\3+D\xb0\a E\xb2\5\xc7"
       "\2+\xb1\3\x46v+D\xb0\6 E\xb2\aI\2+\xb1\3\x46v+D\xb0\b E\xba\0\5\x7f\xff\0\2+"
       "\xb1\3\x46v+D\xb0\t E\xb2\b5\2+\xb1\3\x46v+DY\xb0\x14+\0\1P\x98\xdd\4\0\0",
-      61464 } },
-    { "/fonts/copse-regular-webfont.woff", {
+      61464 ) },
+    { "/fonts/copse-regular-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0~l\0\x11\0\0\0\0\xf0\x18\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\x46\x46TM\0\0\1\x80\0\0\0\x1c\0\0\0\x1c\x62 \2\x93GDEF\0\0\1\x9c"
       "\0\0\0\x1e\0\0\0 \1\x10\0\4OS/2\0\0\1\xbc\0\0\0O\0\0\0`H\xb5\x9f\xb1\x63map\0"
@@ -30302,7 +30313,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xc0_l4\xc1\b\x1d\x34\xdc\x1e\"=J\x9b\x95\x85,\x16G\xc0\xe\xb8\xec\x98\0z\xfc"
       "\x1b;b\x1d\x1d\xdb\xa2\xcbom\x8b\x85\xed\xb3\xc1\xac\xc6\x91\x1bN$+\xce|$5\xbd"
       "\xff\xd9\x1e\xf3\x84v\xb8\x65\xbd|\xa5\xea\x64\xf9\x36\xf9\xf6\xc9\xc0\xe8\xf8"
-      "\xdd$\xf9\xd7\xd4\xfc\xfe=\x15\xa3.1\3N\xaeJ\xed\xf1u\x9f\xb1+\xb5\xf6\xa1\xa7" + (std::string)
+      "\xdd$\xf9\xd7\xd4\xfc\xfe=\x15\xa3.1\3N\xaeJ\xed\xf1u\x9f\xb1+\xb5\xf6\xa1\xa7"
       "\xe5\xaf\x46\x32J\xfc\x13\x38V\xf5+:\xef\xa9\xc0T\xb0k\x8aV!\xfb@C\xeb[\x8b\xf5"
       "\x99\x87\x15x\xa7\xcd\x15\x8b\xb5XV\xe0LtJ[\xa3\xb6&\xa1\3\x96\xa5\x92+f\x8b"
       "R+0p\xab\x95\xfe|\x84^u\xb8\xaa\xef\xa0\5\xcaj]\xbdL\x99V\xd8\x44\x12\xb4\xfd"
@@ -30784,8 +30795,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xed\xb2\x81\x45\xc1u\x13s,\x93\x36\x88\xc3\xb8\x81\x15*\xca\xe\x14\x65=\xce"
       "\xa4\xbd\x91\xd9\xad\f\xc8\x65\3r\xd9=\xe1\\\xe\5\xd7]\f\xac\xf5\xff\x19\xe0"
       "\"\x9c@\5\x1c\xa6\x30n\xe4\6\x11m\0\x1b\x39*\x17\0\1P\x98\xdd\4\0\0",
-      32364 } },
-    { "/fonts/copse_OFL.txt", {
+      32364 ) },
+    { "/fonts/copse_OFL.txt", std::string(
       "Copyright (c) 2010, Daniel Rhatigan (sparky@ultrasparky.org)\r\n"
       "with Reserved Font Name Copse.\r\n"
       "This Font Software is licensed under the SIL Open Font License, Version 1.1."
@@ -30885,8 +30896,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING\r\n"
       "FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM\r\n"
       "OTHER DEALINGS IN THE FONT SOFTWARE.\r\n",
-      4487 } },
-    { "/fonts/generator_config.txt", {
+      4487 ) },
+    { "/fonts/generator_config.txt", std::string(
       "# Font Squirrel Font-face Generator Configuration File\n"
       "# Upload this file to the generator to recreate the settings\n"
       "# you used to create these fonts.\n"
@@ -30897,8 +30908,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\"100\",\"options_subset\":\"basic\",\"subset_custom\":\"\",\"subset_custom_"
       "range\":\"\",\"css_stylesheet\":\"stylesheet.css\",\"filename_suffix\":\"-we"
       "bfont\",\"emsquare\":\"2048\",\"spacing_adjustment\":\"0\"}",
-      522 } },
-    { "/fonts/ionicons.eot", {
+      522 ) },
+    { "/fonts/ionicons.eot", std::string(
       "\xcc\xd8\1\0\x1c\xd8\1\0\1\0\2\0\0\0\0\0\2\0\6\3\0\0\0\0\0\0\1\0\xf4\1\0\0\0"
       "\0LP\0\0\0\0\0\0\0\x10\0\0\0\0\0\0\0\0\1\0\0\0\0\0\0\0\xb7WX\x10\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\0\0\0\x10\0I\0o\0n\0i\0\x63\0o\0n\0s\0\0\0\f\0M\0\x65\0\x64"
@@ -31697,7 +31708,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "&\x1a\f\b\x13\x1c\x19\a\x16\2J\b\n"
       "\t\t\5\r\r\xe\t\5\0\0\6\0\0\0\0\1`\1\x80\0\x1c\0(\0\x34\0I\0S\0\\\0\0\x37\x35"
       "3\x1d\1\x14+\1\x15\x14\6+\1\"'&=\1#\x15\x14\6\"&=\1#\"562\x16\x1d\1\x14\6\"&"
-      "=\1\x34$2\x16\x1d\1\x14\6\"&=\1\x34\x37\x1e\2\x17#67'4?\1\x17\x36\x33\x32\x17" + (std::string)
+      "=\1\x34$2\x16\x1d\1\x14\6\"&=\1\x34\x37\x1e\2\x17#67'4?\1\x17\x36\x33\x32\x17"
       "72\x1f\1\a254&#\"\6\x14\x16\x33\x32\x36\x34&#\"\x15\x14@\xe0\v\x1c\xe\n"
       "\1\a\a\t1\xe\x14\xe\x1d\v\xfe\x14\xe\xe\x14\xe\xfe\xde\x14\xe\xe\x14\xe\xe7\x16"
       "\x1b\a\1\xe0\4\x34\x12\1\3\x13\x19\x1a\x19\x19\x14\1\1\2{\r\b\5\6\b\tg\5\t\t"
@@ -32497,7 +32508,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ":\x1c\1\1\2'\x1c\x10\xe\2 +\v3=&23%\t\x14\xe\x13\1\5\5\b\x14\1\x14\n"
       "\x1b\"#/\1\5\1\t\6\a\x14,\"\x1c\t\n"
       "\1\x15\b\5\a\b\4\x1c:\x1e\x33\v\4.\2\6\x10\x10\x13\1\6\xb2%43%\x1d\x1d%34%!\0"
-      "\2\0\0\0 \1\xc0\1`\0\v\0>\0\0%\x17\a\x15\x14\6\"&46;\1&2\x16\x15\x14\a#67#53" + (std::string)
+      "\2\0\0\0 \1\xc0\1`\0\v\0>\0\0%\x17\a\x15\x14\6\"&46;\1&2\x16\x15\x14\a#67#53"
       "&'\a'7.\1'\a'7&'\x15#5\6\a\x17\a'\6\a\6\a\x17\a'\6\a3\x15#\x16\x17#&54\1\x38"
       "\b@\x12\x1c\x12\x12\xe\4\x61\xba\x83\x16$\x19\1  \1\x15\x1b\b\x1b\xe\x18\x15"
       "\x10\xe\x10()\x10)(\x10\xe\x10\x15\f\x10\n"
@@ -33297,7 +33308,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "'\6\a\x15#5.\1\x35\x33\x14\x16\x33\x32\x37'\6#\"&=\1'7\x1f\3'\x14\a'5462\x16"
       "\x15\x17\x14\a'65\x17'\1<:::\"\x18_!\x1d.9P'H1\x1f\x1a \r\f\x1c)\x87\x18o\x8c"
       "\5\t\x10\1\x89)8)\\\x1b\x1b\xfR\"]:::!\x18_\x13\4RR\bX92C\xe!\5(\x1d\x1d\x86"
-      "\x18n\x8c\5\tM\b\4\x89\x19\x1d((\x1d\x90.&\x1c\x1c\x1c\xc9!\0\3\0\0\0\x98\1@" + (std::string)
+      "\x18n\x8c\5\tM\b\4\x89\x19\x1d((\x1d\x90.&\x1c\x1c\x1c\xc9!\0\3\0\0\0\x98\1@"
       "\0\xe8\0\a\0\xf\0\x17\0\0\x36\x32\x16\x14\6\"&4$2\x16\x14\6\"&4&2\x16\x14\6\""
       "&4\x18 \x18\x18 \x18\1\b \x18\x18 \x18` \x18\x18 \x18\xe8\x18 \x18\x18 \x18\x18"
       " \x18\x18 \x18\x18 \x18\x18 \0\0\3\0\0\0 \0P\1`\0\a\0\xf\0\x17\0\0\x12\x14\6"
@@ -33532,7 +33543,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x7f\x12\x8e\0\0\3\0\0\xff\xe0\1\xc0\1\xa0\0\x17\0\x1f\0_\0\0\0\"\a\xe\1\a\6"
       "\x14\x17\x1e\1\x17\x16\x32\x37>\1\x37\x36\x34'.\1'&2\x16\x14\6\"&4\x17\"'&76"
       "\x17\x16\x37\x36\x37>\2\x37\x36\x17\x1e\1\x17\x16\x17\x16?\1\x36\x37\x36\x33"
-      "2\x1e\4\x1f\1\x16\a\6'&'&#\"\a\xe\1\x15\6'&'.\1'&\xf\1\6\a\"\6\1\vV&#>\xe\x10"
+      "2\x1e\4\x1f\1\x16\a\6'&'&#\"\a\xe\1\x15\6'&'.\1'&\xf\1\6\a\"\6\1\vV&#>\xe\x10",
+      65486) + std::string(
       "\x10\xe>#&V&#>\xe\x10\x10\xe>#\xae\xba\x83\x83\xba\x83L\x17\x13\6\a\5\6\x11\x13"
       "\n"
       "\x1c\2\4\5\1\x15\x18\x11\x1e\a\v\x15\x17\x14\2\1\1\x17\x1d\6\r\n"
@@ -34097,7 +34109,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\a\v,\\\5\v\2\v\5\2\5\6\r\5\v\2\v\5\1\6\6\x14\x1c\x12\x12\x1c\x12y\xf\x14\2\3"
       "\x12\x13\2\1\1\2\x18\xe\3\6\5\n"
       "\1\rr\3\1\2\1\x1b\x15\xf\x14\2\3\x11\2\1\f\a\3\6\n"
-      "m\x12\"\f\f\"\x11\x12\x11\x13\5\a9\b\5\x11\b\x14\2\3\3\2\r\1{\b*\x12\"\f\f!\x12" + (std::string)
+      "m\x12\"\f\f\"\x11\x12\x11\x13\5\a9\b\5\x11\b\x14\2\3\3\2\r\1{\b*\x12\"\f\f!\x12"
       "\x10\x13\x14\"\x14\2\3\3\2\r\r\4\t\t\xf7\xe\x1a\a\6\1\2\2\2\x17\x10\4\2\x11\x18"
       "\n"
       "\f\1\a\f\5\xac\x11\f\r\x1a\a\a\1\2\3\3\x14\x13\4\a\5\3\n"
@@ -34897,7 +34909,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\2\5\a\x10\3\b\a\4\x10\v\f\b\2\2\b\x12\x12$I\5\v\5\f\5\n"
       "\2!\b\b!\2\n"
       "\5\6\5\6\v\5I$\x12\x12\b\4\b\n"
-      "\r\x10\4\a\b\3\x10\b\5\2\b\a\2\a\f$$\r\6\2\a\b\2\5\b\0\0\0\0\2\0\0\0\0\1\xc0" + (std::string)
+      "\r\x10\4\a\b\3\x10\b\5\2\b\a\2\a\f$$\r\6\2\a\b\2\5\b\0\0\0\0\2\0\0\0\0\1\xc0"
       "\1\x80\0@\0K\0\0%1\x14\xf\1'7\x17\x36\x37\x36\x37#53&'&'\a/\1#7&'&'\x15#5\6\a"
       "\6\a\x17\x31\xf\1'\6\a\6\a3\x15#\x16\x17\x16\x17\x37\x17\a5&=\1\x34\x36\x33\x31"
       "32\x16\a7\x17\xf\1\6#\"&47\1\xc0\x46\2%\v\x1a\x16\x10\x11\1  \2\xe\r\x19\x1c"
@@ -35544,8 +35556,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "4E8\auniF4E9\auniF4EA\auniF4EB\auniF4EC\auniF4ED\auniF4EE\auniF4EF\auniF4F0\a"
       "uniF4F1\auniF4F2\auniF4F3\auniF4F4\auniF4F5\auniF4F6\auniF4F7\0\0\0\0\0\1\xff"
       "\xff\0\2\0\0\0\1\0\0\0\0\xcc=\xa2\xcf\0\0\0\0\xd0\xa5\t'\0\0\0\0\xd0\xa5\t)",
-      121036 } },
-    { "/fonts/ionicons.svg", {
+      55550 ) },
+    { "/fonts/ionicons.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -36344,7 +36356,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "=\"352\" \n"
       "d=\"M243 320l100 -105c6 -6 9 -14 9 -23s-3 -16 -9 -22l-100 -106c-12 -12 -31 -"
       "12 -43 0s-12 34 0 46l48 50h-217c-17 0 -31 14 -31 32s14 32 31 32h217l-49 50c-"
-      "12 12 -12 34 0 46s32 12 44 0z\" />\n" + (std::string)
+      "12 12 -12 34 0 46s32 12 44 0z\" />\n"
       "    <glyph glyph-name=\"ion-arrow-shrink\" unicode=\"&#xf267;\" horiz-adv-x="
       "\"384\" \n"
       "d=\"M384 356l-82 -82l50 -50h-128v128l50 -50l82 82zM384 28l-28 -28l-82 82l-50"
@@ -36736,7 +36748,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    <glyph glyph-name=\"ion-code-working\" unicode=\"&#xf270;\" \n"
       "d=\"M128 192c0 16 8 24 24 24s24 -8 24 -24s-8 -24 -24 -24s-24 8 -24 24zM200 1"
       "92c0 16 8 24 24 24s24 -8 24 -24s-8 -24 -24 -24s-24 8 -24 24zM272 192c0 16 8 "
-      "24 24 24s24 -8 24 -24s-8 -24 -24 -24s-24 8 -24 24zM136 56c-7 0 -12 2 -17 7l-"
+      "24 24 24s24 -8 24 -24s-8 -24 -24 -24s-24 8 -24 24zM136 56c-7 0 -12 2 -17 7l-",
+      65477) + std::string(
       "112 112c-5 5 -7 10 -7 17\n"
       "s2 12 7 17l112 112c5 5 10 7 17 7s12 -2 17 -7s7 -10 7 -17s-2 -12 -7 -17l-95 -"
       "95l95 -95c5 -5 7 -10 7 -17s-2 -12 -7 -17s-10 -7 -17 -7zM312 56c-7 0 -12 2 -1"
@@ -37144,7 +37157,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "0\" \n"
       "d=\"M32 192h256l-128 -224zM307 275c8 -5 13 -13 13 -23c0 -16 -14 -28 -30 -28h"
       "-4h-252h-4c-16 0 -30 13 -30 28c0 10 6 18 14 23c1 0 1 2 2 2c4 3 7 7 8 12v1c-2"
-      " 6 -2 12 -2 18c0 42 34 76 76 76c8 0 16 -2 23 -4c-3 -12 -4 -31 -4 -31c2 15 11" + (std::string)
+      " 6 -2 12 -2 18c0 42 34 76 76 76c8 0 16 -2 23 -4c-3 -12 -4 -31 -4 -31c2 15 11"
       " 29 11 29c18 23 46 38 77 38\n"
       "c53 0 96 -43 96 -96c0 -11 -2 -21 -5 -30v-1c0 -4 4 -9 8 -12c1 0 2 -2 3 -2z\" "
       "/>\n"
@@ -37902,7 +37915,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "/>\n"
       "    <glyph glyph-name=\"ion-ios-email-outline\" unicode=\"&#xf422;\" horiz-a"
       "dv-x=\"384\" \n"
-      "d=\"M0 320h384v-256h-384v256zM192 180l163 124h-326zM16 80h352v214l-115 -88l6"
+      "d=\"M0 320h384v-256h-384v256zM192 180l163 124h-326zM16 80h352v214l-115 -88l6",
+      65485) + std::string(
       "8 -77l-2 -2l-79 70l-48 -37l-48 37l-79 -70l-2 2l68 77l-115 88v-214z\" />\n"
       "    <glyph glyph-name=\"ion-ios-email\" unicode=\"&#xf423;\" horiz-adv-x=\"3"
       "84\" \n"
@@ -37944,7 +37958,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " -26 -22 -48 -48 -48s-48 22 -48 48h-39h-9h-16z\" />\n"
       "    <glyph glyph-name=\"ion-ios-film-outline\" unicode=\"&#xf42a;\" horiz-ad"
       "v-x=\"400\" \n"
-      "d=\"M0 360h400v-336h-400v336zM72 40v48h-56v-48h56zM72 104v48h-56v-48h56zM72 " + (std::string)
+      "d=\"M0 360h400v-336h-400v336zM72 40v48h-56v-48h56zM72 104v48h-56v-48h56zM72 "
       "168v48h-56v-48h56zM72 232v48h-56v-48h56zM72 296v48h-56v-48h56zM312 40v144h-2"
       "24v-144h224zM312 200v144h-224v-144h224zM384 40v48h-56v-48h56zM384 104v48h-56"
       "v-48h56zM384 168v48h-56v-48\n"
@@ -38744,7 +38758,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " 4 -4 0 -6c-2 -1 -4 -1 -6 -2l-12 -3s-9 -1 -13 -1c0 -4 -2 -13 1 -17c6 -7 21 -"
       "7 29 -10z\" />\n"
       "    <glyph glyph-name=\"ion-ios-person-outline\" unicode=\"&#xf47d;\" horiz-"
-      "adv-x=\"320\" \n" + (std::string)
+      "adv-x=\"320\" \n"
       "d=\"M106 246v0v0zM267 84c13 -5 53 -20 53 -52h-160h-160c0 32 40 47 53 52s31 6"
       " 43 9c7 2 17 5 20 9s1 41 1 41s-6 10 -9 18s-7 32 -7 32s-7 0 -9 12c-2 13 -6 17"
       " -6 27c0 9 5 10 5 10v0s-4 13 -5 42c-1 34 25 68 74 68s75 -34 74 -68c-1 -29 -5"
@@ -39044,7 +39058,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "s36 53 36 85s-13 62 -36 85z\" />\n"
       "    <glyph glyph-name=\"ion-ios-search\" unicode=\"&#xf4a5;\" horiz-adv-x=\""
       "384\" \n"
-      "d=\"M384 23l-23 -23l-113 113c-26 -21 -60 -33 -96 -33c-84 0 -152 68 -152 152s"
+      "d=\"M384 23l-23 -23l-113 113c-26 -21 -60 -33 -96 -33c-84 0 -152 68 -152 152s",
+      65504) + std::string(
       "68 152 152 152s152 -68 152 -152c0 -36 -12 -69 -33 -95zM56 135c26 -26 60 -39 "
       "96 -39s70 14 96 40s40 60 40 96s-14 70 -40 96s-60 40 -96 40s-70 -14 -96 -40s-"
       "40 -60 -40 -96\n"
@@ -39544,7 +39559,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "2 -32 -32h-96\n"
       "c-18 0 -32 14 -32 32s14 32 32 32h96zM128 224v0c18 0 32 -14 32 -32s-14 -32 -3"
       "2 -32h-96c-18 0 -32 14 -32 32s14 32 32 32h96zM314 237c-12 -12 -33 -12 -45 0v"
-      "0c-12 12 -12 34 0 46l68 67c12 12 33 12 45 0v0c12 -12 12 -33 0 -45zM179 147v0" + (std::string)
+      "0c-12 12 -12 34 0 46l68 67c12 12 33 12 45 0v0c12 -12 12 -33 0 -45zM179 147v0"
       "c12 -12 12 -33 0 -46\n"
       "l-68 -67c-12 -12 -33 -12 -45 0s-12 33 0 45l67 68c12 12 34 12 46 0zM382 79v0c"
       "12 -12 12 -33 0 -45s-33 -12 -45 0l-68 68c-12 12 -12 33 0 45s33 12 45 0zM179 "
@@ -40193,7 +40208,8 @@ std::map<std::string, const std::string> static_web_assets = {
       " 24v96c0 13 11 24 24 24zM175 354c-14 0 -27 -3 -38 -6l-10 -4c-28 -12 -40 -37 "
       "-44 -56h186\n"
       "c-4 18 -15 43 -44 56l-10 4c-12 4 -25 6 -39 6v0v0h-1zM105 384v0h1l19 -23c13 5"
-      " 30 9 50 9h1c20 0 36 -4 50 -9l20 23v0s1 -1 2 -1c1 -1 2 -3 2 -3l-19 -22c48 -2"
+      " 30 9 50 9h1c20 0 36 -4 50 -9l20 23v0s1 -1 2 -1c1 -1 2 -3 2 -3l-19 -22c48 -2",
+      65511) + std::string(
       "1 56 -71 57 -86h-224c1 15 9 66 57 87l-19 22c0 1 1 1 2 2zM127 309c-7 0 -14 6 "
       "-14 13s6 14 14 14\n"
       "c7 0 13 -7 13 -14s-5 -13 -13 -13zM225 309c-7 0 -13 6 -13 13s5 14 13 14c7 0 1"
@@ -40344,7 +40360,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "39 26s17 11 25 17c5 3 9 6 14 9c1 1 4 2 5 1zM109 211l30 -20l-30 -20v40zM224 4"
       "16c124 0 224 -100 224 -224s-100 -224 -224 -224s-224 100 -224 224s100 224 224"
       " 224zM363 151v81\n"
-      "c0 6 -2 9 -7 12c-41 27 -83 55 -124 82c-6 4 -11 4 -17 0c-41 -27 -81 -54 -122 " + (std::string)
+      "c0 6 -2 9 -7 12c-41 27 -83 55 -124 82c-6 4 -11 4 -17 0c-41 -27 -81 -54 -122 "
       "-81c-5 -3 -8 -8 -8 -14v-80c0 -6 3 -10 8 -13c41 -27 81 -55 122 -82c6 -4 11 -4"
       " 17 0c41 27 82 55 123 82c5 3 8 7 8 13zM284 175c2 2 5 2 7 0l38 -26l-93 -62v51"
       "c0 3 1 4 3 6\n"
@@ -41144,7 +41160,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "d=\"M509 299c2 -36 3 -71 3 -107s-1 -71 -3 -107c0 -45 -33 -81 -74 -81c-58 -3 "
       "-118 -4 -179 -4s-121 1 -179 4c-41 0 -74 36 -74 81c-2 36 -3 71 -3 107s2 71 4 "
       "107c0 45 32 81 73 81c55 3 112 4 170 4h9h9c58 0 115 -1 170 -4c41 0 74 -36 74 "
-      "-81zM207 94l145 98l-145 99\n" + (std::string)
+      "-81zM207 94l145 98l-145 99\n"
       "v-197z\" />\n"
       "    <glyph glyph-name=\"ion-soup-can-outline\" unicode=\"&#xf4f3;\" horiz-ad"
       "v-x=\"320\" \n"
@@ -41315,7 +41331,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "d=\"M224 384l224 -111l-92 -60l-132 -85l-160 102v-198l-32 16v203l-32 21zM358 "
       "192l10 -82c-16 -12 -112 -78 -144 -110c-32 32 -128 98 -144 110l9 82l135 -88z\""
       " />\n"
-      "    <glyph glyph-name=\"ion-unlocked\" unicode=\"&#xf254;\" horiz-adv-x=\"38"
+      "    <glyph glyph-name=\"ion-unlocked\" unicode=\"&#xf254;\" horiz-adv-x=\"38",
+      65491) + std::string(
       "4\" \n"
       "d=\"M22 -32c-12 0 -22 10 -22 22v212c0 12 10 22 22 22h3h19v31c0 42 17 87 43 1"
       "15s64 46 105 46v0v0c41 0 79 -18 105 -46c20 -21 33 -51 39 -82h-53c-5 18 -13 3"
@@ -41434,8 +41451,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "3 94s57 -37 103 -94z\" />\n"
       "  </font>\n"
       "</defs></svg>\n",
-      334283 } },
-    { "/fonts/ionicons.ttf", {
+      6815 ) },
+    { "/fonts/ionicons.ttf", std::string(
       "\0\1\0\0\0\xf\0\x80\0\3\0pFFTMm\x87\xb5 \0\0\0\xfc\0\0\0\x1cOS/2A9a\xd3\0\0\1"
       "\x18\0\0\0`cmapm\2n\x1f\0\0\1x\0\0\1\xfa\x63vt \3\xb3\xff\xb2\0\2\xd7,\0\0\0"
       "\x1c\x66pgm\x8a\n"
@@ -42234,7 +42251,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\1\5\1\2\4\3\6\3\t\1\t\x13\x13\6\n"
       "\f\5\f\1\3\xe\5\x10$%\xf\5\xe\3\2\t\a\f\n"
       "\6\x13\x14\b\x15\4\1\x88\x41\f\x12\x19\xf\v\x1d\n"
-      "\x13\x19\b\f\x10\b\r\2\xe\xf\x14/0\x13\xf\xe\2\f\t\x10\f\b\x19\x13\n" + (std::string)
+      "\x13\x19\b\f\x10\b\r\2\xe\xf\x14/0\x13\xf\xe\2\f\t\x10\f\b\x19\x13\n"
       "\x10\b\xe\5\5\1\6\x19\x12\f#\0\1\0\0\0\0\1\x80\1\x80\0\x30\0!@\x1e\x30*\x1f\x16"
       "\4\0\1\1\x42\0\1\0\0\1O\0\1\1\0Q\0\0\1\0\x45\x1b\x1a \2\x10+!+\1\x34\x37\x36"
       "767>\1\x35\x34\x35\x34&'.\1'&65&'&62\x16\a\6\a\x14\x16\a\xe\1\a\xe\1\x15\x14"
@@ -43034,7 +43051,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "+\1\"5754\"\x1d\1\x14\x32&24\"72\x15\x14\a\xe\1\x15\6\x15\x11\x14\6+\1\"&5\x11"
       "4&'463\5\x34\x33!\"\a\x16\x15\x11\x14\x16;\1\x32\x36\x35P\xf0\x10\xd0\x10\xd8"
       "\x10\x10\x10\x10\x10\x65\3\1\1\1\r&\x1a\xd0\x1a&\t\x17\x1e#\1\xf\1\xfe\xef\3"
-      "\1\4\x12\xe\xd2\r\x11\1\0\xe0\x10\x10H0\b\b0\bP\x10\xe0\3\1\1\1\1\1\x1a\xe\xfe" + (std::string)
+      "\1\4\x12\xe\xd2\r\x11\1\0\xe0\x10\x10H0\b\b0\bP\x10\xe0\3\1\1\1\1\1\x1a\xe\xfe"
       "\xb0\x1a&&\x1a\1\x33\x18\n"
       "\3\xe\x1a\x30\x10\1\6&\xfe\xcd\xe\x12\x12\xe\0\0\0\b\0\0\xff\xe0\1\xc0\1\xa0"
       "\0+\0\x36\0\x44\0`\0\xb8\0\xc2\0\xc6\0\xca\2\xb8@>\"\x1e\x1a\3\x14\4{\1\x15\x14"
@@ -43834,7 +43851,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x16\x17\x1e\1\x37\x36\x35\x34&/\1\x16\5\x36\x16\x1f\1\x36'&\xe\1\a6\x17\x36"
       "\x16\x17\x16\6\xf\1\x16\x37>\1\x35\x34&\a\xe\1\a\1\xf7\xe\f\x16\f\x1e\t\t\3\3"
       "\t\x12\xe\x13\1\n"
-      "\n" + (std::string)
+      "\n"
       "\5\x17\4\xfe\xf0\xf\x16\2\a\n"
       "\1\2\a\x13\r\x1f\x11 \b\b.\6\1\1\v\v\b\x10\4\5\x18\xf\x10'\1\x1c\1\3\4\2\4\2"
       "\2\4\5\6\n"
@@ -44100,7 +44117,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\v\v\n"
       "\4\a\x14p\1\6\4\x18\f\f\n"
       "\5\5\3\x14\x16 \x16\0\0\4\0\0\xff\xe0\1\xc0\1\xa0\0\f\0\x19\0&\0\x35\0&@#4%\x1f"
-      "\x1c\x15\xf\v\2\b\1\0\1\x42\0\0\1\1\0O\0\0\0\1S\0\1\0\1G,+\x1e\x1d\2\xf+7\6\x15"
+      "\x1c\x15\xf\v\2\b\1\0\1\x42\0\0\1\1\0O\0\0\0\1S\0\1\0\1G,+\x1e\x1d\2\xf+7\6\x15",
+      65489) + std::string(
       "&547\x17\x1e\1\x1f\1\6\5\x14\a4'.\1/\1\x36?\1\x16%&\a62\x17&\a\xe\1\xf\1&\x17"
       "\x16\x1f\1\6\"'767>\1?\1\x16_2-M\3\x17.\f\f&\1\x39-2\x12'\n"
       "\v*3\3M\xfe\xe9)\x1f\x38\x8e\x38\x1d+\r\x1b\a\b\x1a\x81+\x13\2\x42\xca\x42\1"
@@ -44634,7 +44652,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\6\v\6\n"
       "\3'\t\f\f\t\x16\x16\t\f\f\t'\3\n"
       "\5\v\t\x12\x1c\x12\x12\x1c\x12\x12\x1c\x12\x12\x1cijj\0\0\2\0\0\xff\xf0\1\xa0"
-      "\1\x90\0\a\0\x13\0(@%\x13\x12\x11\x10\xf\xe\r\f\v\n" + (std::string)
+      "\1\x90\0\a\0\x13\0(@%\x13\x12\x11\x10\xf\xe\r\f\v\n"
       "\t\b\f\1\0\1\x42\0\0\1\1\0O\0\0\0\1S\0\1\0\1G\x13\x10\2\x11+\x12\x32\x16\x14"
       "\6\"&4\5'7'\a'\a\x17\a\x17\x37\x17z\xaczz\xacz\1\x38KK\x1dKK\x1dKK\x1dKK\1\x90"
       "z\xaczz\xac\xa1KK\x1dKK\x1dKK\x1dKK\0\0\0\4\0\0\0 \1\x80\1`\0\x19\0!\0)\0-\0"
@@ -45434,7 +45452,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\6\3\x31*\x11\n"
       "\4\2\aPNLJDB=4\b\b\2\4\x42\0\0\4\0j\5\1\4\3\4j\0\3\6\3j\0\6\a\6j\0\a\2\aj\0\2"
       "\b\2j\0\b\1\1\bO\0\b\b\1T\0\1\b\1H\x1f\x12\x1f\x11\x18\x1c\x18\x13\x10\t\x18"
-      "+\x12\x32\x16\x14\6\"&4\5&'67\x16\x17\x34\x36\x35&'&'67&'\x14\"\x15\6\a'&'&'" + (std::string)
+      "+\x12\x32\x16\x14\6\"&4\5&'67\x16\x17\x34\x36\x35&'&'67&'\x14\"\x15\6\a'&'&'"
       "\"\6#\x16\x17\6\a&'\6\a\x16\x1f\1\a\6\a&'\6\x15\x16\x17\x16\x1f\1\6\a\x1e\1\x17"
       "67\x16\x17\x16\x17\x32\x37&'67\x16\x17\x36z\xaczz\xacz\1M\x1f:\v\x14\x37\x44"
       "\1#\x1e\x1d\x14\x1f\x15\b\4\1\x13!\4\x1f\xe\f\3\2\f\2\6\x41\f\x12K^\1\tYE\n"
@@ -46234,7 +46252,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\4\xe)\v.\b\5\x11\x12\x19\5\x15\3\r\4\f\5\x10\6\2\2\1\x64.\b\4\x12\x10\xf\t\x1b"
       "\t\n"
       "\5\xf)\x19\2\2\3\5\x15\3\r\4\a\n"
-      "\f\xa4\xe\6\3\x1e\x1a=\x13\4-\x1a\x32\1\3<!UU!<\3\1\x32\x1a-\4\x13=\x1a\x1e\3" + (std::string)
+      "\f\xa4\xe\6\3\x1e\x1a=\x13\4-\x1a\x32\1\3<!UU!<\3\1\x32\x1a-\4\x13=\x1a\x1e\3"
       "\6\xe\x38\xf\b\2 \x17<\x14\4,\x1a\x32\1\3<!UU!<\3\1\x32\x1a,\4\x14<\x17 \2\b"
       "\xf\x38\x1d\3\n"
       "\5\2\5\6\1\5_\x16'\2\x18\x16\x17\x11\r\3\x66\2'\x16'\3\r\x11\x17\x16P\n"
@@ -46663,7 +46681,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "h\0\5\3\1\1\0\5\1Y\0\n"
       "\xe\1\v\b\n"
       "\vY\0\b\r\1\t\6\b\tY\0\6\a\a\6M\0\6\6\aQ\f\1\a\6\aE(($$  (+(+*)$'$'&% # #\x13"
-      "\x19\x12\x12\x12\x12\x17\xf\x16+\1\x14\a\6\a\6\x1d\1#57#\a\x15#5'#\x17\x15#5"
+      "\x19\x12\x12\x12\x12\x17\xf\x16+\1\x14\a\6\a\6\x1d\1#57#\a\x15#5'#\x17\x15#5",
+      65458) + std::string(
       "4'&'&5462\x16\3\x35\x33\x15'53\x15'53\x15\1 \x1e\x1c\4\x12  \x10  \x1f\x11  "
       "\x13\b\x17\x1eUvU\xb0@P```\1\x13)*&\a\x1f\x33\1\x80@@\x80\x80@@\x80\1\x31!\xe"
       "\x1f*):SS\xfe\x93\x10\x10 \x10\x10 \x10\x10\0\0\0\b\0\0\0\0\1\x80\1\x80\0\3\0"
@@ -47034,7 +47053,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\2\5\a\4\f\a\x1b\xc3\t\3\4\xee\6\x18\a\x1c\6\t\b\n"
       "\1\2\b\3\2\3\1\6\3\3\4\1\2\5\3\6>\x12\xf\6\3\1\1\2\3\2\2\1\2\5\3\3\3\1\4\3\2"
       "\6\t\x12\4\x17\6\v\r\x10\t\5\2\x19\x37\x1f\1\x10\f\1\x14\f\4\3\1\b\v\x1b)\6\2"
-      "\5\4\1\6\5\f\b\1\5\2\v\b\2\3\5\x11.\b\x12\a\3\2\b\5\f\4\1\2\4\x1b\x19\5\2\2\4" + (std::string)
+      "\5\4\1\6\5\f\b\1\5\2\v\b\2\3\5\x11.\b\x12\a\3\2\b\5\f\4\1\2\4\x1b\x19\5\2\2\4"
       "\x12\b\1\1\x12\3\x12\f\3\1Z\2\xe\x11\v\1\b\5\1\2\v\xf\1\6\f\6\5\4\4\3\4\x32\x17"
       "\x14\1\4\4\3\3\1\4\1\f\4\t\1\3\n"
       "\r\3\x1fQ\v\4\x10\x1c\3\r\x12\4\xf\2\1\x12\b\4\2\2\5\x19\x1b\4\2\1\4\6\f\b\1"
@@ -47834,7 +47853,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x13\x13\x12\x14\x15\x17\x14\x12\x18+\1\x16\x15\x14\6\"&5475462\x16\x15#\x15"
       "62\x17\x35\x34&\"\6\x12\x32\x36\x34&\"\6\x14\x36\x32\x16\x14\6\"&4\5\x36\x35"
       "#534'\a'7&'\a'7&'\a'7&'\a'7&#\x1d\1#=\1\6\a\x17\a'\6\a\x17\a'\6\a\x17\a'\6\a"
-      "\x17\a'\6\x15\x33\x15#\x14\x17\x37\x17\a\x16\x17\x37\x17\a\x16\x17\x37\x17\a" + (std::string)
+      "\x17\a'\6\x15\x33\x15#\x14\x17\x37\x17\a\x16\x17\x37\x17\a\x16\x17\x37\x17\a"
       "\x16\x17\x37\x17\a\x16\x17=\1\x33\x1d\1\x36\x37'7\x17\x36\x37'7\x17\x36\x37'"
       "7\x17\x36\x37'7\6\x34\x32\x14\1@@p\xa0p@KjK\xe0.d.8P8\x1e\x84^^\x84^dxTTxT\1"
       "\v\4\a\b\5\x19\4\x19\6\b\v\4\v\v\n"
@@ -48634,7 +48653,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "#  \xb0\4&#Fa8\x1b#\xb0\bCF\xb0\2%\xb0\bCG#G#a` \xb0\4\x43\xb0\x80\x62`# \xb0"
       "\0+#\xb0\4\x43`\xb0\0+\xb0\5%a\xb0\5%\xb0\x80\x62\xb0\4&a \xb0\4%`d#\xb0\3%`"
       "dPX!\x1b#!Y#  \xb0\4&#Fa8Y-\xb0\x32,\xb0\0\x16   \xb0\5& .G#G#a#<8-\xb0\x33,"
-      "\xb0\0\x16 \xb0\b#B   F#G\xb0\0+#a8-\xb0\x34,\xb0\0\x16\xb0\3%\xb0\2%G#G#a\xb0" + (std::string)
+      "\xb0\0\x16 \xb0\b#B   F#G\xb0\0+#a8-\xb0\x34,\xb0\0\x16\xb0\3%\xb0\2%G#G#a\xb0"
       "\0TX. <#!\x1b\xb0\2%\xb0\2%G#G#a \xb0\5%\xb0\4%G#G#a\xb0\6%\xb0\5%I\xb0\2%a\xb0"
       "\1\x45\x63# Xb\x1b!Yc\xb0\1\x45\x62`#.#  <\x8a\x38#!Y-\xb0\x35,\xb0\0\x16 \xb0"
       "\bC .G#G#a `\xb0 `f\xb0\x80\x62#  <\x8a\x38-\xb0\x36,# .F\xb0\2%FRX <Y.\xb1&"
@@ -48665,8 +48684,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "RX\xb1\1\1\x8eY\xb9\b\0\b\0\x63 \xb0\1#D\xb0\3#p\xb2\4(\tERD\xb2\n"
       "\2\a*\xb1\6\1\x44\xb1$\1\x88QX\xb0@\x88X\xb1\6\3\x44\xb1&\1\x88QX\xb8\4\0\x88"
       "X\xb1\6\1\x44YYYY\xb8\1\xff\x85\xb0\4\x8d\xb1\5\0\x44\0\0",
-      188724 } },
-    { "/fonts/ionicons.woff", {
+      57777 ) },
+    { "/fonts/ionicons.woff", std::string(
       "wOFF\0\1\0\0\0\1\t\xdc\0\r\0\0\0\1\xd8\x1c\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\x46\x46TM\0\1\t\xc0\0\0\0\x1b\0\0\0\x1cm\x87\xb5 OS/2\0\0\1\xa0"
       "\0\0\0J\0\0\0`A9a\xd3\x63map\0\0\4\\\0\0\0\xce\0\0\1\xfam\2n\x1f\x63vt \0\0\5"
@@ -49465,7 +49484,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ":\xc3\xdf\x66\xa3\x16\xa3\xfaH\x1cq\xc9\xcf\x8a\xcc\xb2p\x8b\x9a\xa1\xd6h\xb0"
       "\xb9\x1d\x43\x19%\xeb*\x87h\xf0\xb5\xc1\xf1\x32\xe5\5\xc5\xcd\x42\x1c\x82\xb7"
       "\xd3\xdf!\xbb\x8c\xc6P\xbc\xfd\xce\x8b\xdc \xb2\x66>8\xfa\xe3%\xc6\xf6\xc3O\xb8"
-      "Y\xf5\xb2$\x91+\xb7\xd3\x7f\xfbv\x8c\x1b\xb1\xa5\xbe\x86\xf9\6\x33\xef\x95m\xdf" + (std::string)
+      "Y\xf5\xb2$\x91+\xb7\xd3\x7f\xfbv\x8c\x1b\xb1\xa5\xbe\x86\xf9\6\x33\xef\x95m\xdf"
       "Mj\xb2\x18\xfe\4\xd9\xc0\x8d\xd0\xfw\xbb\xb3\x8c\xfc\xb7:\xedp\xe7\xd9K\x9d\x61"
       "\xd8\x42\xdd\xce\xc8/\x9e%\xee\x9e\x90\xb7l\x89\x14T\xd9~63\x16\xc7\2\0\x10Y"
       "w\xfc\x62&\xe5\xba\x12U`e?\xc8\x16*c\xe3\xd5\x31\xd3\xb5tA\x16$]\x94\xe9\xcf"
@@ -50265,7 +50284,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x92\5\xdf\xd6\xda\x8bPn\xf4x\xa0\1,o\xcb\xae\x62\x19\x9ai\xc1\xd0\xd4XL\x14"
       "'\x9a\x82\xa7\x90\xfe\xcf\xae\xbd\x88\x63\xe3|\xc0`J\2O\xf6\x15\xcbVm-n\x18\6"
       "\xa3\xb0\xba\"\x99\"'\xab\xec\x37\x97n\x91t_6%\xcf\x37u#0\\\xd5\x35\x35_\x8e"
-      "\xcb\x62\x92Oqd\xe9&1.\xc3\xa5\x81\xab\x1b\xbaoB\t\x16\x8c&O\x16\3>\xc1\xfc\n" + (std::string)
+      "\xcb\x62\x92Oqd\xe9&1.\xc3\xa5\x81\xab\x1b\xbaoB\t\x16\x8c&O\x16\3>\xc1\xfc\n"
       "\xb9\xfaN\x91<\xb0\"\x85\xef\xc8\\}\xb7\4\xbf\f\xc1{\xd1\x1aQ=\xc1\x14\rQ\x92"
       "4]\xb7-S3\r\xd5\x91mD\xf8g=\xde\xc5<\2/ZK\x12\xd1\x12%\x8b\x91Y\x1d\xd8#\x1b"
       "_\xf^\xc5\x83\x8bx6\xc1\a0\x1a\x7fG\xbci\x89pi>)\xa8\x81\xec\x1b\xf8v\xb6k\xe8"
@@ -51065,7 +51084,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xab`\xf1V\x89h:\xcbs\x11\xdd\x30\x15\x96gu-\"G4IaeAHpI\x86\xe7\xd8\4\x9b\x10"
       "\4\x89\x95p`9bJ\x8c\xc0*\xa6\x11\x97\x38\x12X\x89\xc8\n"
       "\xe,\xf1I\xf6\xd7>\x8a\"\xdb\x8e\xf7\xb0\xac||\xdb\x42\xeb\xf0\xe1V\n"
-      "\xff\x83\5\xaaGO\0\1\x7f|\f\b\xb8\xd9T\4-*\xa8\xa2!\x8b\xbc\xa8\x8b\x96\x18\x97" + (std::string)
+      "\xff\x83\5\xaaGO\0\1\x7f|\f\b\xb8\xd9T\4-*\xa8\xa2!\x8b\xbc\xa8\x8b\x96\x18\x97"
       "Y\x8d\xd6\x38\x8d\xe7\x35\x9aQi\x95\x95\xe3\xa2%i\"'J\xa6\xa8\n"
       "r\\PL\x1c\xde\x94\4N \xe1\x15\x46\xa1\x15\x86\x9e\xfc@\xd4\5^T#\xa2\xda\xf9\xe8"
       "G\x83~\xf9{\xe8\x37\xd1;(\x95*\x83N \x9el@g\x87\xab\x31.\xa9\x12\xec\x99\x44"
@@ -51272,7 +51291,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xc6\xb6\x89mj\x9b\xd9\xe6\xb6\x85mi[\xd9\xd6\x36\xd4\xb6\xb1mm;\xdb\xde\x86"
       "\xd9\xe\xb6\xa3\xed\x64;\xdb.\xb6\xab\r\xb7\xddlw\xdb\xc3\xf6\xb4\xbdlo\xdb\xc7"
       "\xf6\xb5\xfdl\x7f;\xc0\xe\xb4\x83\xec`;\xc4\xe\xb5\xc3\xecp;\xc2\x8e\xb4\xa3"
-      "\xech\x1b\x61#m\x94\x1d\x63\xc7\xdaqv\xbc\x9d`'\xdaIv\xb2\x9d\x62\xa7\xdaiv\xba"
+      "\xech\x1b\x61#m\x94\x1d\x63\xc7\xdaqv\xbc\x9d`'\xdaIv\xb2\x9d\x62\xa7\xdaiv\xba",
+      65474) + std::string(
       "\x9d\x61g\xdaYv\xb6\x9d\x63\xe7\xdayv\xbe]`\x17\xda\x45v\xb1]b\x97\xda\x65v\xb9"
       "]aW\xdaUv\xb5]c\xd7\xdauv\xbd\xdd`7\xdaMv\xb3\xdd\x62\xb7\xdamv\xbb\xdd\x61w"
       "\xda]v\xb7\xdd\x63\xa3\xed^\xbb\xcf\xee\xb7\a\xec\x41{\xc8\x1e\xb6G\xecQ{\xcc"
@@ -51380,8 +51400,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xa2\xff\xea"
       "\xd7\xff\1\xee\x7f\xd7\x7f\0\0\0\0\0\1\xff\xff\0\2x\xda\x63```d\0\x82\x33\xb6"
       "\x8b\xce\x83\xe8\vK9\xd5\xa1\xb4&\0\x45\xc9\5\xc8\0",
-      68060 } },
-    { "/fonts/open-sans_LICENSE.txt", {
+      2586 ) },
+    { "/fonts/open-sans_LICENSE.txt", std::string(
       "\r\n"
       "                                 Apache License\r\n"
       "                           Version 2.0, January 2004\r\n"
@@ -51606,8 +51626,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "   See the License for the specific language governing permissions and\r\n"
       "   limitations under the License.\r\n",
-      11560 } },
-    { "/fonts/opensans-bold-webfont.eot", {
+      11560 ) },
+    { "/fonts/opensans-bold-webfont.eot", std::string(
       "cP\0\0\x9dO\0\0\2\0\2\0\4\0\0\0\2\v\b\6\3\5\4\2\2\4\1\0\xbc\2\0\0\4\0LP\xef\2"
       "\0\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0$\x88\xe0\x83\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\x12\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0\0\0\b\0\x42\0o\0l\0\x64"
@@ -52406,7 +52426,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "^j~\xca\x46\x39\xc8y\xb0\x61r'g\xac($\xe\xce!)\xe0\xac\x46/v\xad\x18\x1d<B7?"
       "^OXk\6\xf4\xa7\x66\xdbn\xb0\xc4\xa1O\xf9\xa0\6\fK\xb1\x34\xec\x65\xc9\xfc\x9a"
       "\xea\xb9\xb8`\xe8\xc5+?\x8aI5\x8fS\xffi\xe\xd3\x91\xfc\xb3\x11\x10'\xfa*C \xe7"
-      "*\x8d\x96\x9d\xf0\xbb\xe6\x83\x87\x1c\xd0o\1\xf3G\x8b\x8eh1vsL\x96K\x80hxh\xac" + (std::string)
+      "*\x8d\x96\x9d\xf0\xbb\xe6\x83\x87\x1c\xd0o\1\xf3G\x8b\x8eh1vsL\x96K\x80hxh\xac"
       "\xfe\xabM1\xd0\xa3\xc7\x83\x93\xdd\x36\v\x9b\xb0r>\xda\xec\x61r\3\x44\x80\x94"
       "*\x94\x9b\x61\xe6V\xeb^!\xdc\xbf<\xd2\a^)\xe0\x84\5\x87\xc4\xc1\xd1^\xcf\x1a"
       "D\x18\x9f\xbf\\r\xee\x82\xc9\xfd\3\xf0\x19\xf4\x96\xb0\x92\xdc\xdb\xef\xf6\5"
@@ -52425,8 +52445,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "%\x92\x93P\6\x8c\xda\x44\xdd\xc1W\x90\x91\"$\xc4\x38\xc4L9y\2\xef\xa4M\xec\xf1"
       "\xdd\xdb\xc9\x90\xd5\xbc\xbaI\t\x91\f\xe1\x41l\xf1p\a\xe9\x93\x13\x9c\x41\xff"
       "z\xac\xae\x46/c\x80'\x17\xb3\xebJ$||\xa7o(\xe0",
-      20579 } },
-    { "/fonts/opensans-bold-webfont.svg", {
+      20579 ) },
+    { "/fonts/opensans-bold-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -53225,7 +53245,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "0 -180 53.5 -258t169.5 -78q205 0 205 338q0 165 -50.5 247.5t-158.5 82.5 q-113"
       " 0 -165 -69.5t-54 -229.5v-33z\" />\n"
       "<glyph unicode=\"&#xff;\" horiz-adv-x=\"1165\" d=\"M0 1118h334l211 -629q27 -"
-      "82 37 -194h6q11 103 43 194l207 629h327l-473 -1261q-65 -175 -185.5 -262t-281." + (std::string)
+      "82 37 -194h6q11 103 43 194l207 629h327l-473 -1261q-65 -175 -185.5 -262t-281."
       "5 -87q-79 0 -155 17v242q55 -13 120 -13q81 0 141.5 49.5t94.5 149.5l18 55zM243"
       " 1405q0 65 37.5 100t101.5 35q66 0 103.5 -37t37.5 -98q0 -60 -38 -96.5 t-103 -"
       "36.5q-64 0 -101.5 35t-37.5 98zM646 1405q0 70 40.5 102.5t100.5 32.5q65 0 103."
@@ -53317,8 +53337,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "120z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      56480 } },
-    { "/fonts/opensans-bold-webfont.ttf", {
+      56480 ) },
+    { "/fonts/opensans-bold-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb>H\0\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4\0"
       "\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/2\xa2"
       "I\x9b\xe4\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \xe\xee\x13"
@@ -54117,7 +54137,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb9\xcb\x41HH??HHA\4\\\xa9\xc2\xc5\xa6\xab\xc1\xc5\xa7\x64\x65\x65\x64\x64\x63"
       "c\0\0\0\0\2\0R\0^\4\x9a\4\4\0\6\0\r\0\0\x37\t\1\x37\1\x15\1%\t\1\x37\1\x15\1"
       "R\1\x16\xfe\xea\xdb\1s\xfe\x8d\1\x1f\1\x16\xfe\xea\xdb\1s\xfe\x8d\xd5\1\\\1\\"
-      "w\xfe\x39\x1a\xfe;w\1\\\1\\w\xfe\x39\x1a\xfe;\0\0\0\0\4\0.\0\0\6\x92\5\xb6\0" + (std::string)
+      "w\xfe\x39\x1a\xfe;w\1\\\1\\w\xfe\x39\x1a\xfe;\0\0\0\0\4\0.\0\0\6\x92\5\xb6\0"
       "\n"
       "\0\xe\0\x19\0!\0\x9d\0\xb2\v\0\0+\xb0\x17\x33\xb2\1\2\0+\xb0\f3\xb4\xf\x1a\v"
       "\1\r+\xb0\x13\x33\xb4\xf\4\0\f\4+\xb0\x15\x32\xb2\x1a\xf\n"
@@ -54917,7 +54937,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x1c\x64\x1c\x64\x1c\xa6\x1d\x12\x1dx\x1d\xf4\x1eV\x1e|\x1f\x1a\x1fX\x1f\xf8"
       " t \x98 \xc2 \xe0!\x8c!\xa8!\xfa\"J\"\x9c#\x10#:#\x90#\xd4$\2$H$r$\xc0$\xe6%"
       "p%\xfe&\xd0'J'\x9e'\xf8(^)\")\xa2*2*\x86+\b+V+\xa6+\xfc,r,\xa2,\xd2-\b-b-\xc2"
-      ".\x8e.\xec/P/\xc0\x30\x8e\x31\x10\x31\x32\x31\xa8\x31\xfa\x32N2\xac\x33 3`3\xaa" + (std::string)
+      ".\x8e.\xec/P/\xc0\x30\x8e\x31\x10\x31\x32\x31\xa8\x31\xfa\x32N2\xac\x33 3`3\xaa"
       "424\xb4\x35\x36\x35\xc0\x36\xb0\x37V8\b8\xba\x39@9\xba:2:\xb6;J;z;\xaa;\xe0<"
       ":<\xae=t=\xd8><>\xac?~@\4@J@\xc0\x41\x1e\x41zA\xe2\x42\x64\x42\xb0\x43\x1a\x43"
       "\x94\x44\x10\x44\xb0\x45 ELE\xce\x45\xce\x45\xce\x45\xce\x45\xce\x45\xce\x45"
@@ -54978,8 +54998,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\2+\xb0\3+D\xb0\5 E\xb2\6l\2+\xb0\3+D\xb0\4 E\xb2\5$\2+\xb0\3+D\1\xb0\a E\xb0"
       "\3+D\xb0\b E\xba\0\a\x7f\xff\0\2+\xb1\3\x46v+D\xb0\t E\xb2\b\xda\2+\xb1\3\x46"
       "v+DY\xb0\x14+\0\1P\x98\xdd\x11\0\0",
-      44016 } },
-    { "/fonts/opensans-bold-webfont.woff", {
+      44016 ) },
+    { "/fonts/opensans-bold-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0_\b\0\x13\0\0\0\0\xab\xf0\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62>H\0GDEF\0\0\1\xc4\0"
       "\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4\0"
@@ -55778,7 +55798,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "G\v\xc0T\xe9\x33\xdf\xf0iU\xb9\xbc\xc4l\x81\xc3\x87\xcf\xdd+\x90r\xea*\xcf\xb4"
       "@tnMd\x9c\xa5\xb4\2\x16\xdbUT\xe9$\xc9\xc8\2{\x12/\xed\x9fU\n"
       "\xeaKV9|H/,oY\xe\x35\4\xf3J]\x9c\xc6\x93\xa4\xd0kK\xdd\x35\x8b\xc9\x99\x64\xe8"
-      "\x90\xeb\xa2\xc2\xac\xce\xda\x97\xea\xdb\xea\xb5\xe7\x34\x85\f\xdb\xb6y\xc4\xd2" + (std::string)
+      "\x90\xeb\xa2\xc2\xac\xce\xda\x97\xea\xdb\xea\xb5\xe7\x34\x85\f\xdb\xb6y\xc4\xd2"
       "\xea\xe8\xea\xe6-\xdb\xf8\xf7\xc9%d\x95\xd3j$\xcf[m\xe4&r\xd1w?\xf9=\xc2\xcd"
       "\xde\xc0Q\x1d\xc7\x9a\x97\x89\v\xe9\xaeJp\x9b\xd8\xf3\5\x95\x12@Db\x1bKk\x88"
       "\xeaz\x19\x18\xa0\x13\xdf\xe\x10\xdb\xb2u\xe|\xee\xa0\xfe\xacT\xa2$)\t\xc2VZ"
@@ -55939,8 +55959,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "0\x87\x15\xc8\x61\xcb\x81rX\x80\x1cV\x15\b\x87q\3;T=\x87\x82\xeb.\6\xf6\xfa\xff"
       "\fL\xda\x1b\x99\xdd\xca\x80\"\x9c@u\x1c\xb7`\xdc\xc8\r\"\xda\0\x87\x44)`\0\1"
       "P\x98\xdd\x11\0\0",
-      24328 } },
-    { "/fonts/opensans-bolditalic-webfont.eot", {
+      24328 ) },
+    { "/fonts/opensans-bolditalic-webfont.eot", std::string(
       "<U\0\0ZT\0\0\2\0\2\0\4\0\0\0\2\v\b\6\3\5\4\2\2\4\1\1\xbc\2\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0sm\xcc\x45\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\x12\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0\0\0\x16\0\x42\0o\0l\0\x64\0"
@@ -56739,7 +56759,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xc2h R\x9f\x61\xb4\xe0*)\x83\x1e\xc2\xab\xf8\xa6\xdd\xe3\xad\2Tvzr\x8c(\xad"
       "\x8d\xf9y\xe5\x38\x9c\x66=\xa3\xdfP\xcf\xfd\xc5N\xbb\xe6\x37\x14\x38\x9a\xc9"
       "\x80\xf7P9F]\xd1\x62\xcal\5\xd9\6\x97\xf1\xec\x46\xee\x94\xd7\xf4\x12\xefi\f"
-      "\b\x13\xc2\xd2nM\x91[\xa0\xb5\xfay\xd4\xfa\x39\xef\xd2\xfe\x66,\xbd\x8aqI(\x8e" + (std::string)
+      "\b\x13\xc2\xd2nM\x91[\xa0\xb5\xfay\xd4\xfa\x39\xef\xd2\xfe\x66,\xbd\x8aqI(\x8e"
       "\xcf\x11t\x91r9\xfc\x66\xd0\xd1,\x9fp\xec\xca\x90\xc2\xff\xdd\x8d\x66\x85mB\xc0"
       "\xd1\xa9\xf\4\xb8p\\\xf8\xec\xd9\xca\x97\xae\xd2\xcdg\x11\x1bh\xa3O\xbc \xab"
       "\0\x13\x31\tb\xa0\xde\x45\xa9\x1c\xd1\xa2\xf9\x39\x46\xe5\1\xcd\xc8\xa0\xdc\xb8"
@@ -56806,8 +56826,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb0\xc8\3\x1d\xe2`\xb6\1s\x82\x9bi\x13\x30\xce\xfa`\xc5\\\x14Vu\xd4\xe3\x16"
       "\xa3)\bn\xf\x8f\x85\x41$\0\x34)\xb0\x45\xa9\x98k\xb4\x80H\xc0+\xe4\x1c\"D\2\xcb"
       "\x88\xc7\xa0",
-      21820 } },
-    { "/fonts/opensans-bolditalic-webfont.svg", {
+      21820 ) },
+    { "/fonts/opensans-bolditalic-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -57606,7 +57626,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "150 -185q75 0 135 61.5t93.5 171t33.5 238.5q0 197 -143 197q-75 0 -134.5 -61t-"
       "97 -179t-37.5 -243zM788 1382q0 78 42 118t120 40q65 0 99 -28t34 -80q0 -73 -39"
       ".5 -116.5t-120.5 -43.5q-135 0 -135 110z\" />\n"
-      "<glyph unicode=\"&#xf7;\" d=\"M109 612v219h952v-219h-952zM444 373q0 76 37 11" + (std::string)
+      "<glyph unicode=\"&#xf7;\" d=\"M109 612v219h952v-219h-952zM444 373q0 76 37 11"
       "3.5t103 37.5t102.5 -39t36.5 -112q0 -70 -37 -111t-102 -41t-102.5 39t-37.5 113"
       "zM444 1071q0 75 37 113.5t103 38.5q67 0 103 -40.5t36 -111.5q0 -70 -37 -110.5t"
       "-102 -40.5t-102.5 39t-37.5 112z\" />\n"
@@ -57740,8 +57760,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "120z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      59785 } },
-    { "/fonts/opensans-bolditalic-webfont.ttf", {
+      59785 ) },
+    { "/fonts/opensans-bolditalic-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb_yp\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4\0\0"
       "\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/2\xa2"
       "M\x93\xa9\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt !\x15\x19"
@@ -58540,7 +58560,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "7\x15\6#\"&}\xc8\1^\xca\xc7\1]\xcb\xc5\xfe\xa4\xce\xcf\xfe\xa2\xc3\x8d\xa3\1"
       "\x1d\xa3\xa7\1\x1a\xa1\xa1\xfe\xe5\xa6\xa4\xfe\xe3\xa2\xdb\xeb\xd0\x8e\x8eKr"
       "[ohoh+\x83;\x83\x83\xc4\xde\2\xdb\xc8\1^\xca\xc6\xfe\x9f\xc9\xc7\xfe\xa4\xcc"
-      "\xcf\1Z\xc6\xa4\xfe\xe6\xa4\xa6\1\x19\xa3\xa3\1\x19\xa6\xa5\xfe\xe6\xad\xe1\xfc" + (std::string)
+      "\xcf\1Z\xc6\xa4\xfe\xe6\xa4\xa6\1\x19\xa3\xa3\1\x19\xa6\xa5\xfe\xe6\xad\xe1\xfc"
       "H\xae:\x92\x8d\x86\x8a\x1f\x1c\xbf\x39\xf5\0\0\2\0\x98\2\xf0\3m\5\xc7\0\x11\0"
       "\x1c\0Q\0\xb2\4\2\0+\xb0\b3\xb1\x1a\xe\xe9\1\xb0\x1d/\xb0\0\xd6\xb4\x12\xf\0"
       "\x11\4+\xb0\x12\x10\xb1\v\1+\xb4\n"
@@ -59340,7 +59360,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe9\xb0\6\x32\xb2\t\1\0+\xb0\x1c/\xb1\2\f\xe9\xb0\x12/\xb1\r\v\xe9\xb0&2\xb0"
       "\r\x10\xb1,\4\xe9\1\xb0./\xb0 \xd6\xb1!\xf\xe9\xb3\"! \b+\xb1\x1f\xf\xe9\xb0"
       "\x1f/\xb1\"\xf\xe9\xb0 \x10\xb0# \xd6\x11\xb1)\x12\xe9\xb1/\1+\xb0\x36\x1a\xba"
-      ">\x9e\xf2\xc3\0\x15+\n" + (std::string)
+      ">\x9e\xf2\xc3\0\x15+\n"
       "\xe\xb0\5\x10\xb0\n"
       "\xc0\xb1\x1a\x1e\xf9\xb0\x15\xc0\xba>\x9c\xf2\xba\0\x15+\n"
       "\5\xb0\5\x10\xb3\6\5\n"
@@ -59527,8 +59547,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe E\xb2\r\f\2+\xb0\3+D\1\xb0\xf E\xb0\3+D\xb0\x10 E\xba\0\xf\x7f\xff\0\2+\xb1"
       "\3\x46v+D\xb0\x11 E\xba\0\x10\1\x1a\0\2+\xb1\3\x46v+D\xb0\x12 E\xb2\x11p\2+\xb1"
       "\3\x46v+DY\xb0\x14+\0\0\0\0\1P\x98\xdd\3\0\0",
-      47052 } },
-    { "/fonts/opensans-bolditalic-webfont.woff", {
+      47052 ) },
+    { "/fonts/opensans-bolditalic-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\x64\x80\0\x13\0\0\0\0\xb7\xcc\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62_ypGDEF\0\0\1\xc4"
       "\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4"
@@ -60327,7 +60347,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xdc\x1b\xaf\xfd\x39\xb8n}\xfc\xd8\6)\x89l{\x8eK\tT1\x90\x9c\x9dzwAQY%o\x8c\xfd"
       ")\xd0n\xdd\x45\x83\xdd\xc1\xbdy\xbb\x8d\0\xbb\1\x81\x93\xeu\xaa\x64q[9\x19\xd6"
       "/b\xc2\x95v\xd4kS\xa8p~+\xc7\xb4\xea\x80\x63\xf4i\6\xb2\x8c\xc1\xa9\xb2\xba\x66"
-      "\x1e+>\xa3;\xc0\xf\xf\xf6\xbbz@\x88#\xbe\x8e]\xb2\xe9N\x9a\xee\xa1\xe2\xeaRi" + (std::string)
+      "\x1e+>\xa3;\xc0\xf\xf\xf6\xbbz@\x88#\xbe\x8e]\xb2\xe9N\x9a\xee\xa1\xe2\xeaRi"
       "\x97L\xc4\x38:l%\xc7\x8c\x13M\x1d\x38\xd7\x9c\x86\5i\x1a\x46\xffw4\x14\x96\xf2"
       "\x86\xc1\x9f\x32\xf6\xe\xa7\xa5\xdb\xb1\xcfO9+\xdd\x8e\x9d\x66$\\\xf8\xd8\xcf"
       "ec/ \xbdp5\xb3\xb1\x17\xa7\xc6^n\xe5[=`\xec\x85\x30\xf6\x42'\x83-F\xa3\x9b\x13"
@@ -60545,8 +60565,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe5Kx0\x17\xec\x80\x96~\xce\b\t\xc1\x84\x11\x11\xc2\x31\x63H\x88\xc2/\0\x63"
       "~-\xe9\xcb\xe2sGe\xad\xacN\x94\xa4}\x92@\xfeOFt\x99\x1e\x7f\x34\x98\xe9\x37}"
       "hF\x90\0\0\1P\x98\xdd\3\0\0",
-      25728 } },
-    { "/fonts/opensans-extrabold-webfont.eot", {
+      25728 ) },
+    { "/fonts/opensans-extrabold-webfont.eot", std::string(
       "\vQ\0\0\x11P\0\0\2\0\2\0\4\0\0\0\2\v\t\6\3\b\4\2\2\4\1\0 \3\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0WFa\xc3\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0&\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0\x45\0x\0t\0r\0\x61\0\x62\0o\0"
@@ -61345,7 +61365,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xea\x80+\xe2\xe5\x36\xa7\xba)+]PR\xcf\xbc\xfl\x11\bZC\x82\xe\0\vB[\xa4r']\xb3"
       "\v\x10N\x88\x88\xce\xa7\xb6\xa7l{y\x10(\6`'\x1d\xc0\xcf\x14\x90\xe1x\xef(:\x82"
       "(Y\x9d\x99\x38\x88\5{6s\xb6\x37\xd9\x89KiC\x91Lf\xed\x8a\xe8\xecQ\xfc\xebyH:"
-      "\xd8\x1d\xa2{\xa8\x63l'\xd8\x8e\x85\xb6\x1c\x13\xda\x42\xf0G\xf8\xf2\x7f\x8e" + (std::string)
+      "\xd8\x1d\xa2{\xa8\x63l'\xd8\x8e\x85\xb6\x1c\x13\xda\x42\xf0G\xf8\xf2\x7f\x8e"
       "\xa6\x90\xe6\xf8$\xb3z\xd3nc\tO8d\x86\xa5\xa4\x8b!t\xde\xfdl\x1a\x8f 9\x82J\xa8"
       "c\x93\x37\x39\x44\x1e\xa8\x62\x8a\xc2Z\xd0\x39\x1b\x8f\xfa\x84\xd5\xc4\x35\x94"
       "\xf3h\x81\x1f\a\xcf\xa5\xe\xc2T\xfc\xa0YuY\xe3\0\x84\xb9\xb1\x39\x34\xd1\x15"
@@ -61366,8 +61386,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8b\x8e\xbbR\xe5\xb8\n"
       "\x98\x13\xf9\xc0l\x11Z\xa2\xe2t\xb4\x8d\x63\xc9\xcc\x96\x9c\xe\f8\xd6\xc2\xa7"
       "\\^",
-      20747 } },
-    { "/fonts/opensans-extrabold-webfont.svg", {
+      20747 ) },
+    { "/fonts/opensans-extrabold-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -62166,7 +62186,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "q-125 -107 -194 -150h-258z\" />\n"
       "<glyph unicode=\"&#xfc;\" horiz-adv-x=\"1372\" d=\"M133 395v738h391v-619q0 -"
       "111 31.5 -168t103.5 -57q101 0 144 79.5t43 268.5v496h391v-1133h-295l-49 141h-"
-      "23q-49 -78 -136.5 -119.5t-205.5 -41.5q-187 0 -291 108.5t-104 306.5zM272 1413" + (std::string)
+      "23q-49 -78 -136.5 -119.5t-205.5 -41.5q-187 0 -291 108.5t-104 306.5zM272 1413"
       "q0 75 46 116.5t124 41.5q79 0 125.5 -42.5t46.5 -115.5q0 -71 -46.5 -113.5 t-12"
       "5.5 -42.5q-78 0 -124 41t-46 115zM751 1413q0 75 46 116.5t126 41.5t126.5 -43t4"
       "6.5 -115q0 -71 -46.5 -113.5t-126.5 -42.5q-81 0 -126.5 41.5t-45.5 114.5z\" />"
@@ -62273,8 +62293,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "135z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      57284 } },
-    { "/fonts/opensans-extrabold-webfont.ttf", {
+      57284 ) },
+    { "/fonts/opensans-extrabold-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMbI\x1a\xe6\0\0\1<\0\0\0\x1cGDEF\1\x17\0"
       "\4\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xO"
       "S/2\xa2\xb7\x9d\x85\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt"
@@ -63073,7 +63093,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "I>~p.RW_~\xe1\xcf\xd5TZ\":X\0\0\0\1\0?\2\x39\2\xf2\5\xc9\0%\0\x80\0\xb2\2\2\0"
       "+\xb4\"\4\0\x10\4+\xb0\xf/\xb4\x14\4\0\x10\4+\xb0\x1a/\xb4\x1b\4\0\n"
       "\4+\1\xb0&/\xb0\x1f\xd6\xb4\5\b\0\xe\4+\xb2\x1f\5\n"
-      "+\xb3@\x1f\x1b\t+\xb0\x1f\x10\xb0\x16 \xd6\x11\xb4\f\b\0\xe\4+\xb1'\1+\xb1\5" + (std::string)
+      "+\xb3@\x1f\x1b\t+\xb0\x1f\x10\xb0\x16 \xd6\x11\xb4\f\b\0\xe\4+\xb1'\1+\xb1\5"
       "\x16\x11\x12\xb1\b\t99\0\xb1\x14\xf\x11\x12\xb0\x11\x39\xb0\x1a\x11\xb1\f\x12"
       "99\xb0\x1b\x12\xb1\b\t99\xb0\"\x11\xb1\5%99\xb0\2\x12\xb0\0\x39\x30\x31\x13\x36"
       "32\x16\x15\x14\6\a\x15\x1e\1\x15\x14\6#\"'5\x16\x33\x32\x35\x34&+\1\x35\x33\x32"
@@ -63873,7 +63893,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "!\xfd\xdf\2\xd1\xfe!\1\xdf\xfd/\1\x90\x44*\xfe\2\1\xfe\x38\x36\xfep\0\0\0\0\1"
       "\0\0\0\0\4o\4o\0\3\0\0\x31\x11!\x11\4o\4o\xfb\x91\0\3\0-\0\0\5m\6\x35\0\x16\0"
       " \0$\0\x98\0\xb2\x15\0\0+\xb0!3\xb2\x10\1\0+\xb0\"3\xb1\x13\5\xe9\xb0\0\x32\xb0"
-      "\f/\xb1\6\4\xe9\xb0\6\x10\xb3\x1d\6\x1a\xe+\xb1\x1f\a\xe9\1\xb0%/\xb0\x15\xd6" + (std::string)
+      "\f/\xb1\6\4\xe9\xb0\6\x10\xb3\x1d\6\x1a\xe+\xb1\x1f\a\xe9\1\xb0%/\xb0\x15\xd6"
       "\xb0\2\x32\xb1\x14\b\xe9\xb0\xf\x32\xb2\x14\x15\n"
       "+\xb3@\x14\x12\t+\xb2\x15\x14\n"
       "+\xb3@\x15\0\t+\xb0\x14\x10\xb1!\1+\xb0\x17\x32\xb1$\b\xe9\xb1\x1d\n"
@@ -64040,8 +64060,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\3\xd7\2+\xb0\3+D\1\xb0\b E\xb0\3+D\xb0\t E\xba\0\b\x7f\xff\0\2+\xb1\3\x46v+"
       "D\xb0\n"
       " E\xb2\t\xbf\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\0\1P\x98\xdd\3\0\0",
-      44076 } },
-    { "/fonts/opensans-extrabold-webfont.woff", {
+      44076 ) },
+    { "/fonts/opensans-extrabold-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0`\f\0\x13\0\0\0\0\xac,\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62I\x1a\xe6GDEF\0\0\1\xc4"
       "\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4"
@@ -64840,7 +64860,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xbd\xbfny\xf2\x81\x1ey\f\xac?*\xeb\xc1\\+,\x15z\xf5\xa4\x8f\xb2\xd6\xa8\xac"
       "-\\\xdc\xe8\xc0\xac\x89\xa1\f\xeb\xc1l4\xa4\xaf\xd3{0w\x98\xcc\x8a\x8fW\xda\x18"
       "\x1d\xe9Y\xa5\xa2\x8f\xa5\xbf\x95\xf4\xa4\xf7\xf7\xeeI\x9f\x8cGI\xef\6\xa9\x9b"
-      "}\xbe\xd4\xae\xc5\x8f\x1f:\xfc\xec\xaf\xbe\xef\xb6X\xa6\xce\x9c>j\xccYg\x8f\x95" + (std::string)
+      "}\xbe\xd4\xae\xc5\x8f\x1f:\xfc\xec\xaf\xbe\xef\xb6X\xa6\xce\x9c>j\xccYg\x8f\x95"
       "h\xc0*\xd0\xfb.Z;u6\xfd\r\xfd\x88~J\x9f\xdbt\xca<:\n"
       "\x9b\xa4n\xdfr\xdd\xb6\xf5\xeb\xc1\xc6\xe5\x30\x8f\x33m\xb6\x19\xf3\x1bzB\x1d"
       "S3\6\x66\xb5\n"
@@ -65014,8 +65034,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe4\xb0\xd9\x42\x39,@\xe\xab,\x94\xc3\xeRv\x1d\xc2\x61\xdc\xc0\1\xd5\xcc\xa9"
       "\xe0\xba\x8b\x81\xa3\xfe?\3\x93\xf6\x46\x66\xb7\x32\xa0\b\x17P\x1d\xe7~\x18\x37"
       "r\x83\x88\x36\0|\xab,u\0\0\0\1P\x98\xdd\3\0\0",
-      24588 } },
-    { "/fonts/opensans-extrabolditalic-webfont.eot", {
+      24588 ) },
+    { "/fonts/opensans-extrabolditalic-webfont.eot", std::string(
       "ZU\0\0\x64T\0\0\2\0\2\0\4\0\0\0\2\v\t\6\3\b\4\2\2\4\1\1 \3\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0\x9a\x89\0\xe2\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0&\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0\x45\0x\0t\0r\0\x61\0\x62"
@@ -65814,7 +65834,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x9d\x87{@OF\1\v\xaf/C\xfd\x83\4\xc6\x33\x84&.\x14\x41R\xc2\xf6\xb1\xe1\x8c\x39"
       "\\\xd1\xce\xd1\xf1\xa4\x8b#\x96\x81.0R\x8d\xec\v37\xe2\x38\xf7\v\xdb\x12\xe3"
       "\x80\x95\4S\x88\x9b\x9d\0\x8c\x82@\xa6\xea/\xcb\x65\xd8 L\xc9\x86\xb8\x12+\x83"
-      "t\n" + (std::string)
+      "t\n"
       "\xf0\x8a\xebsm\xc2\xf9\x41\xf8\6\x9f\xd5\xbd\x18\x99\x34\xa8\xd0\xff\xb7\x32"
       "\x93}\xfa\x65\xc4/\x12\x65\xe5[\x83>\x88\x42\x80\xda#\xf1\xb2\x11\xd9\xa6\xc0"
       "0\"l\xc1\xa4I\6\x8c\x91\xd1\x91\x90\xf0\xca\n"
@@ -65889,8 +65909,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xdc\xbf\x82\xad\xd4.$\x8c\xf5\xb4\4\"\x92\xf7>D\xaa\x94\x9c\x88\x99S\xbb\xbb"
       "\xbcN\xac\x64(>1\5U#\xe9\x82t \x89\x30\x12\2T\xc5\\\x89S2\xa2\xd8\xb7\"\x12%"
       "f\xc6L\xe5\xa4\xceN\x1a\x34\x66\x97\xb0\0",
-      21850 } },
-    { "/fonts/opensans-extrabolditalic-webfont.svg", {
+      21850 ) },
+    { "/fonts/opensans-extrabolditalic-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -66689,7 +66709,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ".5t-58.5 -319.5z\" />\n"
       "<glyph unicode=\"&#xf6;\" d=\"M84 416q0 210 79.5 379.5t223.5 263.5t336 94q20"
       "9 0 322.5 -113t113.5 -323t-79.5 -379.5t-223.5 -263.5t-336 -94q-209 0 -322.5 "
-      "113t-113.5 323zM317 1384q0 187 201 187q170 0 170 -125q0 -189 -201 -189q-88 0" + (std::string)
+      "113t-113.5 323zM317 1384q0 187 201 187q170 0 170 -125q0 -189 -201 -189q-88 0"
       " -129 31t-41 96zM479 403q0 -133 84 -133q81 0 141 139 t60 320q0 66 -23 99.5t-"
       "63 33.5q-82 0 -140.5 -139.5t-58.5 -319.5zM804 1384q0 187 201 187q168 0 168 -"
       "125q0 -97 -49.5 -143t-149.5 -46q-88 0 -129 31t-41 96z\" />\n"
@@ -66826,8 +66846,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "135z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      60072 } },
-    { "/fonts/opensans-extrabolditalic-webfont.ttf", {
+      60072 ) },
+    { "/fonts/opensans-extrabolditalic-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMba\xc1\xf2\0\0\1<\0\0\0\x1cGDEF\1\x17\0"
       "\4\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xO"
       "S/2\xa2\xd8\x9dZ\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \""
@@ -67626,7 +67646,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "9\xb0\x16\x12\xb0\x18\x39\x30\x31\x37\x35\x1e\1\x33\x32\x36\x35\x34&'.\1\x35"
       "467.\1\x35\x34\x36\x33\x32\x17\a.\1#\"\6\x15\x14\x1e\1\x17\x16\x15\x14\6\a\x1e"
       "\1\x15\x14\6#\"&\1\x14\x16\x17\x36\x35\x34&'\xe\1%U\xb0\x61\x45Q>I\x82z\\V&*"
-      "\xe8\xdf\xb8\xb0\x64[\x89\x41<3\x1c\x41\x39\xf4L\\ %\xfe\xe7n\xae\1]JXJIQ%-F" + (std::string)
+      "\xe8\xdf\xb8\xb0\x64[\x89\x41<3\x1c\x41\x39\xf4L\\ %\xfe\xe7n\xae\1]JXJIQ%-F"
       "\xf9\x34\x44\x39/&A(G\xa2\x61T\x90\x35&g3\xa0\xa8\x66\xe0:+-\x1d!)-\x1aq\xc7"
       "c\x90\x34&i9\xaa\xb5\x33\3\x17+R13L6R\"\x13\x46\0\2\1P\4\xe9\4\xa8\6#\0\b\0\x12"
       "\0/\0\xb0\6/\xb0\x10\x33\xb1\2\a\xe9\xb0\v2\xb1\2\a\xe9\1\xb0\x13/\xb0\0\xd6"
@@ -68426,7 +68446,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "9\xb1\x12\r\x11\x12\xb0\5\x39\xb0\x16\x11\xb0\3\x39\0\xb1\0\a\x11\x12\xb0\2\x39"
       "01\x13!\x13\1!\1\3!\x13\3\x34\x33\x32\x15\x14#\"&%432\x15\x14\6#\"&\xa4\1\x93"
       "Z\1\x38\1\xb4\xfd\x9cy\xfeyx\4\xc9\xaa\xc9XR\1\xe7\xc9\xa8\x63\x64XR\5\xb6\xfd"
-      "\xe2\2\x1e\xfc\x81\xfd\xc9\2\x37\4\x83\xbb}\xbd>A\xbb}a\\>\0\0\1\0\xfe\4\xd9" + (std::string)
+      "\xe2\2\x1e\xfc\x81\xfd\xc9\2\x37\4\x83\xbb}\xbd>A\xbb}a\\>\0\0\1\0\xfe\4\xd9"
       "\4\xa6\6!\0\xe\0\"\0\xb0\0/\xb0\t3\xb1\4\b\xe9\xb1\5\b\xe9\1\xb0\xf/\xb1\x10"
       "\1+\0\xb1\4\0\x11\x12\xb0\f901\x13\x35>\1\x37!\x1e\1\x17\x15!&'\6\a\xfeO\xb6"
       "0\1\xbf\x1ah2\xfe\xf6.n\x8c\x64\4\xd9\x17H\xb5\x34;\xb5\x41\x17)\x85n@\0\1\1"
@@ -68695,8 +68715,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\t\xfe\2+\xb1\3\x46v+D\xb0\n"
       " E\xb2\v\x1d\2+\xb1\3\x46v+D\xb0\f E\xba\0\t\x7f\xff\0\2+\xb1\3\x46v+D\xb0\r"
       " E\xba\0\f\1\x18\0\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\1P\x98\xdc\xff\0\0",
-      46924 } },
-    { "/fonts/opensans-extrabolditalic-webfont.woff", {
+      46924 ) },
+    { "/fonts/opensans-extrabolditalic-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\x64\xcc\0\x13\0\0\0\0\xb7L\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62\x61\xc1\xf2GDEF\0"
       "\0\1\xc4\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSU"
@@ -69495,7 +69515,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "L\x8f\x9f\xe3\xf4|\xc5\xe8\xc9\6zFw8\x19\xaf\xb8\xa3\xc9x!m2^\xa3\x45\x62\x37"
       "x\xc7\x92{~\xf0\x42\x87\xe4\xb5\xa6\x63:\x9c\x96W\x97\6&\x1d\x8e\xcd\x13\x1e"
       "\xc8\xa8[p\x1a\x9e\x64\x34\xe4\x93\x32\x32+UcO\xd1\x10\x96\xda\xd4\xd8\xcb\x33"
-      "k\xec\xc5\x1a\x35\x15mj\xec\xc5\xd8|\x9d\xae\xb1+\xeel$+\xdc\x41\x85\xbd\ry\x1d" + (std::string)
+      "k\xec\xc5\x1a\x35\x15mj\xec\xc5\xd8|\x9d\xae\xb1+\xeel$+\xdc\x41\x85\xbd\ry\x1d"
       "$e:\xda\xa4v\xedG]:\xda\xaav\x89\x98=\x99\xf3\2\x39\xbd\x9b@g\xb1\xa6^M~\x9e"
       "\xaa\xa9\3\xbd\xec\xd4\t\x8f;\xf0\xfe\xba\5\x8ev\xf5t\xce\x90(njM\xaa\xb0.\x97"
       "\xd6\xc8\x65\x8e\xa4\x9d\xc7\xcf\xf6(\xd6\xd6\xbbjlAE\xedZ\6\x10\x15\xa4\x34"
@@ -69706,8 +69726,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xae\xbb\x18\x98\x19\xc5\x19 |\xc6\r\x9cP\xc3\xb8\x81\xaa\x38\xff\x31iodv+\3"
       "r\xb9\x80\\nY8\x97\a\xa4\x8d\xb3\xfe?\3\\\x84\x17$\xc2\xc3(\1\x17\x89\xdc \xa2"
       "\r\0\xcb\x64\x37\xd1\0\0\0\1P\x98\xdc\xff\0\0",
-      25804 } },
-    { "/fonts/opensans-italic-webfont.eot", {
+      25804 ) },
+    { "/fonts/opensans-italic-webfont.eot", std::string(
       "\xa7V\0\0\xd9U\0\0\2\0\2\0\4\0\0\0\2\v\6\6\3\5\4\2\2\4\1\1\x90\1\0\0\4\0LP\xef"
       "\2\0\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0\x97T\x17Z\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\x12\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0\0\0\f\0I\0t\0\x61\0l\0"
@@ -70506,7 +70526,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x95n$\x16\xbf\xfb\x92\3\x8a\xe7N\x9c\tNH\x16\x9cPJu\x89\n"
       "A\xa8\x61\xe8\xbd\x42\x13-\xec\x34@et\xaa'R\3\x80\xb1\x37\xac\xd9\x39\f=\x9b"
       "\2\x1c\x85\xe8\xd1\xe\xee\xf1{@R\x1d\x33\5\xa1\xda\xe7\x82\xfc\x16_\xaf\xb9w"
-      "0\2OG7\xac\xe4%\5K\2\xb7\xc0X\xa7\x61\x86\x12\xf0\xd3\xb2S\xb0\xd5\xf1^\x16\xcb" + (std::string)
+      "0\2OG7\xac\xe4%\5K\2\xb7\xc0X\xa7\x61\x86\x12\xf0\xd3\xb2S\xb0\xd5\xf1^\x16\xcb"
       "\xbf\x8b\x92\x9b\xd0\x16\xf6\x8d\x33\xd4\xa0\x34\xb6\x8d\x17T\xf6\xa6%\2!O\4"
       "\x1e\x9c\xc8G\xfc\xf8\x99\xdc\x35\xac\x12l\xe\x7f\x1f\xa2%\x97lo\r\x89\xa8\xa1"
       "w\xb8\xe1\xae\x44\x97\xd3\x8f\xbb\x41,P\xe1\xc7>*\xe7~\xc8\x86\bR\xb6\x37\x16"
@@ -70584,8 +70604,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb4\x9e\2o\xf8Z\x9f\x9d=\x97\xd3\xe8\xa5\xc9Ko\x1f\x14\6\xb8\x81\r\x88\xaa\xa3"
       "\v\xdb\1\x31 U\xc3\xa5n\x88\x94i\x18\"\x8e\xdcX,\xc1T\xb1\xb8\\\xefw\xb7\xef"
       "\x15U\xb7\xa8v\x16\5{\xd3H\xad\xda\x8d#\xa0\x8al+\6R\x9f@",
-      22183 } },
-    { "/fonts/opensans-italic-webfont.svg", {
+      22183 ) },
+    { "/fonts/opensans-italic-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -71384,7 +71404,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "-134 -205.5t-47.5 -292.5zM382 1241v27q145 133 204.5 197.5t82.5 103.5h158q37 "
       "-99 128 -235l42 -66v-27h-103q-57 48 -161 189q-134 -119 -242 -189h-109z\" />\n"
       "<glyph unicode=\"&#xf5;\" horiz-adv-x=\"1149\" d=\"M98 406q0 190 73 357.5t19"
-      "7 257t275 89.5q190 0 300 -112.5t110 -309.5q0 -188 -72 -355t-195 -258t-278 -9" + (std::string)
+      "7 257t275 89.5q190 0 300 -112.5t110 -309.5q0 -188 -72 -355t-195 -258t-278 -9"
       "1q-192 0 -301 113t-109 309zM270 397q0 -131 63.5 -202.5t182.5 -71.5q104 0 187"
       " 73t129.5 207.5t46.5 307.5q0 115 -62.5 186.5t-169.5 71.5q-109 0 -195.5 -74 t"
       "-134 -205.5t-47.5 -292.5zM342 1241q58 258 231 258q44 0 83.5 -18t75 -39.5t66."
@@ -71532,8 +71552,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "095z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      61127 } },
-    { "/fonts/opensans-italic-webfont.ttf", {
+      61127 ) },
+    { "/fonts/opensans-italic-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb_y\x1d\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4"
       "\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/"
       "2\xa0\xee\x91\t\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \xf"
@@ -72332,7 +72352,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "6\x1a\xba>\x88\xf2]\0\x15+\n"
       "\xe\xb0\3\x10\xb0\b\xc0\xb1\x16\x12\xf9\xb0\x11\xc0\5\xb0\3\x10\xb3\4\3\b\x13"
       "+\xb3\a\3\b\x13+\xb0\x16\x10\xb3\x12\x16\x11\x13+\xb3\x15\x16\x11\x13+\3\0\xb3"
-      "\3\b\x11\x16....\1\xb7\3\4\a\b\x11\x12\x15\x16........\xb0@\x1a\0\xb1\xf\6\x11" + (std::string)
+      "\3\b\x11\x16....\1\xb7\3\4\a\b\x11\x12\x15\x16........\xb0@\x1a\0\xb1\xf\6\x11"
       "\x12\xb0\r9\xb0\n"
       "\x11\xb0\f901#76?\1#73\x13\x12!2\x17\a&#\"\a\3!\a!\a\xe\1\a!\a\x17\x1b\xcd\x35"
       "/\xc8\x1a\xc9LK\1\x63\xb8\x98\x42\x92\x84\xd5\x32\x45\1r\x1a\xfe\x8d/\x16XP\2"
@@ -73132,7 +73152,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "9901747\x13\x33\3\6\x15\x14\x33\x32>\1\x37\x13\x33\3#7#\xe\1#\"&\1\x34\x36\x33"
       "2\x15\x14\6#\"&%4632\x15\x14\6#\"&q\x16\x92\xaa\x96\x12\x93X\xaa\x82\"d\xa6\xe7"
       "\x8b\x16\fb\xb2_\x80\x92\1X8.N;'#/\1l8/M;'#/\xf8>n\2\xa4\xfdIY2\x8fx\xe0\x9e"
-      "\1\xdb\xfb\xb8\xcb}b\x8b\4\xeb.CP1D,(.CP1D,\0\0\0\2\xff;\xfe\x14\4\x12\6!\0\x18" + (std::string)
+      "\1\xdb\xfb\xb8\xcb}b\x8b\4\xeb.CP1D,(.CP1D,\0\0\0\2\xff;\xfe\x14\4\x12\6!\0\x18"
       "\0\"\0]\0\xb2\a\1\0+\xb1\b\x11\x33\x33\xb0\x16/\xb1\2\t\xe9\1\xb0#/\xb0\a\xd6"
       "\xb1\b\xe\xe9\xb1$\1+\xb0\x36\x1a\xba\xc0\x95\xf7\x64\0\x15+\n"
       "\xe\xb0\a\x10\xb0\6\xc0\xb0\b\x10\xb0\t\xc0\0\xb1\6\t..\1\xb1\6\t..\xb0@\x1a"
@@ -73461,8 +73481,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "v+D\xb0\x13 E\xb2\x12\x32\2+\xb1\3\x46v+D\xb0\x14 E\xb2\x13\x31\2+\xb1\3\x46"
       "v+D\xb0\x15 E\xb2\x14/\2+\xb1\3\x46v+D\xb0\x16 E\xb2\x15-\2+\xb1\3\x46v+D\xb0"
       "\x17 E\xb2\x16\x1f\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\0\1P\x98\xdd\xe\0\0",
-      48676 } },
-    { "/fonts/opensans-italic-webfont.woff", {
+      48676 ) },
+    { "/fonts/opensans-italic-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\x65\x98\0\x13\0\0\0\0\xbe$\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62_y\x1dGDEF\0\0\1\xc4"
       "\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4"
@@ -74261,7 +74281,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "/\xe7?\xe8X\xda\xe7\xca\xc9\xc5\xe4\xca\xdb\xfft\xfb\\9v\xe2L.@\xfc\xfd\xc9\x89"
       "\xbdU0\x80\xf4\xfdUl\f\xaf\xd0\x31\x38\xb0\x83z\xa7\x31\\0O\xden\f\x98'\x87\x31"
       "\xe0\x83\xe6X\3\xb4\x44\x96\x9c\x32\xa3\xdd\xaa\xc0!\xdd\x95.\xfb\xea\xb8:\xf8"
-      "\5\x38\xb6\x97@\xc6;\xe7\xc8\xc9\x7f;G\x9eNIb\xcc\x19\x85\x13\x87\xdeI\4i\x7f" + (std::string)
+      "\5\x38\xb6\x97@\xc6;\xe7\xc8\xc9\x7f;G\x9eNIb\xcc\x19\x85\x13\x87\xdeI\4i\x7f"
       "\xd3\xe\xdb\xbd\x81\xb7\x63\1_\xce\xd3\x96\1\xba\xac\xc1\xe7\xbc`W+\xb9\x94\xae"
       "E\xda\x17\xc4\x12$R\x90\xe\xd8g\xa5\x99\x10|\xbaR\xae=N\xcb\xf3\xf5>\4\x86V\x97"
       "\xb7\xb0\x92.\xb0@)\xf6\xf4\xd5\xe7\xea\xda\x81\x96\6\x34\xb4\x9a\x8a\6\xb0\xb6"
@@ -74486,8 +74506,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xfx#F\0\xf8\x43\x46\x1b\b\x18\x82:\x9c\xd2\xc5\xdb\x99\xea\xb2\x31\xca\v\x18"
       "\x82\xdd?{`\xb8Q\x8c\xc0\xdeZ1\6\xa3\x95\x62\2\xc6K\xc5>\x98\xcc\x15S\xb0?S\x1c"
       "\x80\xe9\xf8\xc7\x9a\x12\xf9\1\x9c$Z\xc2\0\1P\x98\xdd\xe\0\0",
-      26008 } },
-    { "/fonts/opensans-light-webfont.eot", {
+      26008 ) },
+    { "/fonts/opensans-light-webfont.eot", std::string(
       "|K\0\0\x92J\0\0\2\0\2\0\4\0\0\0\2\v\3\6\3\5\4\2\2\4\1\0,\1\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0\x89]1\xf0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\x1e\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0L\0i\0g\0h\0t\0\0\0\xe\0"
@@ -75257,8 +75277,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xf9\xea\3\x81?\xed\xb7\xd5/\xe4\xbb\xfa\x8e\x15\x97_]\xd4\xe8\xd4y\xb9\xf\x8c"
       "\xbc<hq\x87\x17\x39\xc2\x44\xfa\x8a\x12.\xf3\xf0<\xb9\xab\x64\x90\x99\t6+\x84"
       "\x1f\xb8\xf0^\xeb\x18_:",
-      19324 } },
-    { "/fonts/opensans-light-webfont.svg", {
+      19324 ) },
+    { "/fonts/opensans-light-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -76057,7 +76077,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "<glyph unicode=\"&#x152;\" horiz-adv-x=\"1839\" d=\"M129 735q0 347 174.5 545"
       ".5t480.5 198.5q78 0 183 -17h747v-94h-655v-553h616v-94h-616v-627h655v-94h-756"
       "q-76 -16 -176 -16q-305 0 -479 200t-174 551zM240 733q0 -315 140.5 -484t401.5 "
-      "-169q109 0 174 18v1266q-62 16 -172 16q-262 0 -403 -167.5t-141 -479.5z\" />\n" + (std::string)
+      "-169q109 0 174 18v1266q-62 16 -172 16q-262 0 -403 -167.5t-141 -479.5z\" />\n"
       "<glyph unicode=\"&#x153;\" horiz-adv-x=\"1942\" d=\"M119 545q0 266 129 414.5"
       "t354 148.5q151 0 251 -70t157 -209q110 279 399 279q192 0 303 -134t111 -364v-8"
       "0h-762q2 -230 100.5 -345t276.5 -115q93 0 163.5 13t178.5 56v-90q-92 -40 -170 "
@@ -76137,8 +76157,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "085z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      55461 } },
-    { "/fonts/opensans-light-webfont.ttf", {
+      55461 ) },
+    { "/fonts/opensans-light-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb>E*\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4\0\0"
       "\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/2\xa0"
       "x\x96\x17\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \n"
@@ -76937,7 +76957,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "/\xb1\xe\5\xe9\1\xb0\x16/\xb0\0\xd6\xb1\f\x10\xe9\xb0\f\x10\xb1\x10\1+\xb1\6"
       "\x11\xe9\xb1\x17\1+\xb1\x10\f\x11\x12\xb1\t\3\x39\x39\0\xb1\x13\xe\x11\x12\xb1"
       "\6\0\x39\x39\x30\x31\x13\x34\x36\x33\x32\x16\x15\x14\6#\"&7\x10\x33\x32\x11\x34"
-      "&#\"\6\x46\x9c\x91\x8e\x9d\xa0\x8f\x8f\x9aZ\xd1\xd1\x64mmd\4u\xa2\xb0\xae\xa4" + (std::string)
+      "&#\"\6\x46\x9c\x91\x8e\x9d\xa0\x8f\x8f\x9aZ\xd1\xd1\x64mmd\4u\xa2\xb0\xae\xa4"
       "\xa1\xb3\xac\xa8\xfe\xf8\1\b\x83\x7f\x7f\0\0\0\0\2\0H\0}\3#\3\xa8\0\6\0\r\0\0"
       "7\x13\3\x37\1\x15\1%\x13\3\x37\1\x15\1H\xfe\xfe=\1\x35\xfe\xcb\1+\xfe\xfe>\1"
       "5\xfe\xcb\xa8\1j\1k+\xfey\x1b\xfew+\1j\1k+\xfey\x1b\xfew\0\0\0\0\4\0;\0\0\5p"
@@ -77737,7 +77757,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x81\0\xec\0\xee\0\xba\0\xb0\0\xb1\0\xbb\0\xd8\0\xd9\1\n"
       "\1\v\1\f\1\r\1\xe\1\xf\1\x10\1\x11\1\x12\1\x13\1\x14\1\x15\1\x16\1\x17\0\xb2"
       "\0\xb3\0\xb6\0\xb7\0\xc4\0\xb4\0\xb5\0\xc5\0\x87\0\xab\1\x18\0\xbe\0\xbf\1\x19"
-      "\1\x1a\0\x8c\1\x1b\1\x1c\1\x1d\1\x1e\1\x1f\6glyph1\auni000D\auni00A0\auni00A" + (std::string)
+      "\1\x1a\0\x8c\1\x1b\1\x1c\1\x1d\1\x1e\1\x1f\6glyph1\auni000D\auni00A0\auni00A"
       "D\auni00B2\auni00B3\auni00B5\auni00B9\auni2000\auni2001\auni2002\auni2003\au"
       "ni2004\auni2005\auni2006\auni2007\auni2008\auni2009\auni200A\auni2010\auni20"
       "11\n"
@@ -77753,8 +77773,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "+\xb1\3\x46v+D\xb0\x11 E\xb2\x10*\2+\xb1\3\x46v+D\xb0\x12 E\xb2\x11(\2+\xb1\3"
       "Fv+D\xb0\x13 E\xb2\x12'\2+\xb1\3\x46v+D\xb0\x14 E\xb2\x13%\2+\xb1\3\x46v+D\xb0"
       "\x15 E\xb2\x14%\2+\xb1\3\x46v+DY\xb0\x14+\0\0\1P\x98\xdc\xff\0\0",
-      41956 } },
-    { "/fonts/opensans-light-webfont.woff", {
+      41956 ) },
+    { "/fonts/opensans-light-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0Y`\0\x13\0\0\0\0\xa3\xe4\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62>E*GDEF\0\0\1\xc4\0\0"
       "\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4\0\0"
@@ -78553,7 +78573,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xff\xa0\x64\x63m\x9f\xd5\x93\x65\xcb\xbe\xf8rY=o\xfe\xd3\xa8/\4\xde\x34\xab"
       "\xb6\xb6m\x19\xbb\2\xbe>j\xdb\xccNj\x8b\x90\xfb\xe\xb7=\xcbNyO\x9d\x65\x9c\xc3"
       "S\xc3\xd7\xa0\xee\xe8+\x85$\xbc>u\x10~\2\x33\x8b[G\xcfY\xc8\x65\xc2\xb8\xe6\xd8"
-      "e(\xe7\xc5\xda\x8f[H\xc3\x8b\x1c^;wAaC\xb1.'/\x14\x9c\xcb\xc9\v8\x89:\xf|\xb6" + (std::string)
+      "e(\xe7\xc5\xda\x8f[H\xc3\x8b\x1c^;wAaC\xb1.'/\x14\x9c\xcb\xc9\v8\x89:\xf|\xb6"
       "@\x94\xf6#f:\xb5\x10G\x1e\x9e\x39)\xe0\xb9\x66\x61II\xcb\x41\xb5\x9b\x96#\xe9"
       "\xf3\x17\xbb=\x97\x81t\x98\x90\xdf\xf9\x94\6\xb6\xd8\x18\x99\xdf\xf5\xbc\6rg"
       "\xea\x10}\x96\xe2\xbe\x9c\xe2\x9e\x8e\xde\xa9O\x9fqq\xb6\x83&2\xce\x15]L\x93"
@@ -78656,8 +78676,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\1w\xf1\3#O\6}\xbc\xde\xb2':\xbd:\x81\1\xe8\x8f\x15\x43\x30\xd8+F`\xb8R\x8c\xc1"
       "h\xae\x98\x80\xf1L1\5\x93\xa9\x62\6\xa6\x85\xe2\0\xcc\x14[\xca\xc4\a\xce\xc4"
       "U\6\0\0\1P\x98\xdc\xff\0\0",
-      22880 } },
-    { "/fonts/opensans-lightitalic-webfont.eot", {
+      22880 ) },
+    { "/fonts/opensans-lightitalic-webfont.eot", std::string(
       "xW\0\0\x92V\0\0\2\0\2\0\4\0\0\0\2\v\3\6\3\5\4\2\2\4\1\1,\1\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0k\x97\xd8R\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\x1e\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0L\0i\0g\0h\0t\0\0\0\f\0I"
@@ -79456,7 +79476,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8e\xcb\x86\fl\x8f\vo\xeb\x94\x80I\xe2rb\x10r\x97\5\x32m#8EY\x1e\x66\xa9\n"
       "\f\x8c\x90\xe2\xc0\t^\x1a\x9a\xab\xd2\x14X:\xc5;\xdb+\x9a Ql\xaa!\b\x10\r84a"
       ":\x1f\xbcY!\xa2\xe8*\xe7\x19\xa7\xacLLz\n"
-      "\xf3R\xa6\xe6\x8ft/\x80\x1a\xb7S\xc9\xc3l\xc6\x8bNS\xa6\xa0\\{\x13\xe3(\xd7\x35" + (std::string)
+      "\xf3R\xa6\xe6\x8ft/\x80\x1a\xb7S\xc9\xc3l\xc6\x8bNS\xa6\xa0\\{\x13\xe3(\xd7\x35"
       "\x8e\x64\x87O\x99\x1c\x85\xe6\xe6\xa4j\xe\x83TG\xd2\xa4\x18\x19\x19\3\x34\xa1"
       "9\1\6\6\x94Y\xaa\xeb\xf7\xa3\x17\x9a\xd1\xa0zo\\\x86\x1e\xe9\x65\xa6\x11N\xfd"
       "f4=\x8d\xdb\xf\xaf\xf5%\xe0*G_\3\x8c:C*\xc1\xa8\n"
@@ -79545,8 +79565,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8d\x80^&\xbe\xef\"\xc4\x94\xa3L;\xe0Iq\5\x32\x16g\xb7&n\xe\xbd\xb3_\xd8\xf"
       "\1o\xf8\xf3\x61\xcd\x66'Y7\x15\x8c\n"
       "`\x14",
-      22392 } },
-    { "/fonts/opensans-lightitalic-webfont.svg", {
+      22392 ) },
+    { "/fonts/opensans-lightitalic-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -80345,7 +80365,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "5 77.5t157 228t58.5 330.5q0 154 -73 237t-210 83q-124 0 -223 -78.5 t-158 -225"
       "t-59 -310.5zM427 1241v29q68 56 157.5 148.5t127.5 150.5h64q23 -64 72.5 -152.5"
       "t92.5 -146.5v-29h-49q-70 60 -161 207q-55 -57 -125 -114.5t-125 -92.5h-54z\" /"
-      ">\n" + (std::string)
+      ">\n"
       "<glyph unicode=\"&#xf5;\" horiz-adv-x=\"1124\" d=\"M98 403q0 191 73 358t197 "
       "257t281 90q180 0 278.5 -108.5t98.5 -299.5q0 -197 -71.5 -368.5t-195.5 -261.5t"
       "-286 -90q-184 0 -279.5 109.5t-95.5 313.5zM201 408q0 -342 282 -342q127 0 225."
@@ -80496,8 +80516,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "085z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      60923 } },
-    { "/fonts/opensans-lightitalic-webfont.ttf", {
+      60923 ) },
+    { "/fonts/opensans-lightitalic-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb_y]\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4\0\0"
       "\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/2\xa0"
       "o\x95\xea\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \n"
@@ -81296,7 +81316,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x15\a\r+\xb2\6\t\f333\xb1\4\5\xe9\xb1\3\xf\x32\x32\1\xb0\x17/\xb0\a\xd6\xb1"
       "\b\x10\xe9\xb0\b\x10\xb1\x15\1+\xb1\x14\v\xe9\xb1\x18\1+\xb0\x36\x1a\xba\xc2"
       "\x14\xef\xd3\0\x15+\n"
-      "\xb0\a\x10\xb0\6\xc0\xb0\b\x10\xb0\t\xc0\xba>\x8f\xf2\x80\0\x15+\n" + (std::string)
+      "\xb0\a\x10\xb0\6\xc0\xb0\b\x10\xb0\t\xc0\xba>\x8f\xf2\x80\0\x15+\n"
       "\xb0\x15\x10\xb0\3\xc0\xb0\x14\x10\xb0\xf\xc0\xb0\x15\x10\xb3\2\x15\3\x13+\xb0"
       "\x14\x10\xb3\x10\x14\xf\x13+\xb3\x13\x14\xf\x13+\xb0\x15\x10\xb3\x16\x15\3\x13"
       "+\3\xb7\2\3\6\t\xf\x10\x13\x16........\xb0@\x1a\0\x30\x31\x13\x37!7!7!\3\x33"
@@ -82096,7 +82116,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x19\x1a\"$\x17\x39\xb0\x11\x12\xb1\x13\x14\x39\x39\xb0\xf\x11\xb0\x1d\x39\0"
       "\xb1\3\n"
       "\x11\x12\xb2\0\x13\x14\x39\x39\x39\x30\x31\x37\x34\x37\x13\x33\3\6\x15\x14\x16"
-      "32>\1\x37\x13\x33\3#7#\6#\"&\1\x35>\1\x37\x33\x15\xe\1\am\x16\x96\x64\x98\x16" + (std::string)
+      "32>\1\x37\x13\x33\3#7#\6#\"&\1\x35>\1\x37\x33\x15\xe\1\am\x16\x96\x64\x98\x16"
       "_[n\xc3\x85!ib\xe7P\x1c\6\xa7\xec\x83\x87\2\6\x42\xa9-\x89\x33\xd5V\xe3<n\2\xb2"
       "\xfd\x46j4JW\x83\xf3\x9e\1\xe5\xfb\xc1\xcd\xdd|\4m\x15\x33\xb6J\x17\x42\xb9\x36"
       "\0\2\0m\xff\xf0\4+\6!\0\x18\0(\0{\0\xb2\x12\0\0+\xb2\x16\0\0+\xb1\n"
@@ -82460,8 +82480,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\2+\xb1\3\x46v+D\xb0\x10 E\xb2\xf*\2+\xb1\3\x46v+D\xb0\x11 E\xb2\x10(\2+\xb1"
       "\3\x46v+D\xb0\x12 E\xb2\x11^\2+\xb1\3\x46v+D\xb0\x13 E\xb2\x12-\2+\xb1\3\x46"
       "v+D\xb0\x14 E\xb2\x13-\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\0\1P\x98\xdd\4\0\0",
-      49560 } },
-    { "/fonts/opensans-lightitalic-webfont.woff", {
+      49560 ) },
+    { "/fonts/opensans-lightitalic-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\x66\xa0\0\x13\0\0\0\0\xc1\x98\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62_y]GDEF\0\0\1\xc4"
       "\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0\0\2\4"
@@ -83260,7 +83280,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "s=$;\xb6\xe3:(\xba\x9cY\xf9\x85\xff\x61\xc7\xd9x\x86\xf6\x32\xadg\x8f\xa9\xa0"
       "\xb7\xb3\xe\xb4\xfc\xf9x<\x8a\xcd\xff\xa0:\xff\x12|\x9a\xe3\xe5\xe7_\x9a\xac"
       "\xabn\x17\xb5\xab\xee+\xb4\xab\xae?\xb7\4\xb9\xae\xc3\xadx\xff\xc9\x64\x13 \xeb"
-      "\xe5\x1a\xed\x92(^\xedl\xbe\xe4\xdd\x38Xe\xf3]\xaf\xce\xb7\xeb\x95\xe7[\x91l" + (std::string)
+      "\xe5\x1a\xed\x92(^\xedl\xbe\xe4\xdd\x38Xe\xf3]\xaf\xce\xb7\xeb\x95\xe7[\x91l"
       "\xbe\x95m\xe7[P\xa6\xce\xb7\xf4?dn;\xa0y\x99Y/h\x8b\x32;\x9fz\xbb\xc4\a\xb5\xb1"
       "\xc2\x66\xc0\x38\x8c\xdf\xdd\xb8\xcd\t\x14\xc8\x43lS\x1ej(f\xd8&T\x99\x9c&U\x89"
       "4\xc1\xe\x8f\5\0o\n"
@@ -83495,8 +83515,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "G\xe9m5\xc6\x80?\xf9\x81Q\xa0\xdf\x84H\x83\xca\x96\3oO`\4\x86\x33\xc3\x18\x8c"
       "V\x86\t\x18K\xc3\x14L\xe6\x86\x19\x98\xfe\xb7\x39\x98\x1d\r\v0_\x18\x96`a\xa8"
       "\xa8\x94\x1f\b\xb7Q\xa9\0\0\1P\x98\xdd\4\0\0",
-      26272 } },
-    { "/fonts/opensans-regular-webfont.eot", {
+      26272 ) },
+    { "/fonts/opensans-regular-webfont.eot", std::string(
       "\xa6M\0\0\xd4L\0\0\2\0\2\0\4\0\0\0\2\v\6\6\3\5\4\2\2\4\1\0\x90\1\0\0\4\0LP\xef"
       "\2\0\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0n\6!\xaa\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\x12\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0\0\0\xe\0R\0\x65\0g\0u\0l"
@@ -84293,8 +84313,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "o\xa6\x35\xb6\xc1k\6[\2\x37\x31\x66\xcc\xdb\x42\xb6\xed|v\xecU\6\x8c\xf1\2\n"
       "JK\x8d\x45\xdb\xec\x37\xed\0\xd1\x1a\x45'a\x15\0\x8e[S\x80\xc1):\xd7\xa0\xaa"
       "\r\x96\xf4\x8b\xd8\2P\0",
-      19878 } },
-    { "/fonts/opensans-regular-webfont.svg", {
+      19878 ) },
+    { "/fonts/opensans-regular-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -85093,7 +85113,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "5 -74.5t-64.5 -24.5t-63.5 24.5t-26.5 74.5z\" />\n"
       "<glyph unicode=\"&#xfd;\" horiz-adv-x=\"1032\" d=\"M2 1096h178l240 -625q79 -"
       "214 98 -309h8q13 51 54.5 174.5t271.5 759.5h178l-471 -1248q-70 -185 -163.5 -2"
-      "62.5t-229.5 -77.5q-76 0 -150 17v133q55 -12 123 -12q171 0 244 192l61 156zM411" + (std::string)
+      "62.5t-229.5 -77.5q-76 0 -150 17v133q55 -12 123 -12q171 0 244 192l61 156zM411"
       " 1241v25q48 62 103.5 150t87.5 153h202v-21q-44 -65 -131 -160t-151 -147h-111 z"
       "\" />\n"
       "<glyph unicode=\"&#xfe;\" horiz-adv-x=\"1255\" d=\"M176 -492v2048h166v-466q0"
@@ -85194,8 +85214,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "095z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      57431 } },
-    { "/fonts/opensans-regular-webfont.ttf", {
+      57431 ) },
+    { "/fonts/opensans-regular-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb1a\xe7\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4"
       "\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/"
       "2\xa0\xe5\x99\x86\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \x13"
@@ -85994,7 +86014,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "+\xb3@\b\r\t+\xb3@\b\n"
       "\t+\xb0\5\x32\1\xb0\x10/\xb0\n"
       "\xd6\xb1\t\x10\xe9\xb0\t\x10\xb4\0\xf\0\a\4+\xb0\0/\xb0\t\x10\xb1\6\1+\xb1\5"
-      "\x10\xe9\xb1\x11\1+\0\x30\x31\x13\x10\x36\x33!\x11#\x11#\x11#\x11\6#\"&q\xda" + (std::string)
+      "\x10\xe9\xb1\x11\1+\0\x30\x31\x13\x10\x36\x33!\x11#\x11#\x11#\x11\6#\"&q\xda"
       "\xe8\2-r\xd5s>T\xd8\xcb\4\x12\1\4\xfe\xf8\xe8\6\xb0\xf9P\3\x33\x12\xfa\0\0\1"
       "\0\x98\2L\1\x89\3Z\0\v\0.\0\xb0\t/\xb4\3\4\0\x10\4+\xb4\3\4\0\x10\4+\1\xb0\f"
       "/\xb0\0\xd6\xb4\6\xf\0\x11\4+\xb4\6\xf\0\x11\4+\xb1\r\1+\0\x30\x31\x13\x34\x36"
@@ -86794,7 +86814,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "9f9\x9e\x39\xee:\\:\xe0;F;\xa6<\x16<\xa0=$=j=\xde>B>\xa2?\x12?\x94?\xe0@F@\xba"
       "A2A\xce\x42\x30\x42\x62\x42\xa8\x42\xa8\x42\xa8\x42\xa8\x42\xa8\x42\xa8\x42\xa8"
       "B\xa8\x42\xa8\x42\xa8\x42\xa8\x42\xa8\x42\xb6\x42\xc4\x42\xd2\x42\xea\x43\2\x43"
-      "*CRCzC\xbe\x44\4\x44HDvD\xd2\x44\xd2\x44\xf8\x45\x1e\x45\x1e\x45\x9c\x46\0\x46" + (std::string)
+      "*CRCzC\xbe\x44\4\x44HDvD\xd2\x44\xd2\x44\xf8\x45\x1e\x45\x1e\x45\x9c\x46\0\x46"
       "\fF\x90\x46\xfaG\xc0Hh\0\0\0\1\0\0\0\xea\0\x42\0\5\0\0\0\0\0\2\0\1\0\2\0\x16"
       "\0\0\1\0\1Q\0\0\0\0\0\0\0\xf\0\xba\0\3\0\1\4\t\0\0\0r\0\0\0\3\0\1\4\t\0\1\0\x12"
       "\0r\0\3\0\1\4\t\0\2\0\xe\0\x84\0\3\0\1\4\t\0\3\0<\0\x92\0\3\0\1\4\t\0\4\0\"\0"
@@ -86859,8 +86879,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x16\x9d\2+\xb1\3\x46v+D\xb0\x18 E\xb2\x17#\2+\xb1\3\x46v+D\xb0\x19 E\xb2\x18"
       "\x94\2+\xb1\3\x46v+D\xb0\x1a E\xb2\x19\x12\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\1"
       "P\x98\xdd\f\0\0",
-      42600 } },
-    { "/fonts/opensans-regular-webfont.woff", {
+      42600 ) },
+    { "/fonts/opensans-regular-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0[\xe4\0\x13\0\0\0\0\xa6h\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62\x31\x61\xe7GDEF\0\0"
       "\1\xc4\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0"
@@ -87659,7 +87679,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "#\x17\xbd\xb5G\x9e=\x13\x85i1\xf1\x84\xf9\x1f\xbe\x1b\x45\x80\x86\xf4;_\x9b\x39"
       "+\x99\xe1*\xa3\xb8\xf1\xf4O\xe8\xef\r\x17\xf1{\x83\xf6{?w\x84\f\xa2\xf7\xe9\b"
       "+]\xecI\x83z\xb7w\xa3\x12\xb5\xb2\xd3\x81S\xca\x98\5.};U\xbd!\xe4\xf7N\xee\xb9"
-      "p`\xd9~\xee\xa3q\xc4\2,\xad\xc0\xdb\xe2|\xca\r\xaa\x33\xe7\x63\x1b%^=\x1f\x9f" + (std::string)
+      "p`\xd9~\xee\xa3q\xc4\2,\xad\xc0\xdb\xe2|\xca\r\xaa\x33\xe7\x63\x1b%^=\x1f\x9f"
       "iIP\xef\xce\xea\x1fRLo\xc9\n"
       "'(\xf8\xd8Ko\x1d\xff\xff\xfc^\xf4,\xc2\xc7&)|v\x9c\xdb\xcc)\xc5]*\xd2\xa2-\xaa"
       "\xe\x38G\xbcq\xff`\xa3\xacM\x1dp\xae\x92\0\xe3\xdb<Mh\x99\xb3\xc9Q\xd6\xc3\x15"
@@ -87799,8 +87819,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x99\1\xe8\xff\xa7\xda`0ev\xc0\xf6\x84\xd9\5;wf\bv\x13\x66\4\x86Wf\xf\x8c\xbc"
       "\x1fs\n"
       "\xe4\x1b\xdf\x62h9\0\1P\x98\xdd\f\0\0",
-      23524 } },
-    { "/fonts/opensans-semibold-webfont.eot", {
+      23524 ) },
+    { "/fonts/opensans-semibold-webfont.eot", std::string(
       "oN\0\0yM\0\0\2\0\2\0\4\0\0\0\2\v\a\6\3\b\4\2\2\4\1\0X\2\0\0\4\0LP\xef\2\0\xe0"
       "[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0 eD}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "$\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0S\0\x65\0m\0i\0\x62\0o\0l\0\x64\0\0\0"
@@ -88589,8 +88609,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xf9\xd8y[\6v\xd4_((\xbat\x8d\1\xe\x8a\xda<\x8f\xa5\xe7}N\x15\x30\xf9Z\x7fu\xf0"
       "HW\x85\xc6\xd2\xca\x45\x80~\xbd\xd2\3\"M\x96\xba\2Sf\xd0\\\x9f\x17\x63\x14\x9d"
       "\x10*\x1b\x66\xd4\xf3",
-      20079 } },
-    { "/fonts/opensans-semibold-webfont.svg", {
+      20079 ) },
+    { "/fonts/opensans-semibold-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -89389,7 +89409,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "156t95.5 147h273v-21q-52 -61 -155.5 -157.5t-174.5 -149.5h-156z\" />\n"
       "<glyph unicode=\"&#xfe;\" horiz-adv-x=\"1276\" d=\"M168 -492v2048h235v-430l-"
       "7 -138l-3 -27h10q61 86 142.5 125.5t187.5 39.5q206 0 322 -151t116 -420q0 -272"
-      " -116.5 -423.5t-321.5 -151.5q-219 0 -330 149h-14l8 -72l6 -92v-457h-235zM403 " + (std::string)
+      " -116.5 -423.5t-321.5 -151.5q-219 0 -330 149h-14l8 -72l6 -92v-457h-235zM403 "
       "555q0 -202 64 -292.5t209 -90.5q254 0 254 385q0 190 -61.5 283.5t-194.5 93.5 q"
       "-142 0 -206.5 -82t-64.5 -260v-37z\" />\n"
       "<glyph unicode=\"&#xff;\" horiz-adv-x=\"1098\" d=\"M0 1106h256l225 -627q51 -"
@@ -89483,8 +89503,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "105z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      56633 } },
-    { "/fonts/opensans-semibold-webfont.ttf", {
+      56633 ) },
+    { "/fonts/opensans-semibold-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMbI\x1a\xe0\0\0\1<\0\0\0\x1cGDEF\1\x17\0"
       "\4\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xO"
       "S/2\xa1\xcc\x92\x8e\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt"
@@ -90283,7 +90303,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "STZ\x1c\xb2$\xfe\xc0\0\0\1\0q\xfe\xfc\4w\6\x14\0\xf\0L\0\xb0\b/\xb1\3\5\xe9\xb2"
       "\b\3\n"
       "+\xb3@\b\r\t+\xb3@\b\n"
-      "\t+\xb0\5\x32\1\xb0\x10/\xb0\n" + (std::string)
+      "\t+\xb0\5\x32\1\xb0\x10/\xb0\n"
       "\xd6\xb4\t\xf\0\xe\4+\xb0\t\x10\xb4\0\x11\0\a\4+\xb0\0/\xb0\t\x10\xb1\6\1+\xb4"
       "\5\xf\0\xe\4+\xb1\x11\1+\0\x30\x31\x13\x10\x36\x33!\x11#\x11#\x11#\x11\6#\"&"
       "q\xda\xe8\2\x44\x89\xbf\x89>T\xd8\xcb\4\x12\1\4\xfe\xf8\xe8\6\x7f\xf9\x81\3\x33"
@@ -91083,7 +91103,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x1d\x84\x1d\xe6\x1e\f\x1e\xaa\x1e\xe8\x1f\x84\x1f\xfc   J h!\x16!.!z!\xca\""
       "\x1a\"\x80\"\xaa#\0#D#r#\xb4#\xde$($N$\xd4%^&\"&\x9a&\xe2'*'v'\xf2(h(\xea)>)"
       "\xc2*\x12*^*\xb4+*+Z+\x8a+\xbe,\x18,z-\6-j-\xd0.8.\xc8/N/p/\xe8\x30:0\x8a\x30"
-      "\xe6\x31V1\x98\x31\xe2\x32p2\xf6\x33~4\f4\xbc\x35j6 6\xca\x37H7\xc0\x38\x36\x38" + (std::string)
+      "\xe6\x31V1\x98\x31\xe2\x32p2\xf6\x33~4\f4\xbc\x35j6 6\xca\x37H7\xc0\x38\x36\x38"
       "\xb6\x39H9x9\xa8\x39\xdc:6:\xa8;$;\x86;\xe8<T<\xdc=`=\xa4>\x18>v>\xd4?:?\xba"
       "@\6@p@\xe8\x41^A\xec\x42ZB\x84\x42\xce\x42\xce\x42\xce\x42\xce\x42\xce\x42\xce"
       "B\xce\x42\xce\x42\xce\x42\xce\x42\xce\x42\xce\x42\xdc\x42\xea\x42\xf8\x43\x10"
@@ -91150,8 +91170,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe E\xb2\r\xf\2+\xb0\3+D\1\xb0\xf E\xb0\3+D\xb0\x10 E\xba\0\xf\x7f\xff\0\2+"
       "\xb1\3\x46v+D\xb0\x11 E\xba\0\x10\1\x1b\0\2+\xb1\3\x46v+DY\xb0\x14+\0\0\0\1P"
       "\x98\xdd\x14\0\0",
-      42648 } },
-    { "/fonts/opensans-semibold-webfont.woff", {
+      42648 ) },
+    { "/fonts/opensans-semibold-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\\\x9c\0\x13\0\0\0\0\xa6\x98\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62I\x1a\xe0GDEF\0\0"
       "\1\xc4\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0"
@@ -91950,7 +91970,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "7\xb4\xaf\x96\xc0\x9e\xe7\x82\x38\xce\xd2\xa4\x85u!\xadt\xa2\xd9\xa1\xc7G]\xe2"
       "\xf8G\xec!F]K?\x80\3\x41\xfdq\x83\t\xdb\n"
       "\xe0\x10\xd3\xb2\x31\x91MHA8\xe7\x12\6\xdd\xbb\xac\xb2\xe8N\xea\x33\x35\x17\xbb"
-      "\xba\xaa-\xcfT_\xf0\xeb;\xcb\x38\x61>\xe7\xfsG\xa9\x8f\x13R\x9fq\x8e}\xe2\xb4" + (std::string)
+      "\xba\xaa-\xcfT_\xf0\xeb;\xcb\x38\x61>\xe7\xfsG\xa9\x8f\x13R\x9fq\x8e}\xe2\xb4"
       "m_{\xa6\t\xa7\x44\f\xe8\x44\xb4\x8c\xdd\xfa<\xcbPe\xc7U\xe0\x9a\xc7\xf9\x8f\x38"
       "\x19\xfc\v\xac\xea\x10\xddQ\x89\x33\xe0\3w\x9b\x8d\x9c\x1b\xe8\xb7\x1bpZ\xa6"
       "Z\xcc\x91\xf2*\xfe\3\x1c\x10\xb3\x32\xf8\n"
@@ -92095,8 +92115,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "!\xac\x18\x31!2\x8c\xc4\xd4/\x11\xc3J\xb0S*\x93%##\xa4%cJ\xc8\xf4\x17\x80\x9a"
       "_\xcb\xc7\xbd>\xf\xb4\xef\x65s\xa2\x64\x36&9,\xfe\x89\xc3\xc2\xbe\1\xa0\xb4\x42"
       "i\0\0\0\0\1P\x98\xdd\x14\0\0",
-      23708 } },
-    { "/fonts/opensans-semibolditalic-webfont.eot", {
+      23708 ) },
+    { "/fonts/opensans-semibolditalic-webfont.eot", std::string(
       "\x19W\0\0'V\0\0\2\0\2\0\4\0\0\0\2\v\a\6\3\b\4\2\2\4\1\1X\2\0\0\4\0LP\xef\2\0"
       "\xe0[ \0@(\0\0\0\0\0\0\0\x9f\1\0 \0\0\0\0\xd9\xb4\tY\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0$\0O\0p\0\x65\0n\0 \0S\0\x61\0n\0s\0 \0S\0\x65\0m\0i\0\x62\0o\0l"
@@ -92895,7 +92915,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "!\b\5\x80\xf8\x43\xd4Z\4\xb2_\x81W\t\x19\x15\xd0\x81\xae!\xe8\xc7\xc9\2M\xe6"
       "?\xbc\x80&4\x84\xba`\x86\x16\x30\xe6\n"
       "\xbcR\5\xf3\0\x98\"\x1e\xeb\x83\n"
-      "\x12`\1`\xb2k\xd1;\xec\xb4\xe3\xe9\5\xb6\xf1\1Y\5\f\xf6\xfa\x66\xc0M\x15\xc0" + (std::string)
+      "\x12`\1`\xb2k\xd1;\xec\xb4\xe3\xe9\5\xb6\xf1\1Y\5\f\xf6\xfa\x66\xc0M\x15\xc0"
       "W\xe3\x90Vf\xdf\xf9{\6\x45\xea\x9a\x43\xf5\xdcWE\x1f\xd0?)\x99\xa9\xe9Zb\0\\"
       "XL\xee\xfc%X\xfd\xc3\x8c\x8f\x85|V\xc9\xc0\x31\xe7'\x18Xt\xc3!\xe1 \xa0\xfer"
       "\b8g\xb8\x99r|\x86\x18\xfd\x97h\xdb,\x1c\xb2\x12\x35\xemk\x84\xe6\x85\x9e\xcb"
@@ -92989,8 +93009,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\4\x98\x1a\xf1\xf\x31\x61\f\xdd\x39\xfe%\xaf\xf0\xa5\xa9\xc8\xc2x\xc3@q\x94\xbf"
       "\x88\0\xaa\f\x8b\n"
       "J\xf4\xd3\x46\xa9t\xe8\x80",
-      22297 } },
-    { "/fonts/opensans-semibolditalic-webfont.svg", {
+      22297 ) },
+    { "/fonts/opensans-semibolditalic-webfont.svg", std::string(
       "<?xml version=\"1.0\" standalone=\"no\"?>\n"
       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphic"
       "s/SVG/1.1/DTD/svg11.dtd\" >\n"
@@ -93789,7 +93809,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "<glyph unicode=\"&#xf5;\" horiz-adv-x=\"1174\" d=\"M94 408q0 199 71.5 365t20"
       "0.5 258.5t298 92.5q195 0 305 -116t110 -316q0 -202 -73 -367.5t-200.5 -254t-29"
       "3.5 -88.5q-192 0 -305 114.5t-113 311.5zM328 1239q57 285 256 285q46 0 85 -17."
-      "5t72.5 -38t63.5 -38t59 -17.5q40 0 65 26.5t48 86.5h137q-66 -285 -260 -285 q-4" + (std::string)
+      "5t72.5 -38t63.5 -38t59 -17.5q40 0 65 26.5t48 86.5h137q-66 -285 -260 -285 q-4"
       "5 0 -82.5 17t-71.5 37.5t-65.5 37.5t-63.5 17q-38 0 -63 -27.5t-43 -83.5h-137zM"
       "332 403q0 -111 49.5 -170t146.5 -59q90 0 162 68t112 190.5t40 269.5q0 107 -49 "
       "167.5t-140 60.5q-93 0 -166.5 -71.5t-114 -194t-40.5 -261.5z\" />\n"
@@ -93939,8 +93959,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "105z\" />\n"
       "</font>\n"
       "</defs></svg> ",
-      61071 } },
-    { "/fonts/opensans-semibolditalic-webfont.ttf", {
+      61071 ) },
+    { "/fonts/opensans-semibolditalic-webfont.ttf", std::string(
       "\0\1\0\0\0\x13\1\0\0\4\0\x30\x46\x46TMb_x\xfb\0\0\1<\0\0\0\x1cGDEF\1\x17\0\4"
       "\0\0\1X\0\0\0 GPOSl\x91t\x8f\0\0\1x\0\0\0 GSUBy\xb3z\xd6\0\0\1\x98\0\0\0xOS/"
       "2\xa1\xd3\x92R\0\0\2\x10\0\0\0`cmap\x9f\xd0\x42*\0\0\2p\0\0\1\xe2\x63vt \x12"
@@ -94739,7 +94759,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\5\x11\x12\xb0\t901?\1!7!73\3\x33\x13\1\x33\1\x33\a!\a!\a!\a#7j!\1\x11\x1e\xfe"
       "\xf0#\xd3\xc7\xe8\x91\1\xb0\xf8\xfd\xfa\xd9#\xfe\xee\x1f\1\x12!\xfe\xf0\x35\xdd"
       "3\xf4\x9b\x94\x9b\2\xf8\xfd\x63\2\x9d\xfd\b\x9b\x94\x9b\xf4\xf4\0\0\0\2\1\xf2"
-      "\xfe\x1f\2\xa4\6\x10\0\3\0\a\0#\0\1\xb0\b/\xb0\3\xd6\xb0\4\x32\xb4\2\a\0\x16" + (std::string)
+      "\xfe\x1f\2\xa4\6\x10\0\3\0\a\0#\0\1\xb0\b/\xb0\3\xd6\xb0\4\x32\xb4\2\a\0\x16"
       "\4+\xb0\6\x32\xb4\2\a\0\x16\4+\xb1\t\1+\0\x30\x31\1\x33\x11#\x19\1\x33\x11\1"
       "\xf2\xb2\xb2\xb2\1;\xfc\xe4\4\xd7\3\x1a\xfc\xe6\0\0\0\2\0'\xff\xf2\3\xf4\6#\0"
       ",\0\x38\0\x8c\0\xb2+\0\0+\xb1\3\4\xe9\xb0\x1a/\xb1\x14\4\xe9\1\xb0\x39/\xb0\f"
@@ -95539,7 +95559,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\a\xe9\xb1\"\1+\xb1\b\a\x11\x12\xb0\6\x39\0\xb1\2\x15\x11\x12\xb0\x17\x39\xb0"
       "\a\x11\xb1\0\f9901\3\x16\x33\x32\x36?\1\3\x33\x13\x1e\1\x15\x33\x36\x37\1\x33"
       "\1\xe\1#\"'\1\x35\x36\x37!\x15\xe\1\a\xaaK2Jx@3\xa4\xe8?\t\xe\6V1\1%\xfe\xfd"
-      "PZ\xd4\x8fLC\2\x9f\x61\x80\1\b6\xd0G\xfe\xe3\x10Wp\\\4\\\xfd\xed>\xe1\x45\xd7" + (std::string)
+      "PZ\xd4\x8fLC\2\x9f\x61\x80\1\b6\xd0G\xfe\xe3\x10Wp\\\4\\\xfd\xed>\xe1\x45\xd7"
       "b\2>\xfb\0\xa5\x99\x13\6\xb2\x19l\xc3\x13\x42\xbf\x34\0\2\xff\xc9\xfe\x14\4P"
       "\6\x14\0\x16\0$\0\xc8\0\xb2\xf\0\0+\xb1\x1a\5\xe9\xb2\b\1\0+\xb1!\5\xe9\xb0\0"
       "/\xb0\x16\x33\xb0\1/\xb0\2\x33\1\xb0%/\xb0\0\xd6\xb1\x16\a\xe9\xb0\x16\x10\xb1"
@@ -95844,8 +95864,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x13\0\2+\xb0\3+D\xb0\5 E\xb2\6U\2+\xb0\3+D\xb0\4 E\xb2\5-\2+\xb0\3+D\1\xb0\a"
       " E\xb0\3+D\xb0\b E\xba\0\a\x7f\xff\0\2+\xb1\3\x46v+D\xb0\t E\xb2\bt\2+\xb1\3"
       "Fv+DY\xb0\x14+\0\0\1P\x98\xdd\x16\0\0",
-      49344 } },
-    { "/fonts/opensans-semibolditalic-webfont.woff", {
+      49344 ) },
+    { "/fonts/opensans-semibolditalic-webfont.woff", std::string(
       "wOFF\0\1\0\0\0\0\x65\xe0\0\x13\0\0\0\0\xc0\xc0\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\0\x46\x46TM\0\0\1\xa8\0\0\0\x1c\0\0\0\x1c\x62_x\xfbGDEF\0\0"
       "\1\xc4\0\0\0\x1e\0\0\0 \1\x17\0\4GPOS\0\0\1\xe4\0\0\0 \0\0\0 l\x91t\x8fGSUB\0"
@@ -96644,7 +96664,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "5)\xeaP\xc6x\x96j\xc1\x37h\x81\x8b|\x97\xd5\xc8\x39\x92h\xee\x1c\x30\xac\xd3"
       "\0\xc8\x95\xc0Nph\x86u\xda\xbc\xe\x9e\xd5\xb4\xe\xde\4\xd8\xb4\xb1\6\xcdK\xe9"
       "\x8a\xbc;\x9e\x95\xce\x1e\"\xba\xe9=l\xad#\xb6i#\xaa\xba\x86\xb9*\x14h\xe3\xb8"
-      "\xee\xdf\x1a\a/4\xa9\xc7#\xc4\xaa\xbe(q\4\x39\xfa>6\x18\x42\x93\xbdll\f\x16:" + (std::string)
+      "\xee\xdf\x1a\a/4\xa9\xc7#\xc4\xaa\xbe(q\4\x39\xfa>6\x18\x42\x93\xbdll\f\x16:"
       "\6\xa9I\x7f\2i\xb1\x1e\x9f\xd5\xb4\x1e\x7f\x19/`\fR-\xe3\x86^\x8b\xa7\xdc\xc8"
       "\\'8\xa0O3\x96\x82\x36\xa8\xccP\2\x46\x83st\1\x64\xfd\xf2Z<\xf9Q\xb5\xf8\xac"
       "\x1f_\x8b\xcf\xa4\x42\x1fq+\xb2\x89\x63_}\xb9\xfcQ\xd8\xda\x16\xb6\xef\xe3\xbe"
@@ -96872,8 +96892,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x17\3\x33\xa3\x30\3\x93\x36\x98\xcf\xaa\xe0\xba\x89-\x14\xca\x61\1rXu!\x1c\xc6"
       "\r\xecP-\x1c -\xec\xf5\xff\x81Z62\xbb\x95\1\x45\x38\x81\xea\x38J`\xdc\xc8\r\""
       "\xda\0q\x8b(\xe\0\0\0\0\1P\x98\xdd\x16\0\0",
-      26080 } },
-    { "/fonts/stylesheet.css", {
+      26080 ) },
+    { "/fonts/stylesheet.css", std::string(
       "/* Generated by Font Squirrel (http://www.fontsquirrel.com) on November 6, 2"
       "012 */\n"
       "\n"
@@ -97048,8 +97068,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  -webkit-font-smoothing: antialiased;\n"
       "  -moz-osx-font-smoothing: grayscale;\n"
       "}",
-      5618 } },
-    { "/images/ajax-loader.gif", {
+      5618 ) },
+    { "/images/ajax-loader.gif", std::string(
       "GIF89a\x10\0\x10\0\xf2\0\0\xff\xff\xff\0\0\0\xc2\xc2\xc2\x42\x42\x42\0\0\0\x62"
       "bb\x82\x82\x82\x92\x92\x92!\xff\vNETSCAPE2.0\3\1\0\0\0!\xfe\x1a\x43reated wi"
       "th ajaxload.info\0!\xf9\4\t\n"
@@ -97078,8 +97098,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\0\0\0,\0\0\0\0\x10\0\x10\0\0\3\x32\b\xba\xdc\xfe\x30\xcaI\xab\x65\x42\xd4\x9c"
       ")\xd7\x1e\b\b\xc3 \x8e\xc7q\xe\4\x31\x30\xa9\xca\xb0\xaeP\x18\xc2\x61\x18\aV"
       "\xda\xa5\2 ub\x18\x82\x9e[\x11\x90\0\0;\0\0\0\0\0\0\0\0\0",
-      673 } },
-    { "/images/arrow_down.png", {
+      673 ) },
+    { "/images/arrow_down.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\n"
@@ -97102,8 +97122,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "o\x80\xb8\5\xc6\x81+\4\xea\x44\x91\0i\4\x8a}\xc0P\b\xb3\n"
       "\x88\x41Va8\x85\x11=x\x80!\x10\b\xa4\xbe\3M\xdb\x81W!.\xc0\xc4@$\0\b0\0S\x8c"
       "#R\x92\xd3\x18\a\0\0\0\0IEND\xae\x42`\x82",
-      1029 } },
-    { "/images/arrow_right.png", {
+      1029 ) },
+    { "/images/arrow_right.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\n"
@@ -97127,8 +97147,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x82\xdc\x33\v\xe4>\xa0\x82\x37\xe8\xba\x61\n"
       "w\0q1P\xc1\x35\\\xee`$6\xc0\1\2\f\0\x39\xc1*\x81\x9e\x15g\x86\0\0\0\0IEND\xae"
       "B`\x82",
-      1033 } },
-    { "/images/bar-line-graph-icon.png", {
+      1033 ) },
+    { "/images/bar-line-graph-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97153,8 +97173,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xbb\"K\x80\\p\xeH\xfb\1\xf1\x13\x62l\4\xe9\x41w\x81-\x10\x7f%\xd6\x46t\xc0\x88"
       "#)\xe3\xb4\x11\x9b\vH\xb2\x11\x97\v\x88\xb6\x11\x9dOIfB\xf1\2\xba\xb3\x89\xe6"
       "\3\4\x18\0\xe1\x88\x34\x96\xcd_8\xae\0\0\0\0IEND\xae\x42`\x82",
-      1126 } },
-    { "/images/bars-icon.png", {
+      1126 ) },
+    { "/images/bars-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\r\b\6\0\0\0Oy\x85\x1a\0\0\0\x19tEXtSoftware\0\x41"
@@ -97174,8 +97194,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\b\x18I5\4\xc3%@?\xfe\xa7\xd8\x10r\0\xd5\xc2\x84\xa8\xa8\xc4\x17VD\xbb\4_X\r"
       "\x9e\x30\xa1Z\xc0\x32\xe2\xf0/\xd1\xe2\0\1\6\0!\xe1\xe\xdb^\xea\n"
       "2\0\0\0\0IEND\xae\x42`\x82",
-      987 } },
-    { "/images/bars-icon_server-assignments.png", {
+      987 ) },
+    { "/images/bars-icon_server-assignments.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\xe\b\6\0\0\0\xc9\xed\xf7\xb4\0\0\0\x19tEXtSoftw"
@@ -97195,8 +97215,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x86\x30\xb0\xa0;\xf\b\x18I5\4\xc3%@?\xfe\xa7\xd8\x10r\0\xd5\xc2\x84\xa8\xa8"
       "\xc4\x17VD\xbb\4_X\r\x9e\x30\xa1Z\xc0\x32\xe2\xf0/\xd1\xe2\x8c\x64\x64@\xf4\0"
       "g\0\b0\0\x93\xdf\x12\xab\x62\x44\x92\xa2\0\0\0\0IEND\xae\x42`\x82",
-      994 } },
-    { "/images/bars-icon_white.png", {
+      994 ) },
+    { "/images/bars-icon_white.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\r\b\6\0\0\0\xa0\xbb\xee$\0\0\0\x19tEXtSoftware\0"
@@ -97215,8 +97235,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "b\xfc\xff\xff?\3)\x80\x91\x91\xd1\x18\x85O\xaa\1@\x80\xa2\x81\x89\x81\x42\xc0"
       "\b\xc4(N\2\xba\xe8,).\0y\xe1?\x16\x43\xe9\xe7\5\x8a\r`!6\xbap\x85\r\xbe\x30 "
       "J|\xe0\xc3`\xe0\r\0\b0\0\x97\xd7\x1b;g\xbaN\xe2\0\0\0\0IEND\xae\x42`\x82",
-      982 } },
-    { "/images/body_bg_tile.png", {
+      982 ) },
+    { "/images/body_bg_tile.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x32\0\0\0\x32\b\2\0\0\0\x91]\x1f\xe6\0\0\0\x19tEXtSoftwar"
@@ -97312,8 +97332,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x9f\xbc>\x9aO\x82~\xfe#\xd9S+\xba\x84S\xb7\xc2\x99\x1b\x8f\x97\xb3\xd5wi\xdf"
       "\xfdL1\x10\xc6\xcc\xb9\xbb\x63\xce\xe7\x7f\2\f\0~\xf\xdc\xae@e`]\0\0\0\0IEND"
       "\xae\x42`\x82",
-      2836 } },
-    { "/images/book_alt_16x16.png", {
+      2836 ) },
+    { "/images/book_alt_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97321,8 +97341,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "`8\xf8Om\3\xf0\1\a4\xb5\xe7)1\0\xa4Y\0\x97\1\xe\x44\x88\xcf\xc7\xe7\5\a\"\xc5"
       "\xe7\xe3\x32@\0\xaa\x18\x19\xa3\x1b\0\x17'7\f(\x8e\x85Q\3hi\0\xc9\x99\x89\xa2"
       "\xec\f\0so\x90u`\x8dNc\0\0\0\0IEND\xae\x42`\x82",
-      169 } },
-    { "/images/clock-icon.png", {
+      169 ) },
+    { "/images/clock-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xe\0\0\0\r\b\6\0\0\0\x99\xdc_\x7f\0\0\0\x19tEXtSoftware\0"
@@ -97353,8 +97373,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x94\x87\1]\xfc\xd3\xc5\x65\xe4\xf1\x82s\r\xc9\x9f\xd3\x82\x8c\6\xab\xc3\xa9"
       "\xf1\xaf\xb6\x61\x12\xfd\xf8\xc1\xa5\xb6\xaa\x64\x16U\4\x18\0\xd8@?t\x83M\x86"
       "\f\0\0\0\0IEND\xae\x42`\x82",
-      1215 } },
-    { "/images/clock-icon_alt.png", {
+      1215 ) },
+    { "/images/clock-icon_alt.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xe\0\0\0\xe\b\6\0\0\0\x1fH-\xd1\0\0\0\x19tEXtSoftware\0\x41"
@@ -97382,8 +97402,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "%\xca\xa6\n"
       "\3X\x80\xebx\xe4Na*\xa7X/\xea\xf9]<\xab\x41\xffX\x8f\x86\xfc\x19\xce\xf5\xd7"
       "\xdf>\xff\b0\0\x89\xdcL\xff\x87\xa4\4]\0\0\0\0IEND\xae\x42`\x82",
-      1199 } },
-    { "/images/cog-icon.png", {
+      1199 ) },
+    { "/images/cog-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -97422,8 +97442,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xd6\xe7\x66\x1b\xf1M\xfd\xf7\xff\xc9q\x81\xdf\xa6&/~i\6\xf1\xa9\xebn=\x16\x8b"
       "\x8d\xeb\xc3\xe8\xa6\x90\x86\xbc\x86\xf1\xdc\x7f\1\6\0WZ\xa1\x93\xf1\x1b\xd6"
       "\x9a\0\0\0\0IEND\xae\x42`\x82",
-      1443 } },
-    { "/images/cog_16x16.png", {
+      1443 ) },
+    { "/images/cog_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97433,8 +97453,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8a\xb1\xc9\xa1\x38\xff<>\5\x38,8\xf\xf3\6\x36'\x1a`1\xc0\1\x87Z\xca\r\xa0\xd8"
       "\v\x84\2\xd1\x80P R%\x1a)NH\x14'e\x8a\x33\x13\xd9\xd9\x19\0\xd0\x12\x91\x81\x62"
       "Cj\xcd\0\0\0\0IEND\xae\x42`\x82",
-      210 } },
-    { "/images/cog_white_16x16.png", {
+      210 ) },
+    { "/images/cog_white_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\1sRGB\0\xae"
@@ -97447,8 +97467,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "!\xdb\xb9\x64I\x91\x83|a \xf0\x1c\x11'\xae\xe2r\x84/\x84Tm\x87Q\xad\xf5\xdd\xb3"
       "\xc6j\xc5\xff\x91\xdc\x37\xfbm\x88\x1b\xb0\x37\xf5\xc1\xde\xdb\xbb\xe8\x39\xdb"
       "}\x9f\xe9\xcaw~\1\x31\3\x93\xfe\xf3\xb3\4]\0\0\0\0IEND\xae\x42`\x82",
-      290 } },
-    { "/images/copy_to_clipboard_16x16.png", {
+      290 ) },
+    { "/images/copy_to_clipboard_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\3\0\0\0(-\xfS\0\0\0\x19tEXtSoftware\0\x41"
@@ -97462,8 +97482,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x9a\xe5\\\2\xe4\x1e\x42\2\xe8\xce\x1c{\xea?\x8e\xc9\xe7\x36\xba\xac:\xda\x9a"
       "\xd9?h\xe5\xeez\x18\xea{\x9aK\x80\1\0U\x16\b\x11\x39W(3\0\0\0\0IEND\xae\x42`"
       "\x82",
-      288 } },
-    { "/images/db.png", {
+      288 ) },
+    { "/images/db.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\t\0\0\0\f\b\6\0\0\0\xb0\\\x97\xa3\0\0\0\4gAMA\0\0\xaf\xc8"
@@ -97483,8 +97503,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe4\xech{\x82\xf1\xdb\x87\xc7Z\xa7\xcf\x9cO?t\xe4\xb8\xff\xe3'O\x85\xfe\xfd"
       "\xfb\xf\xf4\x30\xe3\x7fY\x19\xe9w\xc0\x30\xdahjb8\x13 \xc0\0.\x82\xb3\xb3\x42"
       "\xb1\xbdK\0\0\0\0IEND\xae\x42`\x82",
-      465 } },
-    { "/images/disk-icon.png", {
+      465 ) },
+    { "/images/disk-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\f\b\6\0\0\0k\xe7=\x81\0\0\0\x19tEXtSoftware\0\x41"
@@ -97505,8 +97525,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\f\6\xd2\x41\x1aH/\xc8\x80\x30\x98sH\4 =\xe1 \3\xb2\x19\xc8\aYL\xd0\xe8#\x17"
       "X\xb0@\x19\x8c\x64\x1a\xf0\x9f\x89\\\x8d\xe8\xe9\x80T\0w1\v\xba\x89\xa4\2\x80"
       "\0\3\0\xbd\t\r\x15t\xd5\xf3\x85\0\0\0\0IEND\xae\x42`\x82",
-      1028 } },
-    { "/images/disk-slot-icon.png", {
+      1028 ) },
+    { "/images/disk-slot-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\r\b\6\0\0\0Oy\x85\x1a\0\0\0\x19tEXtSoftware\0\x41"
@@ -97532,8 +97552,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "P`\2M\xc4z\x11\x1b\x85\4I\xe0\x83\xc5\xaa\x45\xc8h\xf3\x93\xa4\x36\xf8\xe3#\xc0"
       "\0\xaa!<\n"
       "\xdah\x81\xb9\0\0\0\0IEND\xae\x42`\x82",
-      1099 } },
-    { "/images/document-icon.png", {
+      1099 ) },
+    { "/images/document-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xf\0\0\0\x11\b\6\0\0\0\2\n"
@@ -97557,8 +97577,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "I\x8d\xaaQ\xcd\xd4\xd2\fO$\xaf^\xbd\2\x61P\xe\xab\xa0\x8b\xcd\f\xff\xff\xff\a"
       "\xe1\x8a\xff\xa4\x83v\x80\0\3\0\xc8\x8ap\xe0\x8a[\x83\x1c\0\0\0\0IEND\xae\x42"
       "`\x82",
-      1078 } },
-    { "/images/eye-icon_white.png", {
+      1078 ) },
+    { "/images/eye-icon_white.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\v\b\6\0\0\0v\xe2\r9\0\0\0\x19tEXtSoftware\0\x41"
@@ -97592,8 +97612,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x89L\xfd\2\x9c\x83y\xdc$_\xab\xd5^\6\x30\x45Q6}>\xdf>\xe2.\xf0\1\xe2\xe0i\xf4"
       "\x7f\xd8\x9f\x38\x36\t\x1c\x82\x1d\xb0\6H\xdf:\xd0\xc0\x33\xc8\x82!\x15\xff\b"
       "0\0PKbI\xc1\xbc^'\0\0\0\0IEND\xae\x42`\x82",
-      1331 } },
-    { "/images/fullscreen_16x16.png", {
+      1331 ) },
+    { "/images/fullscreen_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97602,8 +97622,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb1\x18\x80,g\x80\xe4\x1d\x14?\xc3\fI\xc0\x62@\2\x16\xd7\xe1\v\xaf\x11\5(\xe"
       "D\x8a\xa3\x91*\t\x89\xaaI\x99\xe2\xcc\x44Rv\6\0\xe3~i\x15\n"
       "\x93\x96.\0\0\0\0IEND\xae\x42`\x82",
-      184 } },
-    { "/images/fullscreen_exit_16x16.png", {
+      184 ) },
+    { "/images/fullscreen_exit_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97612,8 +97632,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "@\xd3\x83\"\x80\x8c\xb1\x19\x80\x8cQ\\m@\x86\1\6\xe8\xfe#\xd5\x80\xf9\xf8\x34"
       "\x13\x63\xc0\x7f\x1c\x81=\"\1U\2\x91\xa2h\xa4\x38!Q\x9c\x94)\xceL\x14\x65g\0"
       "\xe3~i\x15\x95\xc0#\x7f\0\0\0\0IEND\xae\x42`\x82",
-      189 } },
-    { "/images/globe-icon_white.png", {
+      189 ) },
+    { "/images/globe-icon_white.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97644,8 +97664,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe4\xcc\xe5\x14\x39\xc4\xa5\x99K$\xd6\xb3\5\xb2\xcb\x14w\xb9Lq\xb7\xcb\x64\xaf"
       "\xf3*\xc6\xff\xbb\xce\xdf\2\f\0\xed\xc0\x1c\x10\xa2\xd4\x64]\0\0\0\0IEND\xae"
       "B`\x82",
-      1244 } },
-    { "/images/graph-icon.png", {
+      1244 ) },
+    { "/images/graph-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x14\0\0\0\x12\b\6\0\0\0[\xd0\xfe\x10\0\0\0\x19tEXtSoftwar"
@@ -97674,8 +97694,8 @@ std::map<std::string, const std::string> static_web_assets = {
       ".\xe6\x31\x8b\xf}w\x84\\\\\xd8_'eK\x8f<\x8aU|[\x8c\xde\x85\xfa\xd7,\xf7\xe3."
       "\xe1\xd4\xd4$\xf0U{\xb0\x64\x30\x86\xbb\x12\xb8\x84Mt\x1b\4\xd6\x7f\4\x18\0\xf8"
       "\2<\xdcue\x81\xc2\0\0\0\0IEND\xae\x42`\x82",
-      1215 } },
-    { "/images/green-light.png", {
+      1215 ) },
+    { "/images/green-light.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\v\0\0\0\v\b\6\0\0\0\xa9\xacw&\0\0\0\x19tEXtSoftware\0\x41"
@@ -97706,8 +97726,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xf4Y\xa0\x63\x13\4\xef\xe0\xb8/\xc1Z\xb9\xd0\xba\xf9\xfe\xacV\xf2\x9f\6\x33"
       "\xe1\3\xae\x44\x42\xd9\xc2T\x16\x8f\xa0\xc5+\xb2\1\x87\x8d\xdbN\xbe\xbc\xdf\xbc"
       "\xd6Z\xe7S\x80\1\0\xae\x64\x95\t2\xed\xb0u\0\0\0\0IEND\xae\x42`\x82",
-      1218 } },
-    { "/images/green-light_glow.png", {
+      1218 ) },
+    { "/images/green-light_glow.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -97748,8 +97768,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "*\x9b\xa8\xcc\xb4\x87\3\xc3\x9eq\xbd+C\xd5\xe3}\xe5\xafnV\xc5\xc9\xd7\x38L\3"
       "\xafg\xd7o$~P\xe7m\xcc\x39g\xa2R\xb1\xd6I_&\xa6\xe7\xfc\x14\x13\xab\x9b\x95\xe3"
       ")\xff\x11`\0[\x81|\x9c\xc0\xcdQO\0\0\0\0IEND\xae\x42`\x82",
-      1557 } },
-    { "/images/green-light_glow_small.png", {
+      1557 ) },
+    { "/images/green-light_glow_small.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xf\0\0\0\xf\b\6\0\0\0;\xd6\x95J\0\0\0\x19tEXtSoftware\0\x41"
@@ -97789,8 +97809,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb4\x9e\x46\x64\x62\x36'\xa8\5\xaf\xb0\xe5n\x98q\x18W\x8d\x39\x46\xa3iU\xeb"
       "\xec\xb0\x44\x10\xaf\x8a\xd9\xf8\x8f\x31t\xdc\xac\x9c&7\v`\xe6h\xc6\x61\\5\xe6"
       "\f5\xba(_zp\xe2\xef\2\xfc\x11`\0\xe3\xccSPu\xd6%p\0\0\0\0IEND\xae\x42`\x82",
-      1511 } },
-    { "/images/grid-icon.png", {
+      1511 ) },
+    { "/images/grid-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -97811,8 +97831,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "dI\xa2\xc5Y\x80X\x10\xe8\xd4\xf7H~\xfe\b\xa5\x89\x16g\4\6,\3%\0h \3\xcc;\xff"
       "\xa1\xf8\3\x9a\xb3\x89\x12\x1f\x8d\x9d\xd1\xd8\x19Z\xb1\3\x10`\0~\x83Sc\xe5G"
       "\xd5\xee\0\0\0\0IEND\xae\x42`\x82",
-      1022 } },
-    { "/images/icon-magnifying_glass.png", {
+      1022 ) },
+    { "/images/icon-magnifying_glass.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -97856,8 +97876,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "9\x84h\x9c\xec\x36\x31}\xc3\x93m\5\x8cU,\x16\xcb\xabz\xbd>\xa8\xd7\xeb}\xb3\xb3"
       "\x9f\x9e@\xd4\x66\xa0\xfe#\x18\x86\x89\xc1\xbb\xe3\xaaw\x93\x7f\5\x18\0\xa0\xc3"
       "\xe2\xba\x95\t\xb5~\0\0\0\0IEND\xae\x42`\x82",
-      1526 } },
-    { "/images/icon-pause.png", {
+      1526 ) },
+    { "/images/icon-pause.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xe\0\0\0\xe\b\6\0\0\0\x1fH-\xd1\0\0\0\x19tEXtSoftware\0\x41"
@@ -97870,8 +97890,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe3\x65\f\xdc\xb4\xd6\xcd\xc6\x65YP6\x18\xf5<\xcf\x65\xd2\xdd\x36h\xe1)\xa9"
       "\xf9'\0%=9r\xe7\1\x88\xdf\xb7\xc8UC\x9e\xc4\xd5\x90?\5\x18\0!:\xbf\x81\xf2\3"
       "\x90_\0\0\0\0IEND\xae\x42`\x82",
-      292 } },
-    { "/images/icon-play.png", {
+      292 ) },
+    { "/images/icon-play.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xe\0\0\0\xe\b\6\0\0\0\x1fH-\xd1\0\0\0\x19tEXtSoftware\0\x41"
@@ -97885,8 +97905,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x98n\xf2\xd7\xaa\xf8.\x13\xf9qYko\xdd\xb0\t\xafG\xdc\x88\xa4\x94=\x7f\x9e'^"
       "\xd7_\xbf\xa3\xb8\xe6\x89\1\xba{\x9a\xe5\xd6\xeb\xff\x66\xb9\xad\xc9+yk\xf2\x8f"
       "\0\3\0&\xcbia\xf7\3\x38\xde\0\0\0\0IEND\xae\x42`\x82",
-      289 } },
-    { "/images/layers-icon.png", {
+      289 ) },
+    { "/images/layers-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -97914,8 +97934,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\b\x13P\2l\x18\r\x13*\x85\tL3,L\x18\xb1\x15\5\xc8\x86!\x87\t\xb2\x66\xe4\xa2"
       "\x80\x11Oy\2\x36\f\xb9LA\xd6\x8cl\b@\x80\1\0\xdc\x9b\3s\xf4\xf0\xf2M\0\0\0\0"
       "IEND\xae\x42`\x82",
-      1203 } },
-    { "/images/list-horiz-dash.png", {
+      1203 ) },
+    { "/images/list-horiz-dash.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\b\0\0\0\1\b\6\0\0\0\xe3\0\xef\x43\0\0\0\x19tEXtSoftware\0"
@@ -97933,8 +97953,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "on> </rdf:RDF> </x:xmpmeta> <?xpacket end=\"r\"?>\xa8\xbf\b'\0\0\0\x1aIDATx\xda"
       "b\xdc\xb0\x61\xc3n\6\4X\xed\xef\xef?\v\x89\xcf\0\x10`\0vq\4\xff\xfb\r\x84\xd7"
       "\0\0\0\0IEND\xae\x42`\x82",
-      936 } },
-    { "/images/list-square-bullet.png", {
+      936 ) },
+    { "/images/list-square-bullet.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\a\0\0\0\a\b\2\0\0\0K0\xc0\x84\0\0\0\x19tEXtSoftware\0\x41"
@@ -97952,8 +97972,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "n> </rdf:RDF> </x:xmpmeta> <?xpacket end=\"r\"?>\x95.\xd0|\0\0\0\x17IDATx\xda"
       "b\xbc}\xfb\x36\3\6`b\xc0\6\xe8+\n"
       "\x10`\0\x8a\xf7\2\x9f\f\t\x92\xb2\0\0\0\0IEND\xae\x42`\x82",
-      933 } },
-    { "/images/list-vert-dash.png", {
+      933 ) },
+    { "/images/list-vert-dash.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\1\0\0\0\b\b\6\0\0\0\x38\x1a\x95\x41\0\0\0\x19tEXtSoftware"
@@ -97971,8 +97991,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "escription> </rdf:RDF> </x:xmpmeta> <?xpacket end=\"r\"?>\x11\x7f\x1a\x93\0\0"
       "\0\"IDATx\xda\x62\xd8\xb0\x61\x83\x31\x13\3\3\x43\a\x88`\0\x13\f\xff\xff\xff"
       "g@p\xc1\4@\x80\1\0\x9c\xe6\5\xd5\xb7\xb4I>\0\0\0\0IEND\xae\x42`\x82",
-      944 } },
-    { "/images/live-icon.png", {
+      944 ) },
+    { "/images/live-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -98019,8 +98039,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "^c\x8a\xf7\1\xaf\xd7\x1a\xed\x14\xbf\x93=u\3UJ\xc7)f\x1c\xf2\b{!\xf5\x9fG\xad"
       "k\f.\x88\xb8\x93\xe8\xe8w\xfc\x15\xb0`\xe\x83\xed$\xf7\xff\x1f\xae\xab\xc8i\xc0"
       "\xb1X\xbb\xe3\x9f\0\3\0\xbd\0*\6\xdbI\xf7x\0\0\0\0IEND\xae\x42`\x82",
-      1693 } },
-    { "/images/loading-feed.gif", {
+      1693 ) },
+    { "/images/loading-feed.gif", std::string(
       "GIF89a\x10\0\x10\0\xf2\0\0\xff\xff\xff\0\0\0\xc2\xc2\xc2\x82\x82\x82\0\0\0\0"
       "\0\0\0\0\0\0\0\0!\xfe\x1a\x43reated with ajaxload.info\0!\xf9\4\0\n"
       "\0\0\0!\xff\vNETSCAPE2.0\3\1\0\0\0,\0\0\0\0\x10\0\x10\0\0\3\x1b\b\xba\x32\x34"
@@ -98042,8 +98062,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xff\xd9\xd6I\x94\x85\x65h\xaa\xael\xeb\xb2\t\0!\xf9\4\0\n"
       "\0\b\0,\0\0\0\0\x10\0\x10\0\0\3\x1c\b\xba\xdc\xe\x62\x90!\x1e\x93\x64\xda\x95"
       "\xfbV\x98\xf6\x45S\xf5\x9dh\xaa\xael\xeb\xbeo\2\0;\0\0\0\0\0\0\0\0\0",
-      529 } },
-    { "/images/navbar-active.png", {
+      529 ) },
+    { "/images/navbar-active.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x83\0\0\0>\b\2\0\0\0\x87\xab?\x9a\0\0\0\x19tEXtSoftware\0"
@@ -98154,8 +98174,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8d\xe3\x83{T\bu(U\xd2\xc2@6Ll\x14\xa1\x31\xe3\xf4\x10\x1b\x91z\x1e\xab\x9f"
       "?\x7f\\W\xe2\xd7\xaf\x9f\x7f?\xb0\xfe\x9f\xff\xfc+\xc0\0 \xe3\x41\x64\xb8\xa9"
       "#\x90\0\0\0\0IEND\xae\x42`\x82",
-      3253 } },
-    { "/images/pencil-icon.png", {
+      3253 ) },
+    { "/images/pencil-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\x11\b\6\0\0\0;mG\xfa\0\0\0\x19tEXtSoftware\0\x41"
@@ -98191,8 +98211,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x91\xf2\x62\x62\x62\x8c\2\2\2\x13\f\r\r\xaf\0\x35\x9f!6g\x82\xbd\xe3\xec\xec"
       "|\fH\x83\xf0q >\2\xc4\x97H)d\0\2\f\0\x7f\x46\x8d\xce\xc7k\xa1V\0\0\0\0IEND\xae"
       "B`\x82",
-      1305 } },
-    { "/images/pencil-icon_big.png", {
+      1305 ) },
+    { "/images/pencil-icon_big.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\"\0\0\0\"\b\6\0\0\0:G\v\xc2\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98230,8 +98250,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xef\xaf\xbd\xfc\x32p-\xb4\x7f\xb4\xf0\xfeh\xe3y\xa8\x39\xe4\xd3 p\xc7\x17&\xe8"
       "\xd0\xc0@\x83] \x87T\3\xf1\x87\1t\4\xc8\xeej\x90\x43n\x80\xc6'@59\x10\x7f\xa6"
       "\xa3\3>C\xed\4\xd9}\3 \xc0\0n{\x95\x8e\xbe\xb6n'\0\0\0\0IEND\xae\x42`\x82",
-      1457 } },
-    { "/images/push-arrow-left-icon.png", {
+      1457 ) },
+    { "/images/push-arrow-left-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x11\0\0\0\t\b\6\0\0\0\xd4\xe8\xc7\f\0\0\0\x19tEXtSoftware"
@@ -98257,8 +98277,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "w\0\xbdT\x89+vX\xb0I\0\x35\xfc\4Rv&&&\x9d@/\x16\x11\xf2\x16(`;\x80\xa6Ubs\xf2"
       "\x99\x33g\xca\x35\x34\x34\xec\x81\xccg\xf8\f\1\b0\0\x1f\tG0\x16\x66\f\xca\0\0"
       "\0\0IEND\xae\x42`\x82",
-      1139 } },
-    { "/images/query_round_trip-icon.png", {
+      1139 ) },
+    { "/images/query_round_trip-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\3\0\0\0(-\xfS\0\0\0\x19tEXtSoftware\0\x41"
@@ -98271,8 +98291,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xd0N\v@\xd7\r\xd9\xd5\xac\xcd\x17\4\f\xa3XJ\2\xa6\x1bu\x93\x17x\xa3\6\xf4\xb8"
       "\xab\xec\x19\x66%\a\xab\x83\xe5\x93\xafr\x83\xa2\xbapJB\xfa\xeb\xf7\xed\xad\x43"
       "\x80\1\0\x96\x92\b\x96\x84\x93\x1c\x89\0\0\0\0IEND\xae\x42`\x82",
-      287 } },
-    { "/images/query_server_time-icon.png", {
+      287 ) },
+    { "/images/query_server_time-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\3\0\0\0(-\xfS\0\0\0\x19tEXtSoftware\0\x41"
@@ -98286,8 +98306,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\5\xaa\xc8\xe9\xfn\x10\x19[ K\xb6\xa2$\x9bnE\xd3\x1c\xbb\xb4\xc6\xe6\x62\xe9"
       "\xedY\x9d\xef\xea\xbf\xe3>\xe7_\2\f\0\xa0\x19\6\xf7]\x83\xeaR\0\0\0\0IEND\xae"
       "B`\x82",
-      284 } },
-    { "/images/query_shard_access-icon.png", {
+      284 ) },
+    { "/images/query_shard_access-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\3\0\0\0(-\xfS\0\0\0\x19tEXtSoftware\0\x41"
@@ -98299,8 +98319,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "!L\xc2$\xd0w@{\xd2!\x80K!\rh\xe2\x44\xc7\xa2\xfb\x93\2\x94\xd0\x10U\x89\xd1Z"
       "w\xf4\xa1\x80\xad\xec\x30\xc7\xff\x1f:8\x8a\xf4\x9aH>\xb1\x96\xcc\x81<\5\x18"
       "\0\xe3s\t\x15.I\x11i\0\0\0\0IEND\xae\x42`\x82",
-      259 } },
-    { "/images/red-light.png", {
+      259 ) },
+    { "/images/red-light.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\v\0\0\0\v\b\6\0\0\0\xa9\xacw&\0\0\0\x19tEXtSoftware\0\x41"
@@ -98329,8 +98349,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xa8\x93\x98\xdb\x95\x14\xd4\xe4\xd9\xd9\xcbY\x19\x99\xdc\x98\x18\x19\x44\xfe"
       "\xfdgx\xf5\xfd\xdf\xdf\xbd\xc7>}\x9e\x38\xe3\xd9\xf3\a@5?\0\2\f\0\xac\xe3\xab"
       "\xb2\x8f\xbbYj\0\0\0\0IEND\xae\x42`\x82",
-      1219 } },
-    { "/images/red-light_glow.png", {
+      1219 ) },
+    { "/images/red-light_glow.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -98372,8 +98392,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "`\x8f\r\x9a\x36\r\x8cz\xa6\xb2)s\xc0s\x14\xdf\x96\xa7_\xe3\xd8\x8d\xe5N'\xe8"
       "EQr\x10\xc5}\xf4\xd9!\xab\xb8R\x1a\x45\x39\xf5LeS\xe6\x13\xd1_\1\6\0\x1b\xd9"
       "\x86%\x8al\3\xa7\0\0\0\0IEND\xae\x42`\x82",
-      1534 } },
-    { "/images/red-light_glow_small.png", {
+      1534 ) },
+    { "/images/red-light_glow_small.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xf\0\0\0\xf\b\6\0\0\0;\xd6\x95J\0\0\0\x19tEXtSoftware\0\x41"
@@ -98415,8 +98435,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "H#\xb5\x8a:\xaf\v)\xd3\x9b\x9e'\x17\x7f\x8c\xb9\xe3\x34r\bA\3@9R\x1c\xe4*\x99"
       "C\x1a\xb1\xb8\xd8\x19=\xaa[\x1f\xfe\n"
       "0\0UFX\xdf\xe8\xd9\x9e\xd4\0\0\0\0IEND\xae\x42`\x82",
-      1472 } },
-    { "/images/resolve_issue-clock_icon.png", {
+      1472 ) },
+    { "/images/resolve_issue-clock_icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\xf\0\0\0\xe\b\6\0\0\0\xf0\x8a\x46\xef\0\0\0\x19tEXtSoftwa"
@@ -98445,8 +98465,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x1f\xe3\x1c\xad\xb8\x41\5\xa3\xe8\xd1\xb5\xa2u\x8b_\xa8UC\xe2z\xbbQ{\xe6\xc3"
       "\xbep\a\xcby{\xfa\xde\xae\xa9\x7f\xf\xdc\x8f\x61\r\xf2\xd1\xe8\xc7\xf8\x17`\0"
       "\xce\x32H\x81\\\x15\x62\x31\0\0\0\0IEND\xae\x42`\x82",
-      1230 } },
-    { "/images/resolve_issue-danger_icon.png", {
+      1230 ) },
+    { "/images/resolve_issue-danger_icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -98471,8 +98491,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xa0\3\xc4>84\xc3\3\x91\1\xc9\x10\xe4\0\xfa\5\xc4O\xb0x\1\xae\x19=)\xa3\x1b\x82"
       "\xcd\v(\x9a\xb1\xe5\5tCx\xf1i\xc6\x95\x17\xb0\x85\tV\xcd\xf8r#\xcc\x90\x1fP~"
       "\x11\xae\xec\f\x10`\0|\b55\b\x9a\xdf\xb0\0\0\0\0IEND\xae\x42`\x82",
-      1118 } },
-    { "/images/resolve_issue-details_icon.png", {
+      1118 ) },
+    { "/images/resolve_issue-details_icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -98498,8 +98518,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "@\xb9\xeb.43\xc9@\xc5\x9e\1\xf1q ^\xe\xc4;\xd0\x33\x93=\x10;\0\xf1\x41\xa8\x41"
       "\aH\t\b\x90\1\x8eP|\x80\x9ch\0\b0\0\xbf\xf5(\xb0\5\n"
       "\xe9\xa4\0\0\0\0IEND\xae\x42`\x82",
-      1140 } },
-    { "/images/resolve_issue-message_icon.png", {
+      1140 ) },
+    { "/images/resolve_issue-message_icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -98520,8 +98540,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x80x>.y\x16\2\x16h\2\xf1* \xd6\xc1\xe7\2\x46\x34\f\3\t@|\6\x88\xbf\1\xb1\n"
       "\x16u`\x8c/\f\xe6\0q\x1f\x10[\3\xf1]b\xf2\2\x32x\b\xc4\xd1@|\x94\x9cXX\6\xc4"
       "\xfa\xc4h\6\1\x80\0\3\0\x83\xdb\x16\x38\x95\xcfH\xf4\0\0\0\0IEND\xae\x42`\x82",
-      1019 } },
-    { "/images/resolve_issue-resolved_icon.png", {
+      1019 ) },
+    { "/images/resolve_issue-resolved_icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\xe\b\6\0\0\0&/\x9c\x8a\0\0\0\x19tEXtSoftware\0\x41"
@@ -98547,8 +98567,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe2\x1a<\x86\xbc\6\x62W \xbe\x83\xcd\x64\xe4h\xc4\x66\bL\xf3U\\NCO\x89k\xa0"
       "\xf4r ~\xf\xd5|\x11_\"\xc1\x96\x94\xd7@m\xfc\4\xc4O\t\xa5\x32\x80\0\3\0\xf9\xd7"
       ".\x8e\x19\x96N\x1d\0\0\0\0IEND\xae\x42`\x82",
-      1155 } },
-    { "/images/server-icon-added.png", {
+      1155 ) },
+    { "/images/server-icon-added.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x1b\0\0\0\x14\b\6\0\0\0|\x82\x46\x80\0\0\0\6\x62KGD\0\xff"
@@ -98579,8 +98599,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xf6xN\xe3\x13w\xb9\x8d\x19\t\xc8st\x86\xac<=\\\x8fg\x81\xfd\xf1\xce\xd5\xe3"
       "\t\xb6\x84\xac\f\xc3\xfaR'\xa0+\xa2\xe2\xba\x42V\xfe\xd5L\xee\x7f\x82\xbc\xc8"
       "\xdeU\x88\x17S\0\0\0\0IEND\xae\x42`\x82",
-      710 } },
-    { "/images/server-icon-removed.png", {
+      710 ) },
+    { "/images/server-icon-removed.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x1b\0\0\0\x14\b\6\0\0\0|\x82\x46\x80\0\0\0\6\x62KGD\0\0\0"
@@ -98609,8 +98629,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "9J\xb3\xd6\xfez<\x97\xe3p\xb8s\x85\xbd\xc6\x96(\xcd\xda\xfc\xf\xcb\x93\xb8\x31"
       "O\xe2\ay\x12\x37\xd6\xea\xfb\x13\x94\xf1\xbb\xe9\x85\xc3\x90\xbd\0\0\0\0IEND"
       "\xae\x42`\x82",
-      686 } },
-    { "/images/server-icon.png", {
+      686 ) },
+    { "/images/server-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x1b\0\0\0\x14\b\6\0\0\0|\x82\x46\x80\0\0\0\x19tEXtSoftwar"
@@ -98648,8 +98668,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "VV\xe3\xd9y\r\xfb\xe0\x95[\xbc\xc6\xe7\xcd\x89\xee_\xf2\xef\xd9\x18\xec\x82\x46"
       "\xb8\1\xf3m?\x19\xef\x1b}>VHhN\x11\xdd\xe1\x31\xec.\xe7o\xc1o\1\6\0\t\xb8\x96"
       "p\x9f\x9c[\xfd\0\0\0\0IEND\xae\x42`\x82",
-      1461 } },
-    { "/images/server-icon_server-assignments.png", {
+      1461 ) },
+    { "/images/server-icon_server-assignments.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x13\0\0\0\x13\b\6\0\0\0rP6\xcc\0\0\0\x19tEXtSoftware\0\x41"
@@ -98680,8 +98700,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "]h\xc6\xa3\x42\xa6\xf0\x94n\xd5\biF\x83(\xd6\x87Y\1\x1b<\xae\x19\xbe\x64\xba"
       "\4\xe5k6\xadX\xc2,^\xff\x65=s\x82\\i?\5\x18\0\x82\xf0l\xa4\v\x9b\x8b\x42\0\0"
       "\0\0IEND\xae\x42`\x82",
-      1259 } },
-    { "/images/status-panel_bg_tile.png", {
+      1259 ) },
+    { "/images/status-panel_bg_tile.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x32\0\0\0\x32\b\2\0\0\0\x91]\x1f\xe6\0\0\0\x19tEXtSoftwar"
@@ -98770,8 +98790,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xaa\xc7\xffyF\xa2\x7f\x8c\xb6\x9c\xe7\x44~\xeb\r\xfb\xff\xf2g<\xcb\xb7\xc1\xb1"
       "\x1d\xd7\x33\xc6\xdf\xeflV\xde\xba\x8b'Ng\x97\xd4\xfa_\x80\1\0\x38\x94\x98\x66"
       "0\xf2u\xfc\0\0\0\0IEND\xae\x42`\x82",
-      2800 } },
-    { "/images/status_panel-icon_1-error.png", {
+      2800 ) },
+    { "/images/status_panel-icon_1-error.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98799,8 +98819,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x81\a\x1ex\xe0\x7f\x81\xf7\xd8\xa1u\xfd\x89o\bM\xf3\xb9\xc0\xb3\x86\x41z\xa7"
       "\x1b\x9e\xee\xc3\x8d\xd9\xdc\xec\x39\x36\xdd\x7f\xa0(0Y\xc3\x36\xc8\xd6M\x80"
       "\1\0\xfa\xb9\x34\xbf:\xb4\xa0\0\0\0\0\0IEND\xae\x42`\x82",
-      1176 } },
-    { "/images/status_panel-icon_1.png", {
+      1176 ) },
+    { "/images/status_panel-icon_1.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98828,8 +98848,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x8eO\x11\xe5`\xfa\x37T\x1c.\xc9\xc5\xcc\x30\xc5R\x10\xc4|\1j\x98m\xbb\x15*\xe5"
       "\xcb\0Y@!1D\xfc\xf0\x14\x88\xd3\0\2\f\0\xe1U4\xb0+\xc7\xb5\x83\0\0\0\0IEND\xae"
       "B`\x82",
-      1184 } },
-    { "/images/status_panel-icon_2-error.png", {
+      1184 ) },
+    { "/images/status_panel-icon_2-error.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98866,8 +98886,8 @@ std::map<std::string, const std::string> static_web_assets = {
       ";\xb4\xaa&\xf1\xed\x92\xa2\xc4y\x81\xcb\xf9\xf9P;\xbbh{I\x1f\x89W\x8b\xe7\x16"
       "\x9a\x91\xf8\3\x45\t'\xdf\xe1\x82\x8c\x8ew\1\6\0>\xbc\xc6\xee\2\xb0#[\0\0\0\0"
       "IEND\xae\x42`\x82",
-      1414 } },
-    { "/images/status_panel-icon_2.png", {
+      1414 ) },
+    { "/images/status_panel-icon_2.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98904,8 +98924,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "#B\x8a\x9f\r\xab\x92\xc5\v<\xea\x97\xb1\xf4$D\xdb,\xbd%\xde\x39\x9a\xea{\x89"
       "\xeb?P\xf4r\xb2\x86\f\x19sW\2\f\0\x34\x8b\xc6\xc6\x9b\x42k\xd4\0\0\0\0IEND\xae"
       "B`\x82",
-      1430 } },
-    { "/images/status_panel-icon_3-error.png", {
+      1430 ) },
+    { "/images/status_panel-icon_3-error.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98951,8 +98971,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "O\xe1)<\x85\xa7\xf0\x14\x9e\xc2\xb7\x1f>\xaa\x38h\xb3Y\x82\xbf\xce\x98L\x15\xa5"
       "\x80\xb3\x16\v\xcc\xb7\xc6\xc5\xdb\x98XU\xbev<\v^B\xed\xf\x14N\x85\x8c\xe1\xa7"
       "\xe0\x37\x7f\v0\0\x15XgE\x97\b\xf4\x63\0\0\0\0IEND\xae\x42`\x82",
-      1611 } },
-    { "/images/status_panel-icon_3.png", {
+      1611 ) },
+    { "/images/status_panel-icon_3.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -98999,8 +99019,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xa3\x41{\xad\xc2:\xfc\x80G\xe2\x8b\x46\1\xf7\xdb\4\\\xf\xba\xd5\xd3\x88\xda"
       "U>\x9a\x38U\x7f\x1c\xa5?P\xd4\x19\x64\xf\x61\xe2\xe7\xbf\t0\0\xd2jd\xd3\xca'"
       "\xff\xf1\0\0\0\0IEND\xae\x42`\x82",
-      1668 } },
-    { "/images/status_panel-icon_4-error.png", {
+      1668 ) },
+    { "/images/status_panel-icon_4-error.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -99046,8 +99066,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\x81\x80\xc6\n"
       "8\xbe\xb8R\x9e=\xc7\xd5\x1f\xf8<\xff\xfa\xca\x8b\x97\xf7\xc0\xf8\3\xc5UF\xfa"
       "p\x84\xca\xd3\xdf\2\f\0\xd0\xee\xc1\xe1\x9a\"\x1a\x43\0\0\0\0IEND\xae\x42`\x82",
-      1600 } },
-    { "/images/status_panel-icon_4.png", {
+      1600 ) },
+    { "/images/status_panel-icon_4.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0/\0\0\0/\b\6\0\0\0s'\x93\xac\0\0\0\x19tEXtSoftware\0\x41\x64"
@@ -99090,8 +99110,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe8\x82\xa5g\xc2\xe2w\x1b\1/\xe0\5\xbc\x80\x17\xf0\2^\xc0\xff\xe~\x85\x37\xe8"
       "A\xb7\\\x83\x9f\r\xba\xa4\x32/\xe0!]\x86[\x13\1tW\xf1T\x89'\xb4i0\xff@1\xc4\xc9"
       "\x1e\xbe\x92u\xe3\x97\0\3\0\xd0:\xbf\\\xac\x65\xa5-\0\0\0\0IEND\xae\x42`\x82",
-      1623 } },
-    { "/images/thinker_on_hill.svg", {
+      1623 ) },
+    { "/images/thinker_on_hill.svg", std::string(
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
       "<!-- Generator: Adobe Illustrator 18.1.1, SVG Export Plug-In . SVG Version: "
       "6.00 Build 0)  -->\n"
@@ -99256,8 +99276,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "       id=\"path3089\"\n"
       "       d=\"m 629,158.64549 c 7.5,-14.2 32,-31.4 48.7,-0.2\"\n"
       "       stroke-miterlimit=\"10\" /></g></svg>",
-      7180 } },
-    { "/images/trash_stroke_16x16.png", {
+      7180 ) },
+    { "/images/trash_stroke_16x16.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -99267,8 +99287,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xe8\n"
       "\xf6\x93\x90|\xf7\xe3\xb2\x61?\x91\x9a\5`\x9a\0\x46\x61{\xe5\xc4\x15R\xe9\0\0"
       "\0\0IEND\xae\x42`\x82",
-      172 } },
-    { "/images/warning-icon.png", {
+      172 ) },
+    { "/images/warning-icon.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x16\0\0\0\x13\b\6\0\0\0\x94y\xfd\x88\0\0\0\4gAMA\0\0\xaf\xc8"
@@ -99285,8 +99305,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xb1\xa7\xc6\xdc\x34\xbeX&\xe6\x36rAb\xae\x1fTq\xbc\xe1\xc3\xd2\xfc\xe\xd5\xd8"
       "\xd8\xc6m\xfa\x1b$\xe8\x19j\xc8\xe0\xff\1\xc9yq\x17`\0\xf5\x10\xa1\x45\xad#\xe1"
       "v\0\0\0\0IEND\xae\x42`\x82",
-      395 } },
-    { "/images/yellow-light_glow.png", {
+      395 ) },
+    { "/images/yellow-light_glow.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0\x10\0\0\0\x10\b\6\0\0\0\x1f\xf3\xff\x61\0\0\0\x19tEXtSoft"
@@ -99328,8 +99348,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\xa2\"\xb7\xcf\r\x93sj\x9b^f\\p\"\xff\xfd\x1b\xd3\x34n\\/0\x9a\x30\xc4\x18s6"
       "(*/\x94\x31\x9bG\1i\xa6\xb6\x91\x1c/I\x7f\4\x18\0\x8a\xb1u\xa6\x1d\xd5\xa2\x14"
       "\0\0\0\0IEND\xae\x42`\x82",
-      1532 } },
-    { "/js/backbone-min.js", {
+      1532 ) },
+    { "/js/backbone-min.js", std::string(
       "(function(t,e){if(typeof define===\"function\"&&define.amd){define([\"unders"
       "core\",\"jquery\",\"exports\"],function(i,r,s){t.Backbone=e(t,s,i,r)})}else "
       "if(typeof exports!==\"undefined\"){var i=require(\"underscore\");e(t,exports"
@@ -99600,8 +99620,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "n(t,e){var i=e.error;e.error=function(r){if(i)i(t,r,e);t.trigger(\"error\",t"
       ",r,e)}};return e});\n"
       "//# sourceMappingURL=backbone-min.map",
-      19999 } },
-    { "/js/backbone.js", {
+      19999 ) },
+    { "/js/backbone.js", std::string(
       "//     Backbone.js 1.1.2\n"
       "\n"
       "//     (c) 2010-2014 Jeremy Ashkenas, DocumentCloud and Investigative Report"
@@ -100400,7 +100420,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        if (sortable) sort = true;\n"
       "        this.length += toAdd.length;\n"
       "        if (at != null) {\n"
-      "          for (i = 0, l = toAdd.length; i < l; i++) {\n" + (std::string)
+      "          for (i = 0, l = toAdd.length; i < l; i++) {\n"
       "            this.models.splice(at + i, 0, toAdd[i]);\n"
       "          }\n"
       "        } else {\n"
@@ -101200,7 +101220,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    // Add a route to be tested when the fragment changes. Routes added late"
       "r\n"
       "    // may override previous routes.\n"
-      "    route: function(route, callback) {\n" + (std::string)
+      "    route: function(route, callback) {\n"
       "      this.handlers.unshift({route: route, callback: callback});\n"
       "    },\n"
       "\n"
@@ -101370,8 +101390,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  return Backbone;\n"
       "\n"
       "}));\n",
-      60997 } },
-    { "/js/cubism.v1.js", {
+      60997 ) },
+    { "/js/cubism.v1.js", std::string(
       "(function(exports){\n"
       "var cubism = exports.cubism = {version: \"1.0.0\"};\n"
       "var cubism_id = 0;\n"
@@ -102170,7 +102190,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "            .datum(valueChange)\n"
       "            .text(isNaN(valueChange) ? null : formatChange)\n"
       "            .attr(\"class\", \"value change \" + (valueChange > 0 ? \"positi"
-      "ve\" : valueChange < 0 ? \"negative\" : \"\"));\n" + (std::string)
+      "ve\" : valueChange < 0 ? \"negative\" : \"\"));\n"
       "      }\n"
       "\n"
       "      // Display the first primary change immediately,\n"
@@ -102396,8 +102416,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  return rule;\n"
       "};\n"
       "})(this);\n",
-      29224 } },
-    { "/js/d3.v2.min.js", {
+      29224 ) },
+    { "/js/d3.v2.min.js", std::string(
       "(function(){function e(a,b){try{for(var c in b)Object.defineProperty(a.proto"
       "type,c,{value:b[c],enumerable:!1})}catch(d){a.prototype=b}}function g(a){var"
       " b=-1,c=a.length,d=[];while(++b<c)d.push(a[b]);return d}function h(a){return"
@@ -103196,7 +103216,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "ndow.requestAnimationFrame||window.webkitRequestAnimationFrame||window.mozRe"
       "questAnimationFrame||window.oRequestAnimationFrame||window.msRequestAnimatio"
       "nFrame||function(a){setTimeout(a,17)};d3.transform=function(a){var b=documen"
-      "t.createElementNS(d3.ns.prefix.svg,\"g\"),c={a:1,b:0,c:0,d:1,e:0,f:0};return" + (std::string)
+      "t.createElementNS(d3.ns.prefix.svg,\"g\"),c={a:1,b:0,c:0,d:1,e:0,f:0};return"
       "(d3.transform=function(a){b.setAttribute(\"transform\",a);var d=b.transform."
       "baseVal.consolidate();return new bR(d?d.matrix:c)})(a)},bR.prototype.toStrin"
       "g=function(){return\"translate(\"+this.translate+\")rotate(\"+this.rotate+\""
@@ -103275,7 +103295,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "dm(b=a)):b},a},d3.svg.mouse=d3.mouse,d3.svg.touches=d3.touches,d3.svg.symbol"
       "=function(){function c(c,d){return(dr.get(a.call(this,c,d))||dq)(b.call(this"
       ",c,d))}var a=dp,b=dn;return c.type=function(b){return arguments.length?(a=d3"
-      ".functor(b),c):a},c.size=function(a){return arguments.length?(b=d3.functor(a"
+      ".functor(b),c):a},c.size=function(a){return arguments.length?(b=d3.functor(a",
+      65487) + std::string(
       "),c):b},c};var dr=d3.map({circle:dq,cross:function(a){var b=\n"
       "Math.sqrt(a/5)/2;return\"M\"+ -3*b+\",\"+ -b+\"H\"+ -b+\"V\"+ -3*b+\"H\"+b+\""
       "V\"+ -b+\"H\"+3*b+\"V\"+b+\"H\"+b+\"V\"+3*b+\"H\"+ -b+\"V\"+b+\"H\"+ -3*b+\""
@@ -103889,8 +103910,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "liseconds()}]],gh=fZ(gg);gf.year=function(a,b){return gd.domain(a.map(gj)).t"
       "icks(b).map(gi)},d3.time.scale.utc=function(){return fW(d3.scale.linear(),gf"
       ",gh)}})();\n",
-      111134 } },
-    { "/js/date-en-US.js", {
+      45647 ) },
+    { "/js/date-en-US.js", std::string(
       "/**\r\n"
       " * @version: 1.0 Alpha-1\r\n"
       " * @author: Coolite Inc. http://www.coolite.com/\r\n"
@@ -104378,8 +104399,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "catch(e){return null;}\n"
       "return((r[1].length===0)?r[0]:null);};};$D.parseExact=function(s,fx){return "
       "$D.getParseFunction(fx)(s);};}());\r\n",
-      30647 } },
-    { "/js/handlebars.runtime-1.0.0.js", {
+      30647 ) },
+    { "/js/handlebars.runtime-1.0.0.js", std::string(
       "/*\n"
       "\n"
       "Copyright (C) 2011 by Yehuda Katz\n"
@@ -104770,8 +104791,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "// lib/handlebars/browser-suffix.js\n"
       "})(Handlebars);\n"
       ";\n",
-      10982 } },
-    { "/js/jquery-1.7.2.min.js", {
+      10982 ) },
+    { "/js/jquery-1.7.2.min.js", std::string(
       "/*! jQuery v1.7.2 jquery.com | jquery.org/license */\n"
       "(function(a,b){function cy(a){return f.isWindow(a)?a:a.nodeType===9?a.defaul"
       "tView||a.parentWindow:!1}function cu(a){if(!cj[a]){var b=c.body,d=f(\"<\"+a+"
@@ -105570,7 +105591,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "                                                                            "
       "                                                                            "
       "                                                                            "
-      "                                                                            " + (std::string)
+      "                                                                            "
       "                                                                            "
       "                                                                            "
       "                                                                            "
@@ -105645,7 +105666,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "e(B,\"mouseenter$1 mouseleave$1\")};f.event={add:function(a,c,d,e,g){var h,i"
       ",j,k,l,m,n,o,p,q,r,s;if(!(a.nodeType===3||a.nodeType===8||!c||!d||!(h=f._dat"
       "a(a)))){d.handler&&(p=d,d=p.handler,g=p.selector),d.guid||(d.guid=f.guid++),"
-      "j=h.events,j||(h.events=j={}),i=h.handle,i||(h.handle=i=function(a){return t"
+      "j=h.events,j||(h.events=j={}),i=h.handle,i||(h.handle=i=function(a){return t",
+      65512) + std::string(
       "ypeof f!=\"undefined\"&&(!a||f.event.triggered!==a.type)?f.event.dispatch.ap"
       "ply(i.elem,arguments):b},i.elem=a),c=f.trim(I(c)).split(\" \");for(k=0;k<c.l"
       "ength;k++){l=A.exec(c[k])||[],m=l[1],n=(l[2]||\"\").split(\".\").sort(),s=f."
@@ -106370,7 +106392,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "ach(g):this.queue(e.queue,g)},stop:function(a,c,d){typeof a!=\"string\"&&(d="
       "c,c=a,a=b),c&&a!==!1&&this.queue(a||\"fx\",[]);return this.each(function(){f"
       "unction h(a,b,c){var e=b[c];f.removeData(a,c,!0),e.stop(d)}var b,c=!1,e=f.ti"
-      "mers,g=f._data(this);d||f._unmark(!0,this);if(a==null)for(b in g)g[b]&&g[b]." + (std::string)
+      "mers,g=f._data(this);d||f._unmark(!0,this);if(a==null)for(b in g)g[b]&&g[b]."
       "stop&&b.indexOf(\".run\")===b.length-4&&h(this,g,b);else g[b=a+\".run\"]&&g["
       "b].stop&&h(this,g,b);for(b=e.length;b--;)e[b].elem===this&&(a==null||e[b].qu"
       "eue===a)&&(d?e[b](!0):e[b].saveState(),c=!0,e.splice(b,1));(!d||!c)&&f.deque"
@@ -106478,8 +106500,8 @@ std::map<std::string, const std::string> static_web_assets = {
       ".css(a,c),l=parseFloat(k);return f.isNumeric(l)?l:k}f(a).css(c,h)},c,a,argum"
       "ents.length,null)}}),a.jQuery=a.$=f,typeof define==\"function\"&&define.amd&"
       "&define.amd.jQuery&&define(\"jquery\",[],function(){return f})})(window);\n",
-      127255 } },
-    { "/js/jquery.color.js", {
+      61743 ) },
+    { "/js/jquery.color.js", std::string(
       "/*\n"
       " * jQuery Color Animations v@VERSION\n"
       " * http://jquery.org/\n"
@@ -107165,8 +107187,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\t\t_default: \"#ffffff\"\n"
       "\t};\n"
       "})( jQuery );\n",
-      16160 } },
-    { "/js/jquery.dataTables.min.js", {
+      16160 ) },
+    { "/js/jquery.dataTables.min.js", std::string(
       "/*\n"
       " * File:        jquery.dataTables.min.js\n"
       " * Version:     1.9.1\n"
@@ -107965,7 +107987,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "===d[a]&&(d[a]={}),d[a].bVisible=e.saved_aoColumns[a].bVisible;o(i,c?c[a]:nu"
       "ll)}J(i,e.aoColumnDefs,d,function(a,b){s(i,a,b)});for(a=0,b=i.aaSorting.leng"
       "th;a<b;a++){i.aaSorting[a][0]>=i.aoColumns.length&&\n"
-      "(i.aaSorting[a][0]=0);var k=i.aoColumns[i.aaSorting[a][0]];i.aaSorting[a][2]" + (std::string)
+      "(i.aaSorting[a][0]=0);var k=i.aoColumns[i.aaSorting[a][0]];i.aaSorting[a][2]"
       "===m&&(i.aaSorting[a][2]=0);e.aaSorting===m&&i.saved_aaSorting===m&&(i.aaSor"
       "ting[a][1]=k.asSorting[0]);for(c=0,d=k.asSorting.length;c<d;c++)if(i.aaSorti"
       "ng[a][1]==k.asSorting[c]){i.aaSorting[a][2]=c;break}}Q(i);a=h(this).children"
@@ -108100,7 +108122,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "Last:\"last ui-corner-tr ui-corner-br\",sPaging:\"dataTables_paginate fg-but"
       "tonset ui-buttonset fg-buttonset-multi ui-buttonset-multi paging_\",\n"
       "sSortAsc:\"ui-state-default\",sSortDesc:\"ui-state-default\",sSortable:\"ui-"
-      "state-default\",sSortableAsc:\"ui-state-default\",sSortableDesc:\"ui-state-d"
+      "state-default\",sSortableAsc:\"ui-state-default\",sSortableDesc:\"ui-state-d",
+      65499) + std::string(
       "efault\",sSortableNone:\"ui-state-default\",sSortJUIAsc:\"css_right ui-icon "
       "ui-icon-triangle-1-n\",sSortJUIDesc:\"css_right ui-icon ui-icon-triangle-1-s"
       "\",sSortJUI:\"css_right ui-icon ui-icon-carat-2-n-s\",sSortJUIAscAllowed:\"c"
@@ -108176,8 +108199,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "{return\"string\"===typeof e&&-1!=e.indexOf(\"<\")&&-1!=e.indexOf(\">\")?\"h"
       "tml\":null}]);h.fn.DataTable=j;h.fn.dataTable=j;h.fn.dataTableSettings=j.set"
       "tings;h.fn.dataTableExt=j.ext})(jQuery,window,document,void 0);\n",
-      70745 } },
-    { "/js/jquery.form.js", {
+      5246 ) },
+    { "/js/jquery.form.js", std::string(
       "/*!\n"
       " * jQuery Form Plugin\n"
       " * version: 2.84 (12-AUG-2011)\n"
@@ -108976,7 +108999,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " *  v == ['foo','bar']\n"
       " *\n"
       " *  var v = $(':checkbox').fieldValue();\n"
-      " *  // if neither checkbox is checked\n" + (std::string)
+      " *  // if neither checkbox is checked\n"
       " *  v === undefined\n"
       " *  // if both checkboxes are checked\n"
       " *  v == ['B1', 'B2']\n"
@@ -109156,8 +109179,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "};\n"
       "\n"
       "})(jQuery);\n",
-      26751 } },
-    { "/js/jquery.lightbox_me.js", {
+      26751 ) },
+    { "/js/jquery.lightbox_me.js", std::string(
       "/*\n"
       "* $ lightbox_me\n"
       "* By: Buck Wilson\n"
@@ -109448,8 +109471,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "        overlayCSS: {background: 'black', opacity: .3}\n"
       "    }\n"
       "})(jQuery);\n",
-      10578 } },
-    { "/js/jquery.timeago.js", {
+      10578 ) },
+    { "/js/jquery.timeago.js", std::string(
       "/*\n"
       " * timeago: a jQuery plugin, version: 0.9.3 (2011-01-21)\n"
       " * @requires jQuery v1.2.3 or later\n"
@@ -109604,8 +109627,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  document.createElement(\"abbr\");\n"
       "  document.createElement(\"time\");\n"
       "}(jQuery));\n",
-      4543 } },
-    { "/js/less-1.1.4.min.js", {
+      4543 ) },
+    { "/js/less-1.1.4.min.js", std::string(
       "//\n"
       "// LESS - Leaner CSS v1.1.4\n"
       "// http://lesscss.org\n"
@@ -110096,8 +110119,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "+\"ms\"),e.remaining===0&&t(\"css generated in \"+(new Date-b)+\"ms\"),c=new"
       " Date},a),l()},d.refreshStyles=l,d.refresh(d.env===\"development\")})(window"
       ")\n",
-      35349 } },
-    { "/js/rdb_cubism.v1.js", {
+      35349 ) },
+    { "/js/rdb_cubism.v1.js", std::string(
       "(function(exports){\n"
       "var cubism = exports.cubism = {version: \"1.0.0\"};\n"
       "var cubism_id = 0;\n"
@@ -110896,7 +110919,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "        spanChange\n"
       "            .datum(valueChange)\n"
-      "            .text(isNaN(valueChange) ? null : formatChange)\n" + (std::string)
+      "            .text(isNaN(valueChange) ? null : formatChange)\n"
       "            .attr(\"class\", \"value change \" + (valueChange > 0 ? \"positi"
       "ve\" : valueChange < 0 ? \"negative\" : \"\"));\n"
       "      }\n"
@@ -111371,8 +111394,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  return rule;\n"
       "};\n"
       "})(this);\n",
-      36622 } },
-    { "/js/reql_docs.js", {
+      36622 ) },
+    { "/js/reql_docs.js", std::string(
       "// The contents of reql_docs were generated by _scripts/dataexplorer.py from"
       " the rethinkdb documentation in http://github.com/rethinkdb/docs\n"
       "// hash: \"5f4eca0734d3e0a155f37c8ebfd6643fb074ab0f\"\n"
@@ -112171,7 +112194,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  \"api/javascript/epoch_time/\": {\n"
       "    \"body\": \"r.epochTime(epochTime) &rarr; time\", \n"
       "    \"description\": \"<p>Create a time object based on seconds since epoch."
-      " The first argument is a double and\\nwill be rounded to three decimal place" + (std::string)
+      " The first argument is a double and\\nwill be rounded to three decimal place"
       "s (millisecond-precision).</p>\", \n"
       "    \"example\": \"<p><strong>Example:</strong> Update the birthdate of the "
       "user \\\"John\\\" to November 3rd, 1986.</p>\\n<pre><code>r.table(\\\"user\\"
@@ -112971,7 +112994,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  \"api/javascript/limit/\": {\n"
       "    \"body\": \"sequence.limit(n) &rarr; streamarray.limit(n) &rarr; array\""
       ", \n"
-      "    \"description\": \"<p>End the sequence after the given number of element" + (std::string)
+      "    \"description\": \"<p>End the sequence after the given number of element"
       "s.</p>\", \n"
       "    \"example\": \"<p><strong>Example:</strong> Only so many can fit in our "
       "Pantheon of heroes.</p>\\n<pre><code>r.table('marvel').orderBy('belovedness'"
@@ -113313,7 +113336,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  \"api/javascript/nth/\": {\n"
       "    \"body\": \"sequence.nth(index) &rarr; objectselection.nth(index) &rarr;"
       " selection&lt;object&gt;\", \n"
-      "    \"description\": \"<p>Get the <em>nth</em> element of a sequence, counti"
+      "    \"description\": \"<p>Get the <em>nth</em> element of a sequence, counti",
+      65495) + std::string(
       "ng from zero. If the argument is negative, count from the last element.</p>\""
       ", \n"
       "    \"example\": \"<p><strong>Example:</strong> Select the second element in"
@@ -113771,7 +113795,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "s\\\").filter(function(post) {\\n    return post(\\\"date\\\").seconds().lt("
       "30)\\n})\\n</code></pre>\", \n"
       "    \"io\": [\n"
-      "      [\n" + (std::string)
+      "      [\n"
       "        \"time\", \n"
       "        \"number\"\n"
       "      ]\n"
@@ -114481,8 +114505,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    \"url\": \"zip\"\n"
       "  }\n"
       "}\n",
-      104823 } },
-    { "/js/rethinkdb.js", {
+      39328 ) },
+    { "/js/rethinkdb.js", std::string(
       "require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof "
       "require==\"function\"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);t"
       "hrow new Error(\"Cannot find module '\"+o+\"'\")}var f=n[o]={exports:{}};t[o"
@@ -115281,7 +115305,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "}\n"
       "\n"
       "// http://nodejs.org/api/buffer.html#buffer_buf_slice_start_end\n"
-      "Buffer.prototype.slice = function (start, end) {\n" + (std::string)
+      "Buffer.prototype.slice = function (start, end) {\n"
       "  var len = this.length\n"
       "  start = clamp(start, len, 0)\n"
       "  end = clamp(end, len, len)\n"
@@ -116081,7 +116105,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  e >>= (-nBits);\n"
       "  nBits += mLen;\n"
       "  for (; nBits > 0; m = m * 256 + buffer[offset + i], i += d, nBits -= 8);\n"
-      "\n" + (std::string)
+      "\n"
       "  if (e === 0) {\n"
       "    e = 1 - eBias;\n"
       "  } else if (e === eMax) {\n"
@@ -116715,7 +116739,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    args = 1 <= arguments.length ? __slice.call(arguments, 0) : [];\n"
       "    return (function(func, args, ctor) {\n"
       "      ctor.prototype = func.prototype;\n"
-      "      var child = new ctor, result = func.apply(child, args);\n"
+      "      var child = new ctor, result = func.apply(child, args);\n",
+      65512) + std::string(
       "      return Object(result) === result ? result : child;\n"
       "    })(Reduce, [{}, this].concat(__slice.call(args.map(funcWrap))), function"
       "(){});\n"
@@ -116881,7 +116906,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      ctor.prototype = func.prototype;\n"
       "      var child = new ctor, result = func.apply(child, args);\n"
       "      return Object(result) === result ? result : child;\n"
-      "    })(OuterJoin, [{}, this].concat(__slice.call(args)), function(){});\n" + (std::string)
+      "    })(OuterJoin, [{}, this].concat(__slice.call(args)), function(){});\n"
       "  };\n"
       "\n"
       "  RDBVal.prototype.eqJoin = aropt(function(left_attr, right, opts) {\n"
@@ -117681,7 +117706,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    argrepr.push(intsp(args));\n"
       "  }\n"
       "  if (Object.keys(optargs).length > 0) {\n"
-      "    if (argrepr.length > 0) {\n" + (std::string)
+      "    if (argrepr.length > 0) {\n"
       "      argrepr.push(', ');\n"
       "    }\n"
       "    argrepr.push(kved(translateBackOptargs(optargs)));\n"
@@ -118481,7 +118506,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "})(RDBOp);\n"
       "\n"
       "Changes = (function(_super) {\n"
-      "  __extends(Changes, _super);\n" + (std::string)
+      "  __extends(Changes, _super);\n"
       "\n"
       "  function Changes() {\n"
       "    return Changes.__super__.constructor.apply(this, arguments);\n"
@@ -119281,7 +119306,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  function Config() {\n"
       "    return Config.__super__.constructor.apply(this, arguments);\n"
       "  }\n"
-      "\n" + (std::string)
+      "\n"
       "  Config.prototype.tt = protoTermType.CONFIG;\n"
       "\n"
       "  Config.prototype.mt = 'config';\n"
@@ -119421,7 +119446,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "})(RDBOp);\n"
       "\n"
-      "Or = (function(_super) {\n"
+      "Or = (function(_super) {\n",
+      65470) + std::string(
       "  __extends(Or, _super);\n"
       "\n"
       "  function Or() {\n"
@@ -120081,7 +120107,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "  } else if (val instanceof Date) {\n"
       "    return new ISO8601({}, val.toISOString());\n"
       "  } else if (val instanceof Buffer) {\n"
-      "    return new Binary(val);\n" + (std::string)
+      "    return new Binary(val);\n"
       "  } else if (Array.isArray(val)) {\n"
       "    val = (function() {\n"
       "      var _i, _len, _results;\n"
@@ -120881,7 +120907,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "};\n"
       "\n"
       "rethinkdb.distance = aropt(function(g1, g2, opts) {\n"
-      "  return new Distance(opts, g1, g2);\n" + (std::string)
+      "  return new Distance(opts, g1, g2);\n"
       "});\n"
       "\n"
       "rethinkdb.circle = aropt(function(cen, rad, opts) {\n"
@@ -121681,7 +121707,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    return RqlCompileError.__super__.constructor.apply(this, arguments);\n"
       "  }\n"
       "\n"
-      "  return RqlCompileError;\n" + (std::string)
+      "  return RqlCompileError;\n"
       "\n"
       "})(RqlServerError);\n"
       "\n"
@@ -121946,7 +121972,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "          return this._delQuery(token);\n"
       "        }\n"
       "      } else if (cb != null) {\n"
-      "        switch (response.t) {\n"
+      "        switch (response.t) {\n",
+      65454) + std::string(
       "          case protoResponseType.COMPILE_ERROR:\n"
       "            cb(mkErr(err.RqlCompileError, response, root));\n"
       "            return this._delQuery(token);\n"
@@ -122481,7 +122508,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "          if (xhr.status === 200) {\n"
       "            _this._url = url;\n"
       "            _this._connId = xhr.response;\n"
-      "            return _this.emit('connect');\n" + (std::string)
+      "            return _this.emit('connect');\n"
       "          } else {\n"
       "            return _this.emit('error', new err.RqlDriverError(\"XHR error, h"
       "ttp status \" + xhr.status + \".\"));\n"
@@ -123281,7 +123308,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        var rline = /[@\\n]/;\n"
       "\n"
       "        formatStack = function(stack, error) {\n"
-      "            if (typeof stack === \"string\") {\n" + (std::string)
+      "            if (typeof stack === \"string\") {\n"
       "                return (error.name + \". \" + error.message + \"\\n\" + stac"
       "k);\n"
       "            }\n"
@@ -124070,7 +124097,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "n\n"
       " * all copies or substantial portions of the Software.\n"
       " * \n"
-      " * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS"
+      " * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS",
+      65484) + std::string(
       " OR\n"
       " * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
       " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL "
@@ -124081,7 +124109,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN"
       "\n"
       " * THE SOFTWARE.\n"
-      " * \n" + (std::string)
+      " * \n"
       " */\n"
       "\"use strict\";\n"
       "module.exports = function(Promise, apiRejection, INTERNAL, cast) {\n"
@@ -124881,7 +124909,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "                return;\n"
       "            }\n"
       "        }\n"
-      "        catchInstances.length = j;\n" + (std::string)
+      "        catchInstances.length = j;\n"
       "        fn = arguments[i];\n"
       "\n"
       "        this._resetTrace();\n"
@@ -125681,7 +125709,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    if (value === this) {\n"
       "        var err = makeSelfResolutionError();\n"
       "        this._attachExtraTrace(err);\n"
-      "        return this._rejectUnchecked(err, void 0);\n" + (std::string)
+      "        return this._rejectUnchecked(err, void 0);\n"
       "    }\n"
       "    this._cleanValues();\n"
       "    this._setFulfilled();\n"
@@ -126184,7 +126212,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "PromiseResolver._nodebackForPromise = nodebackForPromise;\n"
       "\n"
       "PromiseResolver.prototype.toString = function PromiseResolver$toString() {\n"
-      "    return \"[object PromiseResolver]\";\n"
+      "    return \"[object PromiseResolver]\";\n",
+      65486) + std::string(
       "};\n"
       "\n"
       "PromiseResolver.prototype.resolve =\n"
@@ -126481,7 +126510,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "            var args = new Array(len + 1);                                  "
       " \\n\\\n"
       "            var i = 0;                                                      "
-      " \\n\\\n" + (std::string)
+      " \\n\\\n"
       "            for (var i = 0; i < len; ++i) {                                 "
       " \\n\\\n"
       "               args[i] = arguments[i];                                      "
@@ -127281,7 +127310,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS"
       " OR\n"
       " * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
-      " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL " + (std::string)
+      " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL "
       "THE\n"
       " * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
       " * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING F"
@@ -128081,7 +128110,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " OR\n"
       " * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
       " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL "
-      "THE\n" + (std::string)
+      "THE\n"
       " * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
       " * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING F"
       "ROM,\n"
@@ -128302,7 +128331,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    return rident.test(str);\n"
       "}\n"
       "\n"
-      "function filledRange(count, prefix, suffix) {\n"
+      "function filledRange(count, prefix, suffix) {\n",
+      65474) + std::string(
       "    var ret = new Array(count);\n"
       "    for(var i = 0; i < count; ++i) {\n"
       "        ret[i] = prefix + i + suffix;\n"
@@ -128810,8 +128840,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "module.exports.mkErr = mkErr;\n"
       "}).call(this,require(\"buffer\").Buffer)\n"
       "},{\"./errors\":9,\"buffer\":4}]},{},[])",
-      403820 } },
-    { "/js/template.js", {
+      10940 ) },
+    { "/js/template.js", std::string(
       "!function(){var a=Handlebars.template,e=Handlebars.templates=Handlebars.temp"
       "lates||{};e[\"dataexplorer_result_json_tree_span_with_quotes-template\"]=a(f"
       "unction(a,e,s,t,l){this.compilerInfo=[4,\">= 1.0.0\"],s=this.merge(s,a.helpe"
@@ -129610,7 +129640,7 @@ std::map<std::string, const std::string> static_web_assets = {
       ".call(e,{hash:{},data:n}):a),i+=d(r)+\"</a>\\n      </li>\\n      \"}this.co"
       "mpilerInfo=[4,\">= 1.0.0\"],s=this.merge(s,e.helpers),a=a||{};var t,c=\"\",o"
       "=\"function\",d=this.escapeExpression,p=this;return c+='<div class=\"issue '"
-      ",t=s[\"if\"].call(n,n&&n.critical,{hash:{},inverse:p.noop,fn:p.program(1,i,a" + (std::string)
+      ",t=s[\"if\"].call(n,n&&n.critical,{hash:{},inverse:p.noop,fn:p.program(1,i,a"
       "),data:a}),(t||0===t)&&(c+=t),c+='\">\\n  <div class=\"issue-header\">\\n   "
       " <button class=\"btn btn-danger solve-issue remove-server\">\\n      Permane"
       "ntly remove\\n    </button>\\n    <p class=\"issue-type\">Server disconnecte"
@@ -129738,7 +129768,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "i,s),data:s}),(d||0===d)&&(o+=d),o+=\"\\n    </ul>\\n  </div>\\n</div>\\n\"}"
       ")}();\n"
       "!function(){var e=Handlebars.template,a=Handlebars.templates=Handlebars.temp"
-      "lates||{};a[\"issue-data_lost\"]=e(function(e,a,n,t,l){function s(){return\""
+      "lates||{};a[\"issue-data_lost\"]=e(function(e,a,n,t,l){function s(){return\"",
+      65498) + std::string(
       "critical\"}this.compilerInfo=[4,\">= 1.0.0\"],n=this.merge(n,e.helpers),l=l|"
       "|{};var i,o=\"\",r=this,p=\"function\",f=this.escapeExpression;return o+='<d"
       "iv class=\"issue ',i=n[\"if\"].call(a,a&&a.critical,{hash:{},inverse:r.noop,"
@@ -130410,7 +130441,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "\\n</div>\\n<div class=\"tables_container element-list-container\"></div>\\n"
       "'})}();\n"
       "!function(){var a=Handlebars.template,e=Handlebars.templates=Handlebars.temp"
-      "lates||{};e[\"table_title-template\"]=a(function(a,e,t,l,n){this.compilerInf" + (std::string)
+      "lates||{};e[\"table_title-template\"]=a(function(a,e,t,l,n){this.compilerInf"
       "o=[4,\">= 1.0.0\"],t=this.merge(t,a.helpers),n=n||{};var s,h,r=\"\",i=\"func"
       "tion\",c=this.escapeExpression;return r+='\\n    <h1 class=\"title\">Table o"
       "verview for ',(h=t.db)?s=h.call(e,{hash:{},data:n}):(h=e&&e.db,s=typeof h==="
@@ -130654,7 +130685,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "th=\"512px\" height=\"512px\" viewBox=\"0 0 512 512\" enable-background=\"ne"
       "w 0 0 512 512\" xml:space=\"preserve\">\\n  <g>\\n    <circle class=\"dot\" "
       "cx=\"256\" cy=\"256\" r=\"64\"/>\\n    <g >\\n      <path class=\"inner-ring"
-      "\" d=\"M144,256c0-36.9,18.553-69.208,46.314-87.034l-23.141-24.512c-6.26,4.60"
+      "\" d=\"M144,256c0-36.9,18.553-69.208,46.314-87.034l-23.141-24.512c-6.26,4.60",
+      65525) + std::string(
       "8-12.18,9.833-17.684,15.663\\n            C125.314,185.729,112,219.781,112,2"
       "56c0,36.219,13.314,70.271,37.49,95.883c5.504,5.829,11.424,11.055,17.684,15.6"
       "62\\n            l23.141-24.511C162.553,325.208,144,292.9,144,256z\"/>\\n   "
@@ -131172,8 +131204,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "),data:r}),(h||0===h)&&(d+=h),d+='\">\\n        ',h=a[\"if\"].call(e,e&&e.di"
       "sconnected,{hash:{},inverse:u.program(5,o,r),fn:u.program(3,i,r),data:r}),(h"
       "||0===h)&&(d+=h),d+=\"\\n    </div>\\n\\n\"})}();\n",
-      167784 } },
-    { "/js/underscore-min.js", {
+      36761 ) },
+    { "/js/underscore-min.js", std::string(
       "//     Underscore.js 1.7.0\n"
       "//     http://underscorejs.org\n"
       "//     (c) 2009-2014 Jeremy Ashkenas, DocumentCloud and Investigative Report"
@@ -131386,8 +131418,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "wrapped},\"function\"==typeof define&&define.amd&&define(\"underscore\",[],f"
       "unction(){return h})}).call(this);\n"
       "//# sourceMappingURL=underscore-min.map",
-      15626 } },
-    { "/js/underscore-min.map", {
+      15626 ) },
+    { "/js/underscore-min.map", std::string(
       "{\"version\":3,\"file\":\"underscore-min.js\",\"sources\":[\"underscore.js\""
       "],\"names\":[\"root\",\"this\",\"previousUnderscore\",\"_\",\"ArrayProto\",\""
       "Array\",\"prototype\",\"ObjProto\",\"Object\",\"FuncProto\",\"Function\",\"p"
@@ -131731,8 +131763,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "hC,KAAK/B,KAAM+E,EAAO3C,MAAMpC,KAAKsB,SAAUe,eAKzDnC,EAAEG,UAAUyB,MAAQ,WAClB,"
       "MAAO9B,MAAKsB,UAUQ,kBAAX8Q,SAAyBA,OAAOC,KACzCD,OAAO,gBAAkB,WACvB,MAAOlS,OAGX"
       "6B,KAAK/B\"}",
-      25382 } },
-    { "/js/xdate.js", {
+      25382 ) },
+    { "/js/xdate.js", std::string(
       "/*\n"
       " XDate v0.7\n"
       " Docs & Licensing: http://arshaw.com/xdate/\n"
@@ -131841,8 +131873,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "(){return new g(+this[0])};f.now=function(){return+new g};f.today=function()"
       "{return(new f).clearTime()};f.UTC=n;f.getDaysInMonth=E;if(typeof module!==\""
       "undefined\"&&module.exports)module.exports=f;return f}(Date,Math,Array);\n",
-      7272 } },
-    { "/js/ZeroClipboard.min.js", {
+      7272 ) },
+    { "/js/ZeroClipboard.min.js", std::string(
       "/*!\n"
       "* ZeroClipboard\n"
       "* The ZeroClipboard library provides an easy way to copy text to the clipboa"
@@ -131986,8 +132018,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "function(a,b,c){return t=c&&c.id||null,p}):\"object\"==typeof module&&module"
       "&&\"object\"==typeof module.exports&&module.exports?(u=module.id||null,modul"
       "e.exports=p):window.ZeroClipboard=p}();",
-      10093 } },
-    { "/js/ZeroClipboard.swf", {
+      10093 ) },
+    { "/js/ZeroClipboard.swf", std::string(
       "CWS\xe\x95\f\0\0x\xda\x8dV\xcdr\xdb\xc8\x11\x9e\1\1\f\0\x92\x12I\xc9\x94,\xff"
       "\xc1\xb6\xd6\xb2\xb4\x90HQ^\xefZ\x96\xb5\x96I\xc9\x96-\x89\x1bK\xb2\x37^\xdb"
       "\xcb!0\x10\x61\x83\0\3\x80\xfaIj+\xae\xad\xca#\xe4\x98*\xe7\x92Sny\x80<@*)H\xae"
@@ -132065,8 +132097,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "h%\xf5\1\xca\x1f\x9fT\x1f&\xc0U\x8a\xc3X\xba\x1a\x16\x19\xaa\xe1\x62\xedQ\xb1"
       "\xb6Q\xacm\x16k[\xc5\x9a\4\xbf/\xd1\x85\xf8j\x10P\xcd\x8d\x44S:\xf8o\xf3. \xff"
       "\5\x1d\xaa\x8f'",
-      1966 } },
-    { "/js/bootstrap/bootstrap-alert.js", {
+      1966 ) },
+    { "/js/bootstrap/bootstrap-alert.js", std::string(
       "/* ==========================================================\n"
       " * bootstrap-alert.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#alerts\n"
@@ -132163,8 +132195,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      2445 } },
-    { "/js/bootstrap/bootstrap-button.js", {
+      2445 ) },
+    { "/js/bootstrap/bootstrap-button.js", std::string(
       "/* ============================================================\n"
       " * bootstrap-button.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#buttons\n"
@@ -132267,8 +132299,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      2813 } },
-    { "/js/bootstrap/bootstrap-collapse.js", {
+      2813 ) },
+    { "/js/bootstrap/bootstrap-collapse.js", std::string(
       "/* =============================================================\n"
       " * bootstrap-collapse.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#collapse\n"
@@ -132410,8 +132442,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      3958 } },
-    { "/js/bootstrap/bootstrap-dropdown.js", {
+      3958 ) },
+    { "/js/bootstrap/bootstrap-dropdown.js", std::string(
       "/* ============================================================\n"
       " * bootstrap-dropdown.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#dropdowns\n"
@@ -132506,8 +132538,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      2559 } },
-    { "/js/bootstrap/bootstrap-modal.js", {
+      2559 ) },
+    { "/js/bootstrap/bootstrap-modal.js", std::string(
       "/* =========================================================\n"
       " * bootstrap-modal.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#modals\n"
@@ -132724,8 +132756,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      5429 } },
-    { "/js/bootstrap/bootstrap-popover.js", {
+      5429 ) },
+    { "/js/bootstrap/bootstrap-popover.js", std::string(
       "/* ===========================================================\n"
       " * bootstrap-popover.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#popovers\n"
@@ -132826,8 +132858,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      2909 } },
-    { "/js/bootstrap/bootstrap-scrollspy.js", {
+      2909 ) },
+    { "/js/bootstrap/bootstrap-scrollspy.js", std::string(
       "/* =============================================================\n"
       " * bootstrap-scrollspy.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#scrollspy\n"
@@ -132957,8 +132989,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      3670 } },
-    { "/js/bootstrap/bootstrap-tooltip.js", {
+      3670 ) },
+    { "/js/bootstrap/bootstrap-tooltip.js", std::string(
       "/* ===========================================================\n"
       " * Forked from bootstrap-tooltip to provide a fadeIn (in `show`)\n"
       " * ========================================================== */\n"
@@ -133285,8 +133317,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  }\n"
       "\n"
       "}( window.jQuery );\n",
-      8901 } },
-    { "/js/bootstrap/bootstrap-transition.js", {
+      8901 ) },
+    { "/js/bootstrap/bootstrap-transition.js", std::string(
       "/* ===================================================\n"
       " * bootstrap-transition.js v2.0.2\n"
       " * http://twitter.github.com/bootstrap/javascript.html#transitions\n"
@@ -133340,8 +133372,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      1868 } },
-    { "/js/bootstrap/bootstrap-typeahead.js", {
+      1868 ) },
+    { "/js/bootstrap/bootstrap-typeahead.js", std::string(
       "/*\n"
       "Using fork from here: https://gist.github.com/1866577\n"
       "For additional functionality\n"
@@ -133663,8 +133695,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      7811 } },
-    { "/js/bootstrap/bootstrap-typeahead.js.fork.backup", {
+      7811 ) },
+    { "/js/bootstrap/bootstrap-typeahead.js.fork.backup", std::string(
       "/*\n"
       "Using fork from here: https://gist.github.com/1866577\n"
       "For additional functionality\n"
@@ -133985,8 +134017,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  })\n"
       "\n"
       "}( window.jQuery );\n",
-      7789 } },
-    { "/js/chosen/chosen-sprite.png", {
+      7789 ) },
+    { "/js/chosen/chosen-sprite.png", std::string(
       "\x89PNG\r\n"
       "\x1a\n"
       "\0\0\0\rIHDR\0\0\0<\0\0\0(\b\6\0\0\0\xa2\xbb\x99\xff\0\0\1\xf6IDATh\xde\xed\x98"
@@ -134013,8 +134045,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\a\x85{y;Z\xa3s+\xee\x8bq\xfb\6L\xa8\x12\x16su\x89O@\x9f\xf8J\xedq\x96\xb6U\t"
       "\xd7\xf9j\xb2Mi\xed\xc2?\xa4\xbb\x41XJG\xba\x45\x98\xca\xa0\x19\xe1o\v\xe9\x1c"
       "w(\xe3Qg\0\0\0\0IEND\xae\x42`\x82",
-      559 } },
-    { "/js/chosen/chosen.css", {
+      559 ) },
+    { "/js/chosen/chosen.css", std::string(
       "/* @group Base */\n"
       ".chzn-container {\n"
       "  font-size: 13px;\n"
@@ -134451,8 +134483,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  direction: rtl;\n"
       "}\n"
       "/* @end */\n",
-      13937 } },
-    { "/js/chosen/chosen.jquery.min.js", {
+      13937 ) },
+    { "/js/chosen/chosen.jquery.min.js", std::string(
       "// Chosen, a Select Box Enhancer for jQuery and Protoype\n"
       "// by Patrick Filler for Harvest, http://getharvest.com\n"
       "// \n"
@@ -134761,8 +134793,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "om_char()+this.generate_random_char();while(a(\"#\"+b).length>0)b+=this.gene"
       "rate_random_char();return b},e}(AbstractChosen),c=function(a){var b;return b"
       "=a.outerWidth()-a.width()},d.get_side_border_padding=c}.call(this);\n",
-      22638 } },
-    { "/js/codemirror/ambiance.css", {
+      22638 ) },
+    { "/js/codemirror/ambiance.css", std::string(
       "/* ambiance theme for code-mirror */\n"
       "\n"
       "/* Color scheme */\n"
@@ -135156,8 +135188,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "T+LtZflvuc8Q3CjwWkq8KwUpHzkK/NmSsclCL0nseQdj5FRH5CNHSgtLiW80Of5HU9Hhlsga9bnB"
       "q3fEVltKfO5IaSTmGjjc4J0otcP7QsJUSQM8pEj5/wCuUuC2DWz8AAAAAElFTkSuQmCC\");\n"
       "}\n",
-      26135 } },
-    { "/js/codemirror/codemirror.css", {
+      26135 ) },
+    { "/js/codemirror/codemirror.css", std::string(
       "/* BASICS */\n"
       "\n"
       ".CodeMirror {\n"
@@ -135410,8 +135442,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    visibility: hidden;\n"
       "  }\n"
       "}\n",
-      5813 } },
-    { "/js/codemirror/codemirror.js", {
+      5813 ) },
+    { "/js/codemirror/codemirror.js", std::string(
       "// CodeMirror is the only global var we claim\n"
       "window.CodeMirror = (function() {\n"
       "  \"use strict\";\n"
@@ -136210,7 +136242,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " && markers[id];\n"
       "          if (found)\n"
       "            gutterWrap.appendChild(elt(\"div\", [found], \"CodeMirror-gutter"
-      "-elt\", \"left: \" +\n" + (std::string)
+      "-elt\", \"left: \" +\n"
       "                                       dims.gutterLeft[id] + \"px; width: \""
       " + dims.gutterWidth[id] + \"px\"));\n"
       "        }\n"
@@ -137010,7 +137042,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    if (ie && text && input.selectionStart === 0) {\n"
       "      resetInput(cm, true);\n"
       "      return false;\n"
-      "    }\n" + (std::string)
+      "    }\n"
       "    var withOp = !cm.curOp;\n"
       "    if (withOp) startOperation(cm);\n"
       "    sel.shift = false;\n"
@@ -137203,7 +137235,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    var x, y, space = getRect(display.lineSpace);\n"
       "    // Fails unpredictably on IE[67] when mouse is dragged around quickly.\n"
       "    try { x = e.clientX; y = e.clientY; } catch (e) { return null; }\n"
-      "    return coordsChar(cm, x - space.left, y - space.top);\n"
+      "    return coordsChar(cm, x - space.left, y - space.top);\n",
+      65479) + std::string(
       "  }\n"
       "\n"
       "  var lastClick, lastDoubleClick;\n"
@@ -137810,7 +137843,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    }\n"
       "    if (pos.line == change.to.line + diff)\n"
       "      return clipToLen(pos, lst(change.text).length + (change.text.length =="
-      " 1 ? change.from.ch : 0) +\n" + (std::string)
+      " 1 ? change.from.ch : 0) +\n"
       "                       getLine(doc, change.to.line).text.length - change.to."
       "ch);\n"
       "    var inside = pos.line - change.from.line;\n"
@@ -138610,7 +138643,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "        else {\n"
       "          var upd = cur.replace(new RegExp(\"^\" + cls + \"\\\\b\\\\s*|\\\\s"
       "*\\\\b\" + cls + \"\\\\b\"), \"\");\n"
-      "          if (upd == cur) return false;\n" + (std::string)
+      "          if (upd == cur) return false;\n"
       "          line[prop] = upd || null;\n"
       "        }\n"
       "        return true;\n"
@@ -139085,7 +139118,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    indentLess: function(cm) {cm.indentSelection(\"subtract\");},\n"
       "    insertTab: function(cm) {cm.replaceSelection(\"\\t\", \"end\", \"+input\""
       ");},\n"
-      "    defaultTab: function(cm) {\n"
+      "    defaultTab: function(cm) {\n",
+      65466) + std::string(
       "      if (cm.somethingSelected()) cm.indentSelection(\"add\");\n"
       "      else cm.replaceSelection(\"\\t\", \"end\", \"+input\");\n"
       "    },\n"
@@ -139410,7 +139444,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "            atomic: this.atomic,\n"
       "            collapsed: this.collapsed,\n"
       "            replacedWith: copyWidget ? repl && repl.cloneNode(true) : repl,\n"
-      "            readOnly: this.readOnly,\n" + (std::string)
+      "            readOnly: this.readOnly,\n"
       "            startStyle: this.startStyle, endStyle: this.endStyle};\n"
       "  };\n"
       "\n"
@@ -140210,7 +140244,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      // sure line objects move the way they are supposed to.\n"
       "      for (var i = 0, e = text.length - 1, added = []; i < e; ++i)\n"
       "        added.push(makeLine(text[i], spansFor(i), estimateHeight));\n"
-      "      update(lastLine, lastLine.text, lastSpans);\n" + (std::string)
+      "      update(lastLine, lastLine.text, lastSpans);\n"
       "      if (nlines) doc.remove(from.line, nlines);\n"
       "      if (added.length) doc.insert(from.line, added);\n"
       "    } else if (firstLine == lastLine) {\n"
@@ -140971,7 +141005,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "  function on(emitter, type, f) {\n"
       "    if (emitter.addEventListener)\n"
-      "      emitter.addEventListener(type, f, false);\n"
+      "      emitter.addEventListener(type, f, false);\n",
+      65468) + std::string(
       "    else if (emitter.attachEvent)\n"
       "      emitter.attachEvent(\"on\" + type, f);\n"
       "    else {\n"
@@ -141010,7 +141045,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "      ++delayedCallbackDepth;\n"
       "      delayedCallbacks = [];\n"
       "      setTimeout(fireDelayed, 0);\n"
-      "    }\n" + (std::string)
+      "    }\n"
       "    function bnd(f) {return function(){f.apply(null, args);};};\n"
       "    for (var i = 0; i < arr.length; ++i)\n"
       "      delayedCallbacks.push(bnd(arr[i]));\n"
@@ -141552,8 +141587,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "\n"
       "  return CodeMirror;\n"
       "})();\n",
-      217088 } },
-    { "/js/codemirror/javascript.js", {
+      20675 ) },
+    { "/js/codemirror/javascript.js", std::string(
       "//TODO CLean this thing\n"
       "CodeMirror.defineMode(\"javascript\", function(config, parserConfig) {\n"
       "  var indentUnit = config.indentUnit;\n"
@@ -141953,8 +141988,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "CodeMirror.defineMIME(\"text/javascript\", \"javascript\");\n"
       "CodeMirror.defineMIME(\"application/json\", {name: \"javascript\", json: tru"
       "e});\n",
-      12940 } },
-    { "/js/codemirror/matchbrackets.js", {
+      12940 ) },
+    { "/js/codemirror/matchbrackets.js", std::string(
       "(function() {\n"
       "  var ie_lt8 = /MSIE \\d/.test(navigator.userAgent) &&\n"
       "    (document.documentMode == null || document.documentMode < 8);\n"
@@ -142055,8 +142090,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "  CodeMirror.defineExtension(\"findMatchingBracket\", function(){return find"
       "MatchingBracket(this);});\n"
       "})();\n",
-      3739 } },
-    { "/js/nanoscroller/jquery.nanoscroller.min.js", {
+      3739 ) },
+    { "/js/nanoscroller/jquery.nanoscroller.min.js", std::string(
       "/*! nanoScrollerJS v0.7.1 (c) 2013 James Florentino; Licensed MIT */\n"
       "\n"
       "(function(e,t,n){\"use strict\";var r,i,s,o,u,a,f,l,c,h,p,d,v,m,g,y,b,w,E,S,"
@@ -142153,8 +142188,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "===\"top\")return r.scrollTop(0);if(t.scroll&&t.scroll instanceof e)return r"
       ".scrollTo(t.scroll);if(t.stop)return r.stop();if(t.flash)return r.flash()}re"
       "turn r.reset()})}})(jQuery,window,document);",
-      7055 } },
-    { "/js/nanoscroller/nanoscroller.css", {
+      7055 ) },
+    { "/js/nanoscroller/nanoscroller.css", std::string(
       "/** initial setup **/\n"
       ".nano {\n"
       "  position : relative;\n"
@@ -142209,5 +142244,5 @@ std::map<std::string, const std::string> static_web_assets = {
       "  visibility : visible\\9; /* Target only IE7 and IE8 with this hack */\n"
       "  opacity    : 0.5;\n"
       "}\n",
-      1303 } },
+      1303 ) },
 };
