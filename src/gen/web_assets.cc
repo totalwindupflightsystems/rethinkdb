@@ -110955,8 +110955,9 @@ std::map<std::string, const std::string> static_web_assets = {
       "    \"description\": \"<p>Create a new secondary index on a table. Secondary"
       " indexes improve the speed of many read queries at the slight cost of increa"
       "sed storage space and decreased write performance. For more information abou"
-      "t secondary indexes, read the article \\\"<a href=\\\"/docs/secondary-indexe"
-      "s/\\\">Using secondary indexes in RethinkDB</a>.\\\"</p>\", \n"
+      "t secondary indexes, read the article \\\"<a href=\\\"https://rethinkdb.com/"
+      "docs/secondary-indexes/\\\">Using secondary indexes in RethinkDB</a>.\\\"</p"
+      ">\", \n"
       "    \"example\": \"<p><strong>Example:</strong> Create a simple index based "
       "on the field <code>postId</code>.</p>\\n<pre><code>r.table('comments').index"
       "Create('postId').run(conn, callback)\\n</code></pre>\", \n"
@@ -111186,7 +111187,7 @@ std::map<std::string, const std::string> static_web_assets = {
       " <a href=\\\"http://en.wikipedia.org/wiki/ISO_8601\\\">Wikipedia</a>.</p>\","
       " \n"
       "    \"example\": \"<p><strong>Example:</strong> Update the time of John's bi",
-      65461) + std::string(
+      65482) + std::string(
       "rth.</p>\\n<pre><code>r.table(\\\"user\\\").get(\\\"John\\\").update({birth:"
       " r.ISO8601('1986-11-03T08:30:00-07:00')}).run(conn, callback)\\n</code></pre"
       ">\", \n"
@@ -111233,9 +111234,9 @@ std::map<std::string, const std::string> static_web_assets = {
       "    \"body\": \"singleSelection.keys() &rarr; arrayobject.keys() &rarr; arra"
       "y\", \n"
       "    \"description\": \"<p>Return an array containing all of an object's keys"
-      ". Note that the keys will be sorted as described in <a href=\\\"/docs/data-t"
-      "ypes/#sorting-order\\\">ReQL data types</a> (for strings, lexicographically)"
-      ".</p>\", \n"
+      ". Note that the keys will be sorted as described in <a href=\\\"https://reth"
+      "inkdb.com/docs/data-types/#sorting-order\\\">ReQL data types</a> (for string"
+      "s, lexicographically).</p>\", \n"
       "    \"example\": \"<p><strong>Example:</strong> Get all the keys from a tabl"
       "e row.</p>\\n<pre><code>// row: { id: 1, mail: \\\"fred@example.com\\\", nam"
       "e: \\\"fred\\\" }\\n\\nr.table('users').get(1).keys().run(conn, callback);\\"
@@ -111793,8 +111794,8 @@ std::map<std::string, const std::string> static_web_assets = {
       "    \"description\": \"<p>Construct a geometry object of type Point. The poi"
       "nt is specified by two floating point numbers, the longitude (&minus;180 to "
       "180) and latitude (&minus;90 to 90) of the point on a perfect sphere. See <a"
-      " href=\\\"/docs/geo-support/\\\">Geospatial support</a> for more information"
-      " on ReQL's coordinate system.</p>\", \n"
+      " href=\\\"https://rethinkdb.com/docs/geo-support/\\\">Geospatial support</a>"
+      " for more information on ReQL's coordinate system.</p>\", \n"
       "    \"example\": \"<p><strong>Example:</strong> Define a point.</p>\\n<pre><"
       "code>r.table('geo').insert({\\n    id: 1,\\n    name: 'San Francisco',\\n   "
       " location: r.point(-122.423246,37.779388)\\n}).run(conn, callback);\\n</code"
@@ -112920,7 +112921,7 @@ std::map<std::string, const std::string> static_web_assets = {
       "    \"url\": \"zip\"\n"
       "  }\n"
       "}\n",
-      59919 ) },
+      59961 ) },
     { "/js/backbone.js", std::string(
       "//     Backbone.js 1.1.2\n"
       "\n"
