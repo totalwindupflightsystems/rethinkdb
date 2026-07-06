@@ -1,3 +1,9 @@
+# GitReins Pipeline Config — RethinkDB (C++ Project)
+# Three-tier quality harness:
+#   Tier 1: Static guards (secrets, lint, tests, build)
+#   Tier 2: LLM agentic evaluator (DeepSeek V4 Flash)
+#   Tier 3: C++ deep static analysis (cppcheck + clang-tidy)
+
 guards:
   secrets: true
   lint: true
@@ -5,9 +11,96 @@ guards:
   tests: true
   test_mode: full
   test_command: make test
+
+# ── Pipeline Stages ──
+pipeline:
+  stages:
+    # Stage 1: Parallel static checks (pre-commit + pre-eval)
+    - id: tier1
+      parallel: true
+      on: [pre-commit, pre-eval]
+      steps:
+        - id: secrets
+          type: script
+          run: "gitleaks detect --config .gitleaks.toml --no-git"
+          on_fail: block
+
+        - id: lint
+          type: script
+          run: "./scripts/check_style.sh"
+          on_fail: block
+
+        - id: build
+          type: script
+          run: "make -j$(nproc)"
+          on_fail: block
+
+        - id: tests
+          type: script
+          run: "make test"
+          on_fail: block
+
+    # Stage 2: AI evaluation (LLM judges work against criteria)
+    - id: tier2
+      type: ai_eval
+      on: [pre-eval]
+      condition: "true"
+      max_iterations: 50
+      tools: [read_file, run_command, search_pattern, read_diff, sandbox]
+
+    # Stage 3: C++ deep static analysis (post-commit, informational)
+    - id: tier3
+      parallel: true
+      on: [pre-eval]
+      steps:
+        - id: cppcheck
+          type: script
+          run: |
+            echo "=== cppcheck static analysis ==="
+            cppcheck --enable=warning,performance,portability,style \
+              --suppress=missingIncludeSystem \
+              --suppress=unusedFunction \
+              --suppress=noExplicitConstructor \
+              --inline-suppr \
+              --error-exitcode=0 \
+              -j$(nproc) \
+              src/ 2>&1 | head -100
+            echo "cppcheck done (informational only)"
+          on_fail: continue
+
+        - id: clang-tidy
+          type: script
+          run: |
+            echo "=== clang-tidy static analysis ==="
+            if [ -f build/release/compile_commands.json ]; then
+              find src/ -name '*.cc' | head -50 | \
+                xargs -P$(nproc) -I{} clang-tidy {} \
+                  -p build/release \
+                  -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' \
+                  -quiet 2>&1 | head -100
+            else
+              echo "No compile_commands.json — skipping clang-tidy"
+            fi
+            echo "clang-tidy done (informational only)"
+          on_fail: continue
+
+# ── Evaluator Caps (v0.3.0+) ──
 evaluator:
-  max_iterations: 15
-  static_analysis_diagnostics: false
+  max_iterations: 50
+  max_time: "15m"
+  max_input_tokens: "1M"         # 367K-line C++ codebase needs headroom
+  max_output_tokens: "384k"      # within DeepSeek's 393,216 ceiling
+  tool_call_weight: 0.1
+  compaction_threshold: 0.90
+  code_context_budget: 0.70
+
+# ── Defaults ──
+defaults:
+  model: deepseek-v4-flash
+  max_iterations: 100
+  check_for_updates: true
+  update_check_ttl: "24h"
+
 history:
   enabled: true
   storage: git
