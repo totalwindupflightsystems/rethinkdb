@@ -9,8 +9,9 @@ guards:
   lint: true
   lint_command: ./scripts/check_style.sh
   tests: true
-  test_mode: full
-  test_command: make test
+  test_mode: diff
+  test_command: make test -j$(nproc)
+  test_timeout: 300
 
 # ── Pipeline Stages ──
 pipeline:
