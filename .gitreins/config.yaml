@@ -73,14 +73,17 @@ pipeline:
           type: script
           run: |
             echo "=== clang-tidy static analysis ==="
-            if [ -f build/release/compile_commands.json ]; then
+            CLANG_TIDY=$(which clang-tidy-21 clang-tidy 2>/dev/null | head -1)
+            if [ -z "$CLANG_TIDY" ]; then
+              echo "clang-tidy not found — skipping"
+            elif [ -f build/release/compile_commands.json ]; then
               find src/ -name '*.cc' | head -50 | \
-                xargs -P$(nproc) -I{} clang-tidy {} \
+                xargs -P$(nproc) -I{} $CLANG_TIDY {} \
                   -p build/release \
                   -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' \
                   -quiet 2>&1 | head -100
             else
-              echo "No compile_commands.json — skipping clang-tidy"
+              echo "No compile_commands.json — install bear and run: bear -- make -j\$(nproc)"
             fi
             echo "clang-tidy done (informational only)"
           on_fail: continue
