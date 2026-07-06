@@ -1,16 +1,21 @@
 # RethinkDB — Steward Task Queue
 
 ## Phase 1: Foundation (Now)
-- [ ] Merge `v2.4.x` into `main` (unreleased v2.4.5 prep)
-- [ ] Cut and publish v2.4.5 release
-- [ ] Fix `.gitreins` config (lint command, test command)
-- [ ] Set up Hilo for codebase navigation
-- [ ] Modernize CI (add GCC 14/15, Clang 18/19, ARM64)
+- [x] Fork + clone rethinkdb/rethinkdb
+- [x] Merge `v2.4.x` into `main` (unreleased v2.4.5 prep)
+- [x] Cut and publish v2.4.5 release → https://github.com/totalwindupflightsystems/rethinkdb/releases/tag/v2.4.5
+- [x] GitReins init + 3-tier config (Tier 1: guard, Tier 2: LLM eval, Tier 3: cppcheck+clang-tidy)
+- [x] Hilo init (7,913 edges across 1,256 files)
+- [x] Bear compile_commands.json (560KB, 18K entries)
+- [x] Fix gitleaks.toml (valid regex)
+- [x] Fix .gitignore (build artifacts, compile_commands.json)
+- [ ] Modernize CI (add GCC 14/15, Clang 18/19, ARM64, RISC-V)
+- [ ] Fix all compiler warnings (~12K from clang-tidy, 11K from cppcheck)
+- [ ] Create `compile_commands.json` generation in CI
 
 ## Phase 2: v2.5 (Next)
 - [ ] Cherry-pick marchon's security fixes from PR #7191
 - [ ] Drop AI-generated report files from PR #7191
-- [ ] Fix all compiler warnings on modern GCC/Clang
 - [ ] Audit all CVEs in bundled deps (Boost 1.60, OpenSSL, QuickJS)
 - [ ] Modernize C++ standard (C++11 → C++17/20)
 - [ ] Replace deprecated Python 2 scripts with Python 3
