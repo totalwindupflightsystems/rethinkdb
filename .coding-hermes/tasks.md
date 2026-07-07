@@ -16,7 +16,10 @@
   - [x] clang-tidy: 0 actionable warnings in own code after .clang-tidy config
   - [x] Created .clang-tidy with focused checks (bugprone, performance, readability, modernize, cppcoreguidelines, cert, concurrency, portability)
   - [x] Added default case to base64_encode switch, included errors.hpp for unreachable()
-- [ ] Create `compile_commands.json` generation in CI
+- [x] Create `compile_commands.json` generation in CI
+  - [x] Added bear-based generation to all build matrix jobs (gcc-14, gcc-15, clang-18, clang-19, gcc-arm64)
+  - [x] Added to RISC-V build job
+  - [x] Uploaded as CI artifact (compile-commands-${{ matrix.name }})
 
 ## Phase 2: v2.5 (Next)
 - [ ] Cherry-pick marchon's security fixes from PR #7191
