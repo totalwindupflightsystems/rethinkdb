@@ -22,7 +22,11 @@
   - [x] Uploaded as CI artifact (compile-commands-${{ matrix.name }})
 
 ## Phase 2: v2.5 (Next)
-- [ ] Cherry-pick marchon's security fixes from PR #7191
+- [x] Cherry-pick marchon's security fixes from PR #7191
+  - [x] Security and stability fixes (22 files): timing-safe auth, cJSON buffer overflow, SASLPrep hardening, PBKDF2 iterations, null pointer derefs, unsigned underflows, uninitialized vars, signed/unsigned mismatches
+  - [x] Critical issue fixes: #6880 cluster crash, #7124 ARM crash, #6433 allocation bounds, #7005 datum bounds, #6952 RISC-V, #7120 /proc/meminfo
+  - [x] Container support: cgroup memory detection, shard limit 64→256, shutdown guarantee fix
+  - [x] Skipped: JS engine feature (pluggable V8/QuickJS/Duktape/Hermes), AI-generated reports, NOTES.md updates
 - [ ] Drop AI-generated report files from PR #7191
 - [ ] Audit all CVEs in bundled deps (Boost 1.60, OpenSSL, QuickJS)
 - [ ] Modernize C++ standard (C++11 → C++17/20)
