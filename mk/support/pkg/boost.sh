@@ -1,8 +1,8 @@
 
-version=1.60.0
+version=1.85.0
 
 src_url=https://archives.boost.io/release/${version}/source/boost_${version//./_}.tar.bz2
-src_url_sha256=686affff989ac2488f79a97b9479efb9f2abae035b5ed4d8226de6857933fd3b
+src_url_sha256=7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617
 
 pkg_install-include () {
     mkdir -p "$install_dir/include/boost"
