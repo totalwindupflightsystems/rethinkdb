@@ -10,7 +10,12 @@
 - [x] Fix gitleaks.toml (valid regex)
 - [x] Fix .gitignore (build artifacts, compile_commands.json)
 - [x] Modernize CI (add GCC 14/15, Clang 18/19, ARM64, RISC-V)
-- [ ] Fix all compiler warnings (~12K from clang-tidy, 11K from cppcheck)
+- [x] Fix all compiler warnings (~12K from clang-tidy, 11K from cppcheck)
+  - [x] Build clean with GCC 15.2.0 (zero compiler warnings)
+  - [x] cppcheck: 1 actionable fix (postfixOperator in base64.cc), 1 false positive (BREAKPOINT #error)
+  - [x] clang-tidy: 0 actionable warnings in own code after .clang-tidy config
+  - [x] Created .clang-tidy with focused checks (bugprone, performance, readability, modernize, cppcoreguidelines, cert, concurrency, portability)
+  - [x] Added default case to base64_encode switch, included errors.hpp for unreachable()
 - [ ] Create `compile_commands.json` generation in CI
 
 ## Phase 2: v2.5 (Next)

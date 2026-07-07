@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "crypto/error.hpp"
+#include "errors.hpp"
 
 namespace crypto {
 
@@ -45,6 +46,8 @@ std::string base64_encode(unsigned char const *data, size_t size) {
             break;
         case 0:
             break;
+        default:
+            unreachable();
     }
 
     return encoded;
@@ -90,7 +93,7 @@ std::string base64_decode(std::string const &encoded) {
             } else {
                 throw error_t("Invalid padding in `" + encoded + "`");
             }
-            iterator++;
+            ++iterator;
         }
         decoded.push_back((buffer >> 16) & 0x000000ff);
         decoded.push_back((buffer >> 8) & 0x000000ff);
