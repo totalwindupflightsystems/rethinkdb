@@ -30,8 +30,8 @@
 - [x] Drop AI-generated report files from PR #7191
   - [x] Removed 8 AI-generated files: build/cluster/crash/memory/other JSON, issue_analysis_report.md, rethinkdb_open_issues
 - [x] Audit all CVEs in bundled deps (Boost 1.60, OpenSSL, QuickJS) → see .coding-hermes/research/cve-audit-bundled-deps.md
-  - [ ] **CRITICAL:** Upgrade OpenSSL 3.0.7 → 3.0.17 (20+ CVEs, all TLS endpoints affected)
-  - [ ] **HIGH:** Upgrade QuickJS to quickjs-ng latest (CVE-2023-48184 CVSS 9.8, CVE-2024-13903, CVE-2026-0822)
+  - [x] **CRITICAL:** Upgrade OpenSSL 3.0.7 → 3.0.17 (20+ CVEs, all TLS endpoints affected) — committed f75f9fd
+  - [ ] **HIGH:** Upgrade QuickJS to quickjs-ng latest (CVE-2023-48184 CVSS 9.8, CVE-2024-13903, CVE-2026-0822) — rethinkdb/quickjspp fork is unmaintained (last commit Oct 2022); needs migration to quickjs-ng
   - [ ] **LOW:** Upgrade Boost 1.60 → 1.85+ (no known CVEs in used components, code-quality improvement)
 - [ ] Modernize C++ standard (C++11 → C++17/20)
 - [ ] Replace deprecated Python 2 scripts with Python 3
