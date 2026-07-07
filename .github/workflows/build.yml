@@ -69,6 +69,20 @@ jobs:
       - name: make
         run: make -j $(nproc)
 
+      - name: generate compile_commands.json
+        run: |
+          sudo apt update && sudo apt install -y bear
+          bear -- make -j $(nproc)
+          # Verify it was generated
+          test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
+
+      - name: upload compile_commands.json
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compile-commands-${{ matrix.name }}
+          path: compile_commands.json
+
       - name: compress build artifacts
         if: always()
         run: tar -czf ${{ github.job }}-${{ matrix.name }}.tar.gz build config.mk
@@ -109,6 +123,19 @@ jobs:
         run: make support -j $(nproc)
       - name: make
         run: make -j $(nproc)
+
+      - name: generate compile_commands.json
+        run: |
+          sudo apt update && sudo apt install -y bear
+          bear -- make -j $(nproc)
+          test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
+
+      - name: upload compile_commands.json
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compile-commands-riscv
+          path: compile_commands.json
 
   # ── Unit Tests ──
   unit-tests:
