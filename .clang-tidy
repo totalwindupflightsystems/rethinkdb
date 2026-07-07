@@ -1,0 +1,169 @@
+# RethinkDB clang-tidy configuration
+# Focus on actionable warnings in our own code, suppress third-party noise.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-narrowing-conversions,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-macro-parentheses,
+  -bugprone-reserved-identifier,
+  -bugprone-unchecked-optional-access,
+  performance-*,
+  -performance-avoid-endl,
+  -performance-unnecessary-value-param,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-avoid-return-with-void-value,
+  -readability-suspicious-call-argument,
+  -readability-redundant-access-specifiers,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  -modernize-use-auto,
+  -modernize-loop-convert,
+  -modernize-pass-by-value,
+  -modernize-return-braced-init-list,
+  -modernize-use-emplace,
+  -modernize-use-equals-default,
+  -modernize-use-equals-delete,
+  -modernize-use-default-member-init,
+  -modernize-use-using,
+  -modernize-make-shared,
+  -modernize-make-unique,
+  -modernize-replace-disallow-copy-and-assign-macro,
+  -modernize-replace-random-shuffle,
+  -modernize-deprecated-headers,
+  -modernize-use-override,
+  -modernize-use-noexcept,
+  -modernize-raw-string-literal,
+  -modernize-concat-nested-namespaces,
+  -modernize-redundant-void-arg,
+  -modernize-shrink-to-fit,
+  -modernize-unary-static-assert,
+  -modernize-type-traits,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-const-cast,
+  -cppcoreguidelines-pro-type-cstyle-cast,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-narrowing-conversions,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-prefer-member-initializer,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-const-correctness,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-anonymous-namespace,
+  -misc-unused-parameters,
+  -misc-redundant-expression,
+  -misc-throw-by-value-catch-by-reference,
+  -misc-unused-using-decls,
+  -misc-unused-alias-decls,
+  -misc-definitions-in-headers,
+  -misc-misplaced-const,
+  -misc-static-assert,
+  -misc-use-internal-linkage,
+  -misc-header-include-cycle,
+  -misc-coroutine-hostile-raii,
+  -misc-unconventional-assign-operator,
+  -misc-include-cleaner,
+  google-*,
+  -google-readability-todo,
+  -google-readability-casting,
+  -google-runtime-references,
+  -google-runtime-int,
+  -google-build-using-namespace,
+  -google-explicit-constructor,
+  -google-default-arguments,
+  -google-objc-avoid-throwing-exception,
+  -google-objc-global-variable-declaration,
+  -google-readability-braces-around-statements,
+  -google-readability-function-size,
+  -google-readability-namespace-comments,
+  -google-runtime-operator,
+  -google-build-namespaces,
+  -google-build-explicit-make-pair,
+  cert-*,
+  -cert-err58-cpp,
+  -cert-msc30-c,
+  -cert-msc50-cpp,
+  -cert-env33-c,
+  -cert-oop58-cpp,
+  -cert-dcl21-cpp,
+  -cert-dcl50-cpp,
+  -cert-dcl58-cpp,
+  -cert-oop57-cpp,
+  -cert-msc32-c,
+  -cert-msc51-cpp,
+  -cert-flp30-c,
+  -cert-dcl03-c,
+  -cert-dcl16-c,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -cert-dcl54-cpp,
+  -cert-dcl59-cpp,
+  -cert-err09-cpp,
+  -cert-err33-c,
+  -cert-err34-c,
+  -cert-err52-cpp,
+  -cert-err60-cpp,
+  -cert-err61-cpp,
+  -cert-fio38-c,
+  -cert-mem57-cpp,
+  -cert-msc33-c,
+  -cert-oop11-cpp,
+  -cert-oop54-cpp,
+  -cert-pos44-c,
+  -cert-sig30-c,
+  -cert-str34-c,
+  concurrency-*,
+  -concurrency-mt-unsafe,
+  portability-*,
+  -portability-simd-intrinsics,
+  -portability-restrict-system-includes,
+  -portability-std-allocator-const,
+
+HeaderFilterRegex: 'src/.*'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.MemberCase
+    value: lower_case
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
