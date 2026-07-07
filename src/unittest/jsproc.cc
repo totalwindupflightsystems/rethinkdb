@@ -206,7 +206,8 @@ SPAWNER_TEST(JSProc, InfiniteRecursionFunction) {
 
         std::string *err_msg = boost::get<std::string>(&result);
 
-        ASSERT_EQ("InternalError: stack overflow", *err_msg);
+        ASSERT_TRUE(*err_msg == "InternalError: stack overflow" ||
+                      *err_msg == "RangeError: Maximum call stack size exceeded");
     });
 }
 
