@@ -82,6 +82,34 @@ jobs:
             config.mk
             build.tar.gz
 
+  # ── RISC-V Build (native, RISE runners) ──
+  build-riscv:
+    needs: preflight
+    runs-on: ubuntu-24.04-riscv
+    timeout-minutes: 60
+    continue-on-error: true  # Experimental — RISC-V support is new
+    steps:
+      - uses: actions/checkout@v4
+      - name: apt install
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update && sudo apt install -y tzdata \
+              && sudo ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
+              && sudo dpkg-reconfigure --frontend noninteractive tzdata
+          sudo apt update && sudo apt install -y \
+              libc6 libcurl4 \
+              git build-essential protobuf-compiler \
+              libprotobuf-dev libcurl4-openssl-dev \
+              libncurses5-dev m4 libssl-dev \
+              debhelper curl
+      - name: configure
+        run: ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs
+      - name: make support
+        run: make support -j $(nproc)
+      - name: make
+        run: make -j $(nproc)
+
   # ── Unit Tests ──
   unit-tests:
     needs: build
