@@ -371,7 +371,7 @@ ql::datum_t js_make_datum(quickjs_context *qjs_ctx,
         result = ql::datum_t(datum_string_t(len, str));
         JS_FreeCString(ctx, str);
     } else if (JS_IsObject(value)) {
-        if (JS_IsArray(ctx, value)) {
+        if (JS_IsArray(value)) {
             JSValue length_value = JS_GetProperty(ctx, value, qjs_ctx->lengthAtom);
 
             // In JavaScript, arrays can have length up to 2**32-1.
