@@ -9,7 +9,7 @@
 - [x] Bear compile_commands.json (560KB, 18K entries)
 - [x] Fix gitleaks.toml (valid regex)
 - [x] Fix .gitignore (build artifacts, compile_commands.json)
-- [ ] Modernize CI (add GCC 14/15, Clang 18/19, ARM64, RISC-V)
+- [x] Modernize CI (add GCC 14/15, Clang 18/19, ARM64, RISC-V)
 - [ ] Fix all compiler warnings (~12K from clang-tidy, 11K from cppcheck)
 - [ ] Create `compile_commands.json` generation in CI
 
