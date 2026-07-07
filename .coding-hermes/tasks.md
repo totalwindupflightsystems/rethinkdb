@@ -27,7 +27,8 @@
   - [x] Critical issue fixes: #6880 cluster crash, #7124 ARM crash, #6433 allocation bounds, #7005 datum bounds, #6952 RISC-V, #7120 /proc/meminfo
   - [x] Container support: cgroup memory detection, shard limit 64→256, shutdown guarantee fix
   - [x] Skipped: JS engine feature (pluggable V8/QuickJS/Duktape/Hermes), AI-generated reports, NOTES.md updates
-- [ ] Drop AI-generated report files from PR #7191
+- [x] Drop AI-generated report files from PR #7191
+  - [x] Removed 8 AI-generated files: build/cluster/crash/memory/other JSON, issue_analysis_report.md, rethinkdb_open_issues
 - [ ] Audit all CVEs in bundled deps (Boost 1.60, OpenSSL, QuickJS)
 - [ ] Modernize C++ standard (C++11 → C++17/20)
 - [ ] Replace deprecated Python 2 scripts with Python 3
