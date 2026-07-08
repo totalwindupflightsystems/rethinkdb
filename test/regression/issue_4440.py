@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2015-2016 RethinkDB, all rights reserved.
 
 import os, sys, time

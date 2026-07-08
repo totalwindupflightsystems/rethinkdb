@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2010-2013 RethinkDB, all rights reserved.
 
 """This script is used to generate the RDB_MAKE_SEMILATTICE_JOINABLE_*() macro

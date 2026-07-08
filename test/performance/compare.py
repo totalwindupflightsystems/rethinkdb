@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # Copyright 2010-2012 RethinkDB, all rights reserved.
 import sys
 from sys import stdout, exit, path

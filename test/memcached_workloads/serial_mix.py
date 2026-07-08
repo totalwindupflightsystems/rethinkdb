@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2010-2014 RethinkDB, all rights reserved.
 
 import os, random, sys, time
