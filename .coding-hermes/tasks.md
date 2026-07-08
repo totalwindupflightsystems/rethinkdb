@@ -22,6 +22,14 @@
   - [x] Uploaded as CI artifact (compile-commands-${{ matrix.name }})
 
 ## Phase 2: v2.5 (Next)
+- [x] Add RISC-V CI target (PR #7194)
+  - [x] Native RISC-V (riscv64) build job via free RISE GitHub Actions runners (`runs-on: ubuntu-24.04-riscv`)
+  - [x] Configures with all bundled deps (boost, gtest, re2, jemalloc, quickjs)
+  - [x] `make support` + `make -j $(nproc)` for full build verification
+  - [x] bear-generated `compile_commands.json` uploaded as CI artifact (`compile-commands-riscv`)
+  - [x] Build artifact (compressed tar.gz) uploaded for downstream debugging (`build-riscv`)
+  - [x] `continue-on-error: true` — RISE runners are in Early Availability, log warnings instead of blocking PRs
+  - Implementation commit: `77e06d086c feat(ci): add RISC-V build job via RISE runners` (and followup `025ecd8263 feat(ci): add compile_commands.json generation via bear`)
 - [x] Cherry-pick marchon's security fixes from PR #7191
   - [x] Security and stability fixes (22 files): timing-safe auth, cJSON buffer overflow, SASLPrep hardening, PBKDF2 iterations, null pointer derefs, unsigned underflows, uninitialized vars, signed/unsigned mismatches
   - [x] Critical issue fixes: #6880 cluster crash, #7124 ARM crash, #6433 allocation bounds, #7005 datum bounds, #6952 RISC-V, #7120 /proc/meminfo
@@ -48,7 +56,6 @@
   - [x] Verified generate_join_macros.py + generate_serialize_macros.py produce byte-identical output to checked-in headers
   - [x] Verified compile-web-assets.py + build-web-assets-rc.py run correctly on Python 3
   - Note: pre-release.py has pre-existing breakage on Python 3 (unrelated to this migration — uses Python 2 introspection `co_varnames`/`co_argcount` that no longer works for class-level decorator caching). Out of scope here.
-- [ ] Add RISC-V CI target (PR #7194)
 - [ ] Full-text search: GIN-style indexes with stemming/tokenization
 - [ ] Vector index: HNSW/IVFFlat for embeddings (pgvector parity)
 - [ ] BRIN-like sparse indexes for time-series/append-only workloads

@@ -97,6 +97,15 @@ jobs:
             build.tar.gz
 
   # ── RISC-V Build (native, RISE runners) ──
+  # RISE project: https://riseproject.dev/2026/03/24/announcing-the-rise-risc-v-runners-free-native-risc-v-ci-on-github/
+  # Adds native RISC-V (riscv64) build verification using the free RISE RISC-V
+  # GitHub Actions runners. Mirrors the x86_64 build matrix:
+  #   - configure with all bundled dependencies (boost, gtest, re2, jemalloc, quickjs)
+  #   - full make support + make
+  #   - bear-generated compile_commands.json uploaded as CI artifact
+  #   - build artifact (compressed tar.gz) uploaded for downstream debugging
+  # continue-on-error: true while RISE runners are in Early Availability — failures
+  # here should not block PRs, but log a clear warning so the team can investigate.
   build-riscv:
     needs: preflight
     runs-on: ubuntu-24.04-riscv
@@ -136,6 +145,19 @@ jobs:
         with:
           name: compile-commands-riscv
           path: compile_commands.json
+
+      - name: compress build artifacts
+        if: always()
+        run: tar -czf ${{ github.job }}-riscv.tar.gz build config.mk
+
+      - name: upload build artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-riscv
+          path: |
+            config.mk
+            build-riscv.tar.gz
 
   # ── Unit Tests ──
   unit-tests:
