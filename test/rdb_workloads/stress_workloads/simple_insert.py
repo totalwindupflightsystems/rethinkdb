@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # This stress workload inserts small documents of a random size under 256 bytes.
 
