@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2010-2012 RethinkDB, all rights reserved.
 from vcoptparse import *
 import vm_build

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2014-2016 RethinkDB, all rights reserved.
 
 '''This runs a bunch of the ReQL tests against the `rethinkdb._debug_scratch` artificial table to check that `artificial_table_t` works properly.'''

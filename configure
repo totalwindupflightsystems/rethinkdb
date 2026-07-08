@@ -13,7 +13,7 @@ init () {
     min_gcc_version=$(read_version 4.7.4)
     min_clang_version=0
     min_icc_version=0
-    min_python_version=2.6.0
+    min_python_version=3.6.0
 
     # QuickJS also has this configuration
     osx_min_version=10.9

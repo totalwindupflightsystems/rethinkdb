@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2010-2016 RethinkDB, all rights reserved.
 
 '''Check that sharding then re-merging keeps all data'''

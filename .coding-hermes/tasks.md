@@ -40,7 +40,14 @@
   - [x] CP4: Audit code for deprecated C++11 constructs that now warn under C++17
     - [x] Migrated 10 `std::result_of<>` → `std::invoke_result<>` across 5 files (incremental_lenses.hpp, range_map.hpp, region_map.hpp, watchable.hpp, watchable.tcc)
     - [x] Verified no `register` keyword, `std::auto_ptr`, `std::tr1`, or `std::unary_function` usage
-- [ ] Replace deprecated Python 2 scripts with Python 3
+- [x] Replace deprecated Python 2 scripts with Python 3
+  - [x] Fixed visualize_log_serializer.py (print stmt → fn, except X, e → as, cmp() → key=)
+  - [x] Updated all scripts/*.py shebangs to python3 (10 files)
+  - [x] Updated all test/*.py shebangs to python3 (43 files: scenarios, regression, workloads, rql_test)
+  - [x] Updated configure min_python_version 2.6.0 → 3.6.0
+  - [x] Verified generate_join_macros.py + generate_serialize_macros.py produce byte-identical output to checked-in headers
+  - [x] Verified compile-web-assets.py + build-web-assets-rc.py run correctly on Python 3
+  - Note: pre-release.py has pre-existing breakage on Python 3 (unrelated to this migration — uses Python 2 introspection `co_varnames`/`co_argcount` that no longer works for class-level decorator caching). Out of scope here.
 - [ ] Add RISC-V CI target (PR #7194)
 - [ ] Full-text search: GIN-style indexes with stemming/tokenization
 - [ ] Vector index: HNSW/IVFFlat for embeddings (pgvector parity)

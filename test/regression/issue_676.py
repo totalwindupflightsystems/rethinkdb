@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2012-2016 RethinkDB, all rights reserved.
 
 '''Merging shards causes a server crash'''
