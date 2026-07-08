@@ -1008,7 +1008,7 @@ check_lib_compile () {
         code='int main(){ return 0; }'
     fi
     echo "$code" > "$bfile.cc"
-    if $CXX -std=gnu++0x ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$bfile.cc" $1 -o "$bfile.out" 1>"$bfile.log" 2>&1; then
+    if $CXX -std=gnu++17 ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$bfile.cc" $1 -o "$bfile.out" 1>"$bfile.log" 2>&1; then
         show "${1:-ok}"
         var_append $(uc $2)_LIBS "$1"
         var HAS_$(uc $2) 1
@@ -1143,7 +1143,7 @@ int main() {
 }
 EOF
     if !($CXX ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$tmpfile.cc" \
-          -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1;
+          -std=gnu++17 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1;
         $tmpfile.out)
     then
        error "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."

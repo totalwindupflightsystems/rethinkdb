@@ -138,7 +138,7 @@ public:
     /* `subview()` returns another `watchable_t` whose value is derived from
     this one by calling `lens` on it. */
     template<class callable_type>
-    clone_ptr_t<watchable_t<typename std::result_of<callable_type(value_t)>::type> > subview(const callable_type &lens);
+    clone_ptr_t<watchable_t<typename std::invoke_result<callable_type, value_t>::type> > subview(const callable_type &lens);
     /* `incremental_subview()` is like `subview()`. However it takes an incremental lens.
     An incremental lens has the signature
     `bool(const input_type &, result_type *current_out)`.

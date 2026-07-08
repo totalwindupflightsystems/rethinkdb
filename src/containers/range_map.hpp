@@ -102,9 +102,9 @@ public:
             likely that it will return a `const T&` when what the user expects a return
             value of type `range_map_t<edge_t, T>`. */
             -> range_map_t<edge_t, typename std::decay<
-                typename std::result_of<callable_t(value_t)>::type>::type> {
+                typename std::invoke_result<callable_t, value_t>::type>::type> {
         typedef typename std::decay<
-            typename std::result_of<callable_t(value_t)>::type>::type result_t;
+            typename std::invoke_result<callable_t, value_t>::type>::type result_t;
         range_map_t<edge_t, result_t> res(l);
         visit(l, r, [&](const edge_t &l2, const edge_t &r2, const value_t &v) {
             res.extend_right(l2, r2, result_t(cb(v)));
@@ -122,10 +122,10 @@ public:
     template<class callable_t>
     auto map_multi(const edge_t &l, const edge_t &r, const callable_t &cb) const
             -> typename std::decay<
-                typename std::result_of<callable_t(edge_t, edge_t, value_t)>::type>
+                typename std::invoke_result<callable_t, edge_t, edge_t, value_t>::type>
                 ::type {
         typedef typename std::decay<
-            typename std::result_of<callable_t(edge_t, edge_t, value_t)>::type>
+            typename std::invoke_result<callable_t, edge_t, edge_t, value_t>::type>
             ::type::mapped_type result_t;
         range_map_t<edge_t, result_t> res(l);
         visit(l, r, [&](const edge_t &l2, const edge_t &r2, const value_t &v) {

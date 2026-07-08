@@ -105,9 +105,9 @@ public:
     template<class callable_t>
     auto map(const region_t &region, const callable_t &cb) const
             -> region_map_t<typename std::decay<
-                typename std::result_of<decltype(cb)(value_t)>::type>::type> {
+                typename std::invoke_result<decltype(cb), value_t>::type>::type> {
         return region_map_t<typename std::decay<
-                typename std::result_of<callable_t(value_t)>::type>::type>(
+                typename std::invoke_result<callable_t, value_t>::type>::type>(
             inner.map(key_edge_t(region.inner.left), region.inner.right,
                 [&](const hash_range_map_t &slice) {
                     return slice.map(region.beg, region.end, cb);
@@ -124,10 +124,10 @@ public:
     template<class callable_t>
     auto map_multi(const region_t &region, const callable_t &cb) const
             -> region_map_t<typename std::decay<
-                typename std::result_of<callable_t(region_t, value_t)>::type>
+                typename std::invoke_result<callable_t, region_t, value_t>::type>
                 ::type::mapped_type> {
         typedef typename std::decay<
-            typename std::result_of<callable_t(region_t, value_t)>::type>
+            typename std::invoke_result<callable_t, region_t, value_t>::type>
             ::type::mapped_type result_t;
         return region_map_t<result_t>(
             inner.map_multi(key_edge_t(region.inner.left), region.inner.right,
