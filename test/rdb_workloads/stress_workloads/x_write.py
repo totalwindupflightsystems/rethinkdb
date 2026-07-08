@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import md5, sys, os, random, string, x_stress_util
 import multiprocessing
 
