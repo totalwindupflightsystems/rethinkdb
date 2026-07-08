@@ -33,7 +33,13 @@
   - [x] **CRITICAL:** Upgrade OpenSSL 3.0.7 → 3.0.17 (20+ CVEs, all TLS endpoints affected) — committed f75f9fd
   - [x] **HIGH:** Upgrade QuickJS to quickjs-ng v0.15.1 (CVE-2023-48184 CVSS 9.8, CVE-2024-13903, CVE-2026-0822) — migrated from unmaintained rethinkdb/quickjspp fork to actively maintained quickjs-ng/quickjs; committed 68f7f3a
   - [x] **LOW:** Upgrade Boost 1.60 → 1.85+ (no known CVEs in used components, code-quality improvement)
-- [ ] Modernize C++ standard (C++11 → C++17/20)
+- [x] Modernize C++ standard (C++11 → C++17/20)
+  - [x] CP1: Change `-std=gnu++0x` → `-std=gnu++17` in src/build.mk and configure script
+  - [x] CP2: Update CPPLINT.cfg to allow C++17 features (remove `-build/c++17` filter)
+  - [x] CP3: Verify clean build with GCC 15 and update CI if needed
+  - [x] CP4: Audit code for deprecated C++11 constructs that now warn under C++17
+    - [x] Migrated 10 `std::result_of<>` → `std::invoke_result<>` across 5 files (incremental_lenses.hpp, range_map.hpp, region_map.hpp, watchable.hpp, watchable.tcc)
+    - [x] Verified no `register` keyword, `std::auto_ptr`, `std::tr1`, or `std::unary_function` usage
 - [ ] Replace deprecated Python 2 scripts with Python 3
 - [ ] Add RISC-V CI target (PR #7194)
 - [ ] Full-text search: GIN-style indexes with stemming/tokenization
