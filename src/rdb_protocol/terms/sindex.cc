@@ -28,7 +28,7 @@ datum_string_t sindex_config_to_string(const sindex_config_t &config) {
     version.original_reql_version = config.func_version;
     version.latest_compatible_reql_version = config.func_version;
     version.latest_checked_reql_version = reql_version_t::LATEST;
-    sindex_disk_info_t disk_info(config.func, version, config.multi, config.geo);
+    sindex_disk_info_t disk_info(config.func, version, config.multi, config.geo, config.fts);
 
     write_message_t wm;
     serialize_sindex_info(&wm, disk_info);
@@ -90,7 +90,7 @@ sindex_config_t sindex_config_from_string(
         sindex_info.mapping_version_info.original_reql_version,
         sindex_info.multi,
         sindex_info.geo,
-        sindex_fts_bool_t::REGULAR);
+        sindex_info.fts);
 }
 
 // Helper for `sindex_status_to_datum()`
@@ -120,6 +120,15 @@ std::string format_index_create_query(
         }
         ret += "geo: true";
     }
+    if (config.fts == sindex_fts_bool_t::FTS) {
+        if (first_optarg) {
+            ret += ", {";
+            first_optarg = false;
+        } else {
+            ret += ", ";
+        }
+        ret += "fts: true";
+    }
     if (!first_optarg) {
         ret += "}";
     }
@@ -147,6 +156,8 @@ ql::datum_t sindex_status_to_datum(
         ql::datum_t::boolean(config.multi == sindex_multi_bool_t::MULTI));
     stat.overwrite("geo",
         ql::datum_t::boolean(config.geo == sindex_geo_bool_t::GEO));
+    stat.overwrite("fts",
+        ql::datum_t::boolean(config.fts == sindex_fts_bool_t::FTS));
     stat.overwrite("function",
         ql::datum_t::binary(sindex_config_to_string(config)));
     stat.overwrite("query",
@@ -157,7 +168,7 @@ ql::datum_t sindex_status_to_datum(
 class sindex_create_term_t : public op_term_t {
 public:
     sindex_create_term_t(compile_env_t *env, const raw_term_t &term)
-        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo"})) { }
+        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo", "fts"})) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -173,6 +184,7 @@ public:
         sindex_config_t config;
         config.multi = sindex_multi_bool_t::SINGLE;
         config.geo = sindex_geo_bool_t::REGULAR;
+        config.fts = sindex_fts_bool_t::REGULAR;
         if (args->num_args() == 3) {
             scoped_ptr_t<val_t> v = args->arg(env, 2);
             bool got_func = false;
@@ -221,6 +233,12 @@ public:
             config.geo = geo_val->as_bool()
                 ? sindex_geo_bool_t::GEO
                 : sindex_geo_bool_t::REGULAR;
+        }
+        /* Do we want to create an FTS index? */
+        if (scoped_ptr_t<val_t> fts_val = args->optarg(env, "fts")) {
+            config.fts = fts_val->as_bool()
+                ? sindex_fts_bool_t::FTS
+                : sindex_fts_bool_t::REGULAR;
         }
 
         try {

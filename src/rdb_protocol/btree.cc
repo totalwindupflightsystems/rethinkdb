@@ -1623,6 +1623,7 @@ void serialize_sindex_info(write_message_t *wm,
     serialize<cluster_version_t::LATEST_DISK>(wm, info.mapping);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.multi);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.geo);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.fts);
 }
 
 void deserialize_sindex_info(
@@ -1705,8 +1706,14 @@ void deserialize_sindex_info(
         break;
     default: unreachable();
     }
-    guarantee(static_cast<size_t>(read_stream.tell()) == data.size(),
-              "An sindex description was incompletely deserialized.");
+
+    // FTS field: present in v2.5+ sindex info, absent in older data.
+    // Default to REGULAR for backward compatibility.
+    info_out->fts = sindex_fts_bool_t::REGULAR;
+    if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+        success = deserialize_for_version(cluster_version, &read_stream, &info_out->fts);
+        throw_if_bad_deserialization(success, "sindex description");
+    }
 }
 
 void deserialize_sindex_info_or_crash(
