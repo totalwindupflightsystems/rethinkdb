@@ -6,3 +6,9 @@ mk/gen/
 
 # Hilo local state
 .vfs/graph/
+
+# Python cache
+__pycache__/
+
+# Orphan session artifacts
+agent-sdlc-interaction-map.json
