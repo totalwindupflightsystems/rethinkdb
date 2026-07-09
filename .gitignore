@@ -10,5 +10,8 @@ mk/gen/
 # Python cache
 __pycache__/
 
+# Test results
+test/results/
+
 # Orphan session artifacts
 agent-sdlc-interaction-map.json
