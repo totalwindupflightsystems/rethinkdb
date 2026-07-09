@@ -801,6 +801,12 @@ message Term {
 
         // String formatting
         FORMAT = 197;
+
+        // * Full Text Search Operators
+        // Tokenizes a string for full-text search using the same tokenizer as FTS indexes.
+        FTS_TOKENIZE = 198; // STRING -> ARRAY
+        // Queries an FTS index against a table, returning matching documents.
+        FTS_MATCH = 199; // Table, STRING {index: STRING} -> StreamSelection
     }
     optional TermType type = 1;
 
