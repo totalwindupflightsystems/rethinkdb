@@ -89,7 +89,8 @@ sindex_config_t sindex_config_from_string(
         sindex_info.mapping,
         sindex_info.mapping_version_info.original_reql_version,
         sindex_info.multi,
-        sindex_info.geo);
+        sindex_info.geo,
+        sindex_fts_bool_t::REGULAR);
 }
 
 // Helper for `sindex_status_to_datum()`
