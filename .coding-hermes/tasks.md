@@ -50,11 +50,11 @@
   - [x] Add fts optarg to sindex_create_term_t (r.indexCreate("idx", func, {fts: true}))
   - [x] Wire FTS-aware index creation into the sindex execution path
   - [x] **FTS-2 complete**: all sub-items committed. sindex_create_term_t accepts {fts: true}, serialized through sindex_disk_info_t with backward-compat deserialization, exposed in sindex_status() output. Builds clean.
-  - [ ] **FTS-3: FTS index function + match query operator**
-    - Add `fts_tokenize()` ReQL term wrapping the tokenizer
-    - Add `fts_match()` ReQL term for querying FTS indexes
-    - Wire FTS-aware index creation into the sindex execution path
-    - Verify: build clean
+  - [x] **FTS-3: FTS index function + match query operator** (committed 2026-07-09)
+    - [x] Add `fts_tokenize()` ReQL term wrapping the tokenizer
+    - [x] Add `fts_match()` ReQL term for querying FTS indexes
+    - [x] Wire into term.cc, terms.hpp, and ql2.proto (types 198, 199)
+    - [x] Builds clean with main + unit test targets
   - [ ] **FTS-4: Integration tests and end-to-end FTS pipeline**
     - Unit tests for tokenizer correctness (English stemming, stop words, edge cases)
     - Integration test: create FTS index, insert documents, query with fts_match
