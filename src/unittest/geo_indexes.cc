@@ -170,7 +170,8 @@ void prepare_namespace(namespace_interface_t *nsi,
         ql::map_wire_func_t(mapping, make_vector(arg)),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
-        sindex_geo_bool_t::GEO);
+        sindex_geo_bool_t::GEO,
+        sindex_fts_bool_t::REGULAR);
 
     cond_t non_interruptor;
     for (const auto &store : *stores) {
