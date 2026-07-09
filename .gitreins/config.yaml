@@ -10,7 +10,7 @@ guards:
   lint_command: ./scripts/check_style.sh
   tests: true
   test_mode: diff
-  test_command: make test -j$(nproc)
+  test_command: ./build/release/rethinkdb-unittest
   test_timeout: 300
 
 # ── Pipeline Stages ──
