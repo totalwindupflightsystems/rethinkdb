@@ -47,9 +47,9 @@
   - [x] Add `sindex_fts_bool_t` enum alongside `sindex_multi_bool_t` / `sindex_geo_bool_t` (committed)
   - [x] Add `fts` field to `sindex_config_t` and `sindex_disk_info_t` (committed)
   - [x] Serialize/deserialize the new field (ARCHIVE_PRIM + RDB_DECLARE_SERIALIZABLE)
-  - [ ] Add `fts` optarg to `sindex_create_term_t` (r.indexCreate("idx", func, {fts: true}))
-  - [ ] Wire FTS-aware index creation into the sindex execution path
-  - Verify: build clean
+  - [x] Add fts optarg to sindex_create_term_t (r.indexCreate("idx", func, {fts: true}))
+  - [x] Wire FTS-aware index creation into the sindex execution path
+  - [x] **FTS-2 complete**: all sub-items committed. sindex_create_term_t accepts {fts: true}, serialized through sindex_disk_info_t with backward-compat deserialization, exposed in sindex_status() output. Builds clean.
   - [ ] **FTS-3: FTS index function + match query operator**
     - Add `fts_tokenize()` ReQL term wrapping the tokenizer
     - Add `fts_match()` ReQL term for querying FTS indexes
