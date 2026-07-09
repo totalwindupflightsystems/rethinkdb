@@ -336,6 +336,7 @@ std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > store_t::sin
         res->first.func_version = disk_info.mapping_version_info.original_reql_version;
         res->first.multi = disk_info.multi;
         res->first.geo = disk_info.geo;
+        res->first.fts = disk_info.fts;
 
         res->second.outdated =
             (disk_info.mapping_version_info.latest_compatible_reql_version !=
@@ -382,7 +383,7 @@ void store_t::sindex_create(
     version_info.original_reql_version = config.func_version;
     version_info.latest_compatible_reql_version = config.func_version;
     version_info.latest_checked_reql_version = reql_version_t::LATEST;
-    sindex_disk_info_t info(config.func, version_info, config.multi, config.geo);
+    sindex_disk_info_t info(config.func, version_info, config.multi, config.geo, config.fts);
 
     write_message_t wm;
     serialize_sindex_info(&wm, info);
