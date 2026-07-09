@@ -262,13 +262,15 @@ struct sindex_disk_info_t {
     sindex_disk_info_t(const ql::map_wire_func_t &_mapping,
                        const sindex_reql_version_info_t &_mapping_version_info,
                        sindex_multi_bool_t _multi,
-                       sindex_geo_bool_t _geo) :
+                       sindex_geo_bool_t _geo,
+                       sindex_fts_bool_t _fts = sindex_fts_bool_t::REGULAR) :
         mapping(_mapping), mapping_version_info(_mapping_version_info),
-        multi(_multi), geo(_geo) { }
+        multi(_multi), geo(_geo), fts(_fts) { }
     ql::map_wire_func_t mapping;
     sindex_reql_version_info_t mapping_version_info;
     sindex_multi_bool_t multi;
     sindex_geo_bool_t geo;
+    sindex_fts_bool_t fts;
 };
 
 void serialize_sindex_info(write_message_t *wm,

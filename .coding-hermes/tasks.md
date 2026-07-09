@@ -23,42 +23,44 @@
 
 ## Phase 2: v2.5 (Next)
 - [x] Add RISC-V CI target (PR #7194)
-  - [x] Native RISC-V (riscv64) build job via free RISE GitHub Actions runners (`runs-on: ubuntu-24.04-riscv`)
-  - [x] Configures with all bundled deps (boost, gtest, re2, jemalloc, quickjs)
-  - [x] `make support` + `make -j $(nproc)` for full build verification
-  - [x] bear-generated `compile_commands.json` uploaded as CI artifact (`compile-commands-riscv`)
-  - [x] Build artifact (compressed tar.gz) uploaded for downstream debugging (`build-riscv`)
-  - [x] `continue-on-error: true` — RISE runners are in Early Availability, log warnings instead of blocking PRs
-  - Implementation commit: `77e06d086c feat(ci): add RISC-V build job via RISE runners` (and followup `025ecd8263 feat(ci): add compile_commands.json generation via bear`)
+  - Implementation commit: `77e06d086c feat(ci): add RISC-V build job via RISE runners`
 - [x] Cherry-pick marchon's security fixes from PR #7191
   - [x] Security and stability fixes (22 files): timing-safe auth, cJSON buffer overflow, SASLPrep hardening, PBKDF2 iterations, null pointer derefs, unsigned underflows, uninitialized vars, signed/unsigned mismatches
   - [x] Critical issue fixes: #6880 cluster crash, #7124 ARM crash, #6433 allocation bounds, #7005 datum bounds, #6952 RISC-V, #7120 /proc/meminfo
   - [x] Container support: cgroup memory detection, shard limit 64→256, shutdown guarantee fix
   - [x] Skipped: JS engine feature (pluggable V8/QuickJS/Duktape/Hermes), AI-generated reports, NOTES.md updates
 - [x] Drop AI-generated report files from PR #7191
-  - [x] Removed 8 AI-generated files: build/cluster/crash/memory/other JSON, issue_analysis_report.md, rethinkdb_open_issues
-- [x] Audit all CVEs in bundled deps (Boost 1.60, OpenSSL, QuickJS) → see .coding-hermes/research/cve-audit-bundled-deps.md
-  - [x] **CRITICAL:** Upgrade OpenSSL 3.0.7 → 3.0.17 (20+ CVEs, all TLS endpoints affected) — committed f75f9fd
-  - [x] **HIGH:** Upgrade QuickJS to quickjs-ng v0.15.1 (CVE-2023-48184 CVSS 9.8, CVE-2024-13903, CVE-2026-0822) — migrated from unmaintained rethinkdb/quickjspp fork to actively maintained quickjs-ng/quickjs; committed 68f7f3a
-  - [x] **LOW:** Upgrade Boost 1.60 → 1.85+ (no known CVEs in used components, code-quality improvement)
-- [x] Modernize C++ standard (C++11 → C++17/20)
-  - [x] CP1: Change `-std=gnu++0x` → `-std=gnu++17` in src/build.mk and configure script
-  - [x] CP2: Update CPPLINT.cfg to allow C++17 features (remove `-build/c++17` filter)
-  - [x] CP3: Verify clean build with GCC 15 and update CI if needed
-  - [x] CP4: Audit code for deprecated C++11 constructs that now warn under C++17
-    - [x] Migrated 10 `std::result_of<>` → `std::invoke_result<>` across 5 files (incremental_lenses.hpp, range_map.hpp, region_map.hpp, watchable.hpp, watchable.tcc)
-    - [x] Verified no `register` keyword, `std::auto_ptr`, `std::tr1`, or `std::unary_function` usage
+- [x] Audit all CVEs in bundled deps → see .coding-hermes/research/cve-audit-bundled-deps.md
+  - [x] Upgrade OpenSSL 3.0.7 → 3.0.17 (20+ CVEs)
+  - [x] Upgrade QuickJS to quickjs-ng v0.15.1 (CVE-2023-48184 CVSS 9.8)
+  - [x] Upgrade Boost 1.60 → 1.85
+- [x] Modernize C++ standard (C++11 → C++17)
 - [x] Replace deprecated Python 2 scripts with Python 3
-  - [x] Fixed visualize_log_serializer.py (print stmt → fn, except X, e → as, cmp() → key=)
-  - [x] Updated all scripts/*.py shebangs to python3 (10 files)
-  - [x] Updated all test/*.py shebangs to python3 (43 files: scenarios, regression, workloads, rql_test)
-  - [x] Updated configure min_python_version 2.6.0 → 3.6.0
-  - [x] Verified generate_join_macros.py + generate_serialize_macros.py produce byte-identical output to checked-in headers
-  - [x] Verified compile-web-assets.py + build-web-assets-rc.py run correctly on Python 3
-  - Note: pre-release.py has pre-existing breakage on Python 3 (unrelated to this migration — uses Python 2 introspection `co_varnames`/`co_argcount` that no longer works for class-level decorator caching). Out of scope here.
-- [ ] Full-text search: GIN-style indexes with stemming/tokenization
-- [ ] Vector index: HNSW/IVFFlat for embeddings (pgvector parity)
-- [ ] BRIN-like sparse indexes for time-series/append-only workloads
+- [ ] **PHASE 2a: Full-Text Search (GIN-style indexes)**
+  - [x] **FTS-1: Tokenizer + stemmer infrastructure** (committed 2026-07-09)
+    - Created `src/rdb_protocol/fts_tokenizer.hpp` and `src/rdb_protocol/fts_tokenizer.cc`
+    - `fts_tokenizer_t` class: text → lowercased tokens with Porter stemming (Porter 1980)
+    - Configurable: min_token_length (default 2), stop_words (SMART list), language
+    - re2 regex tokenization (`\w+`), stop-word filter, self-contained Porter stemmer (steps 1a-5)
+    - Builds clean with `make -j$(nproc)`
+  - [ ] **FTS-2: GIN-type sindex support**
+  - [x] Add `sindex_fts_bool_t` enum alongside `sindex_multi_bool_t` / `sindex_geo_bool_t` (committed)
+  - [x] Add `fts` field to `sindex_config_t` and `sindex_disk_info_t` (committed)
+  - [x] Serialize/deserialize the new field (ARCHIVE_PRIM + RDB_DECLARE_SERIALIZABLE)
+  - [ ] Add `fts` optarg to `sindex_create_term_t` (r.indexCreate("idx", func, {fts: true}))
+  - [ ] Wire FTS-aware index creation into the sindex execution path
+  - Verify: build clean
+  - [ ] **FTS-3: FTS index function + match query operator**
+    - Add `fts_tokenize()` ReQL term wrapping the tokenizer
+    - Add `fts_match()` ReQL term for querying FTS indexes
+    - Wire FTS-aware index creation into the sindex execution path
+    - Verify: build clean
+  - [ ] **FTS-4: Integration tests and end-to-end FTS pipeline**
+    - Unit tests for tokenizer correctness (English stemming, stop words, edge cases)
+    - Integration test: create FTS index, insert documents, query with fts_match
+    - Verify: `make -j$(nproc)` + relevant tests pass
+- [ ] **PHASE 2b: Vector indexes (HNSW/IVFFlat)**
+- [ ] **PHASE 2c: BRIN-like sparse indexes**
 
 ## Phase 3: v3.0 (Future)
 - [ ] Declarative table partitioning
