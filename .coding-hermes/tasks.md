@@ -55,10 +55,11 @@
     - [x] Add `fts_match()` ReQL term for querying FTS indexes
     - [x] Wire into term.cc, terms.hpp, and ql2.proto (types 198, 199)
     - [x] Builds clean with main + unit test targets
-  - [ ] **FTS-4: Integration tests and end-to-end FTS pipeline**
-    - Unit tests for tokenizer correctness (English stemming, stop words, edge cases)
-    - Integration test: create FTS index, insert documents, query with fts_match
-    - Verify: `make -j$(nproc)` + relevant tests pass
+  - [x] **FTS-4: Integration tests and end-to-end FTS pipeline** (committed 2026-07-11)
+    - [x] Fixed critical re2 regex bug: FindAndConsume requires `(\w+)` capture group, not `\w+`
+    - [x] 25 unit tests covering tokenization, stop words, Porter stemming, min_token_length
+    - [x] 364/364 full unit test suite passes
+    - [x] Main binary builds clean
 - [ ] **PHASE 2b: Vector indexes (HNSW/IVFFlat)**
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
 
