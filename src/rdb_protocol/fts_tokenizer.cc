@@ -43,7 +43,7 @@ const std::unordered_set<std::string> &fts_tokenizer_t::default_stop_words() {
 // ── Construction ──
 
 fts_tokenizer_t::fts_tokenizer_t()
-    : token_re_("\\w+"),           // re2: match word characters
+    : token_re_("(\\w+)"),           // re2: match word characters (capture group required for FindAndConsume)
       min_token_length_(2),
       language_("english"),
       stop_words_(default_stop_words())
@@ -53,7 +53,7 @@ fts_tokenizer_t::fts_tokenizer_t(
     size_t min_token_length,
     const std::string &language,
     const std::unordered_set<std::string> &extra_stop_words)
-    : token_re_("\\w+"),
+    : token_re_("(\\w+)"),
       min_token_length_(min_token_length),
       language_(language),
       stop_words_(default_stop_words())
