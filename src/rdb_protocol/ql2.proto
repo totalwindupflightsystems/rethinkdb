@@ -224,6 +224,7 @@ message Datum {
         // set to [true] in [Query].  [r_str] will be filled with a
         // JSON encoding of the [Datum].
         R_JSON   = 7; // uses r_str
+        R_VECTOR = 8;
     }
     optional DatumType type = 1;
     optional bool r_bool = 2;
@@ -231,6 +232,7 @@ message Datum {
     optional string r_str = 4;
 
     repeated Datum r_array = 5;
+    repeated double r_vector = 7;
     message AssocPair {
         optional string key = 1;
         optional Datum val = 2;
@@ -807,6 +809,10 @@ message Term {
         FTS_TOKENIZE = 198; // STRING -> ARRAY
         // Queries an FTS index against a table, returning matching documents.
         FTS_MATCH = 199; // Table, STRING {index: STRING} -> StreamSelection
+
+        // * Vector Operations
+        // Converts an array of numbers into a VECTOR datum.
+        VECTOR = 200; // ARRAY -> VECTOR
     }
     optional TermType type = 1;
 

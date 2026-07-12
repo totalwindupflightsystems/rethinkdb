@@ -116,6 +116,7 @@ private:
         R_NUM,
         R_OBJECT,
         R_STR,
+        R_VECTOR,
         BUF_R_ARRAY,
         BUF_R_OBJECT,
         MAXVAL
@@ -133,7 +134,8 @@ public:
         R_NUM = 6,
         R_OBJECT = 7,
         R_STR = 8,
-        MAXVAL = 9
+        R_VECTOR = 9,
+        MAXVAL = 10
     };
 
     static datum_t empty_array();
@@ -143,6 +145,8 @@ public:
     static datum_t boolean(bool value);
     static datum_t binary(datum_string_t &&value);
     static datum_t binary(const datum_string_t &value);
+
+    static datum_t vector(std::vector<double> &&data);
 
     static datum_t utf8(datum_string_t _data);
 
@@ -186,6 +190,9 @@ public:
 
     enum class construct_binary_t { };
     explicit datum_t(construct_binary_t, datum_string_t _data);
+
+    enum class construct_vector_t { };
+    explicit datum_t(construct_vector_t, std::vector<double> &&vec);
 
     explicit datum_t(double _num);
     explicit datum_t(datum_string_t _str);
@@ -266,6 +273,7 @@ public:
     int64_t as_int() const;
     const datum_string_t &as_str() const;
     const datum_string_t &as_binary() const;
+    const std::vector<double> &as_vector() const;
 
     // Array interface
     size_t arr_size() const;
@@ -426,6 +434,7 @@ private:
         explicit data_wrapper_t(datum_string_t str);
         explicit data_wrapper_t(const char *cstr);
         explicit data_wrapper_t(std::vector<datum_t> &&array);
+        explicit data_wrapper_t(std::vector<double> &&vec);
         explicit data_wrapper_t(
                 std::vector<std::pair<datum_string_t, datum_t> > &&object);
         data_wrapper_t(type_t type, shared_buf_ref_t<char> &&_buf_ref);
@@ -443,6 +452,7 @@ private:
             counted_t<countable_wrapper_t<std::vector< //NOLINT(whitespace/operators)
                 std::pair<datum_string_t, datum_t> > > > r_object;
             shared_buf_ref_t<char> buf_ref;
+            counted_t<countable_wrapper_t<std::vector<double> > > r_vector;
         };
     private:
         void assign_copy(const data_wrapper_t &copyee);

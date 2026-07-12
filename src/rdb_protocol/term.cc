@@ -138,6 +138,7 @@ counted_t<const term_t> compile_on_current_stack(
     case Term::INDEX_RENAME:       return make_sindex_rename_term(env, t);
     case Term::FTS_TOKENIZE:      return make_fts_tokenize_term(env, t);
     case Term::FTS_MATCH:         return make_fts_match_term(env, t);
+    case Term::VECTOR:            return make_vector_term(env, t);
     case Term::FUNCALL:            return make_funcall_term(env, t);
     case Term::BRANCH:             return make_branch_term(env, t);
     case Term::OR:                 return make_or_term(env, t);

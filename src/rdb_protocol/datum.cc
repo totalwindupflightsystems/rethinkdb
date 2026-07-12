@@ -113,6 +113,10 @@ datum_t::data_wrapper_t::data_wrapper_t(std::vector<datum_t> &&array) :
     r_array(new countable_wrapper_t<std::vector<datum_t> >(std::move(array))),
     internal_type(internal_type_t::R_ARRAY) { }
 
+datum_t::data_wrapper_t::data_wrapper_t(std::vector<double> &&vec) :
+    r_vector(new countable_wrapper_t<std::vector<double> >(std::move(vec))),
+    internal_type(internal_type_t::R_VECTOR) { }
+
 datum_t::data_wrapper_t::data_wrapper_t(
         std::vector<std::pair<datum_string_t, datum_t> > &&object) :
     r_object(new countable_wrapper_t<std::vector<std::pair<datum_string_t, datum_t> > >(
@@ -146,6 +150,7 @@ datum_t::data_wrapper_t::data_wrapper_t(type_t type, shared_buf_ref_t<char> &&_b
         internal_type = internal_type_t::R_STR;
         new(&r_str) datum_string_t(std::move(_buf_ref));
     } break;
+    case R_VECTOR: // fallthru
     case UNINITIALIZED: // fallthru
     case R_BOOL: // fallthru
     case R_NULL: // fallthru
@@ -188,6 +193,8 @@ datum_t::type_t datum_t::data_wrapper_t::get_type() const {
         return type_t::R_OBJECT;
     case internal_type_t::R_STR:
         return type_t::R_STR;
+    case internal_type_t::R_VECTOR:
+        return type_t::R_VECTOR;
     case internal_type_t::BUF_R_ARRAY:
         return type_t::R_ARRAY;
     case internal_type_t::BUF_R_OBJECT:
@@ -216,6 +223,9 @@ void datum_t::data_wrapper_t::destruct() {
     } break;
     case internal_type_t::R_ARRAY: {
         r_array.~counted_t<countable_wrapper_t<std::vector<datum_t> > >();
+    } break;
+    case internal_type_t::R_VECTOR: {
+        r_vector.~counted_t<countable_wrapper_t<std::vector<double> > >();
     } break;
     case internal_type_t::R_OBJECT: {
         r_object.~counted_t<countable_wrapper_t<std::vector<std::pair<datum_string_t, datum_t> > > >();
@@ -248,6 +258,9 @@ void datum_t::data_wrapper_t::assign_copy(const datum_t::data_wrapper_t &copyee)
     } break;
     case internal_type_t::R_ARRAY: {
         new(&r_array) counted_t<countable_wrapper_t<std::vector<datum_t> > >(copyee.r_array);
+    } break;
+    case internal_type_t::R_VECTOR: {
+        new(&r_vector) counted_t<countable_wrapper_t<std::vector<double> > >(copyee.r_vector);
     } break;
     case internal_type_t::R_OBJECT: {
         new(&r_object) counted_t<countable_wrapper_t<std::vector<std::pair<datum_string_t, datum_t> > > >(
@@ -282,6 +295,10 @@ void datum_t::data_wrapper_t::assign_move(datum_t::data_wrapper_t &&movee) noexc
         new(&r_array) counted_t<countable_wrapper_t<std::vector<datum_t> > >(
             std::move(movee.r_array));
     } break;
+    case internal_type_t::R_VECTOR: {
+        new(&r_vector) counted_t<countable_wrapper_t<std::vector<double> > >(
+            std::move(movee.r_vector));
+    } break;
     case internal_type_t::R_OBJECT: {
         new(&r_object) counted_t<countable_wrapper_t<std::vector<std::pair<datum_string_t, datum_t> > > >(
             std::move(movee.r_object));
@@ -313,6 +330,9 @@ datum_t::datum_t(construct_boolean_t dummy, bool _bool) : data(dummy, _bool) { }
 
 datum_t::datum_t(construct_binary_t dummy, datum_string_t _data)
     : data(dummy, std::move(_data)) { }
+
+datum_t::datum_t(construct_vector_t dummy, std::vector<double> &&vec)
+    : data(std::move(vec)) { }
 
 datum_t::datum_t(double _num) : data(_num) {
     rcheck(risfinite(data.r_num), base_exc_t::LOGIC,
@@ -423,6 +443,10 @@ datum_t datum_t::binary(const datum_string_t &_data) {
 
 datum_t datum_t::binary(datum_string_t &&_data) {
     return datum_t(construct_binary_t(), std::move(_data));
+}
+
+datum_t datum_t::vector(std::vector<double> &&data) {
+    return datum_t(construct_vector_t(), std::move(data));
 }
 
 // two versions of these, because std::string is not necessarily null
@@ -559,6 +583,7 @@ std::string raw_type_name(datum_t::type_t type, name_for_sorting_t for_sorting) 
     case datum_t::R_BOOL:   return "BOOL";
     case datum_t::R_NUM:    return "NUMBER";
     case datum_t::R_STR:    return "STRING";
+    case datum_t::R_VECTOR: return "VECTOR";
     case datum_t::R_ARRAY:  return "ARRAY";
     case datum_t::R_OBJECT: return "OBJECT";
     case datum_t::MAXVAL:   return for_sorting == name_for_sorting_t::NO ? "MAXVAL": "\xFFMAXVAL";
@@ -1047,6 +1072,12 @@ std::string datum_t::print_primary_internal() const {
     case R_STR: str_to_str_key(escape_nulls_t::NO, &s); break;
     case R_BINARY: binary_to_str_key(&s); break;
     case R_BOOL: bool_to_str_key(&s); break;
+    case R_VECTOR:
+        type_error(strprintf(
+            "Primary keys must be either a number, string, bool, pseudotype "
+            "or array (got type %s):\n%s",
+            get_type_name().c_str(), trunc_print().c_str()));
+        break;
     case R_ARRAY:
         // Extrema are always ok here for the same reason as described above.
         array_to_str_key(
@@ -1431,6 +1462,11 @@ const datum_string_t &datum_t::as_binary() const {
     return data.r_str;
 }
 
+const std::vector<double> &datum_t::as_vector() const {
+    check_type(R_VECTOR);
+    return *data.r_vector;
+}
+
 const datum_string_t &datum_t::as_str() const {
     check_type(R_STR);
     return data.r_str;
@@ -1547,6 +1583,7 @@ void write_json_unchecked_stack(const datum_t &datum, json_writer_t *writer) {
         }
     } break;
     case datum_t::R_STR: writer->String(datum.as_str().data(), datum.as_str().size()); break;
+    case datum_t::R_VECTOR: rfail_datum(base_exc_t::LOGIC, "Cannot convert VECTOR to JSON.");
     case datum_t::R_ARRAY: {
         writer->StartArray();
         const size_t sz = datum.arr_size();
@@ -1592,6 +1629,7 @@ cJSON *datum_t::as_json_raw() const {
     case R_BOOL: return cJSON_CreateBool(as_bool());
     case R_NUM: return cJSON_CreateNumber(as_num());
     case R_STR: return cJSON_CreateStringN(as_str().data(), as_str().size());
+    case R_VECTOR: rfail_datum(base_exc_t::LOGIC, "Cannot convert VECTOR to JSON.");
     case R_ARRAY: {
         scoped_cJSON_t arr(cJSON_CreateArray());
         const size_t sz = arr_size();
@@ -1631,6 +1669,7 @@ datum_t::as_datum_stream(backtrace_id_t backtrace) const {
     case R_BOOL:   // fallthru
     case R_NUM:    // fallthru
     case R_STR:    // fallthru
+    case R_VECTOR: // fallthru
     case R_OBJECT: // fallthru
         type_error(strprintf("Cannot convert %s to SEQUENCE",
                              get_type_name().c_str()));
@@ -1764,6 +1803,20 @@ int datum_t::cmp_unchecked_stack(const datum_t &rhs) const {
     case R_BOOL: return derived_cmp(as_bool(), rhs.as_bool());
     case R_NUM: return derived_cmp(as_num(), rhs.as_num());
     case R_STR: return as_str().compare(rhs.as_str());
+    case R_VECTOR: {
+        const std::vector<double> &v = as_vector();
+        const std::vector<double> &rv = rhs.as_vector();
+        size_t i;
+        const size_t sz = v.size();
+        const size_t rhs_sz = rv.size();
+        for (i = 0; i < sz; ++i) {
+            if (i >= rhs_sz) return 1;
+            int cmpval = derived_cmp(v[i], rv[i]);
+            if (cmpval != 0) return cmpval;
+        }
+        guarantee(i <= rhs_sz);
+        return i == rhs_sz ? 0 : -1;
+    }
     case R_ARRAY: {
         size_t i;
         const size_t sz = arr_size();
@@ -1881,6 +1934,14 @@ datum_t to_datum(const Datum *d, const configured_limits_t &limits,
         }
         const std::set<std::string> pts = { pseudo::literal_string };
         return datum_t(std::move(map), pts);
+    } break;
+    case Datum::R_VECTOR: {
+        std::vector<double> vec;
+        vec.reserve(d->r_vector_size());
+        for (int i = 0, e = d->r_vector_size(); i < e; ++i) {
+            vec.push_back(d->r_vector(i));
+        }
+        return datum_t::vector(std::move(vec));
     } break;
     default: unreachable();
     }
