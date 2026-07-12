@@ -36,7 +36,7 @@
   - [x] Upgrade Boost 1.60 → 1.85
 - [x] Modernize C++ standard (C++11 → C++17)
 - [x] Replace deprecated Python 2 scripts with Python 3
-- [ ] **PHASE 2a: Full-Text Search (GIN-style indexes)**
+- [x] **PHASE 2a: Full-Text Search (GIN-style indexes)**
   - [x] **FTS-1: Tokenizer + stemmer infrastructure** (committed 2026-07-09)
     - Created `src/rdb_protocol/fts_tokenizer.hpp` and `src/rdb_protocol/fts_tokenizer.cc`
     - `fts_tokenizer_t` class: text → lowercased tokens with Porter stemming (Porter 1980)
@@ -61,6 +61,41 @@
     - [x] 364/364 full unit test suite passes
     - [x] Main binary builds clean
 - [ ] **PHASE 2b: Vector indexes (HNSW/IVFFlat)**
+  - [x] **VECTOR-1: Architecture spec & design document**
+    - Design vector index API (ReQL terms, data types)
+    - Choose initial algorithm (HNSW vs IVFFlat vs brute-force for POC)
+    - Define data structures, storage layout, serialization
+    - Map integration points with existing sindex infrastructure
+    - Output: `.coding-hermes/research/vector-index-design.md`
+  - [ ] **VECTOR-2: Vector data type support**
+    - Add `r.vector([1.0, 2.0, 3.0])` ReQL datum type
+    - Define `datum_t::R_VECTOR` variant
+    - Serialization, wire protocol, ql2.proto
+  - [ ] **VECTOR-3: Distance functions**
+    - L2 (Euclidean), cosine similarity, inner product
+    - SIMD-accelerated implementations
+  - [ ] **VECTOR-4: HNSW index implementation**
+    - HNSW graph: multi-layer navigable small world
+    - Insert, search (ANN), delete operations
+    - Thread-safe concurrent access
+  - [ ] **VECTOR-5: IVFFlat index implementation**
+    - K-means clustering for IVF centroids
+    - Flat quantization within clusters
+    - Insert, search, training phase
+  - [ ] **VECTOR-6: Sindex integration**
+    - Add `sindex_vector_bool_t` enum + fields to config structs
+    - Wire vector index creation into sindex execution path
+    - ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
+    - ReQL: `r.vectorNear("vec_idx", query_vec, {k: 10})`
+  - [ ] **VECTOR-7: Serialization & persistence**
+    - Serialize/deserialize vector index metadata
+    - Store HNSW graph / IVF centroids on disk
+    - Backward compatibility with existing sindex format
+  - [ ] **VECTOR-8: Tests**
+    - Unit tests for distance functions, HNSW, IVF
+    - Integration tests with real ReQL queries
+    - Correctness tests (exact vs approximate recall)
+    - Performance benchmarks
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
 
 ## Phase 3: v3.0 (Future)
