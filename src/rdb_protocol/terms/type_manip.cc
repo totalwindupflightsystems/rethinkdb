@@ -27,7 +27,7 @@ namespace ql {
 // * Everything is done with nested ifs.  Ideally we'd build some sort of graph
 //   structure and walk it.
 
-static const int MAX_TYPE = 10;
+static const int MAX_TYPE = 16;
 
 static const int DB_TYPE = val_t::type_t::DB * MAX_TYPE;
 static const int TABLE_TYPE = val_t::type_t::TABLE * MAX_TYPE;

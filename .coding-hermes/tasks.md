@@ -43,7 +43,7 @@
     - Configurable: min_token_length (default 2), stop_words (SMART list), language
     - re2 regex tokenization (`\w+`), stop-word filter, self-contained Porter stemmer (steps 1a-5)
     - Builds clean with `make -j$(nproc)`
-  - [ ] **FTS-2: GIN-type sindex support**
+  - [x] **FTS-2: GIN-type sindex support**
   - [x] Add `sindex_fts_bool_t` enum alongside `sindex_multi_bool_t` / `sindex_geo_bool_t` (committed)
   - [x] Add `fts` field to `sindex_config_t` and `sindex_disk_info_t` (committed)
   - [x] Serialize/deserialize the new field (ARCHIVE_PRIM + RDB_DECLARE_SERIALIZABLE)
