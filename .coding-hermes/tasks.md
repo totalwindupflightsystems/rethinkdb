@@ -76,10 +76,12 @@
     - [x] SIMD-accelerated (AVX2/AVX-512 runtime detection)
     - [x] 24 unit tests covering edge cases (zero norms, large/odd dimensions)
     - [x] 388/388 full test suite passes, build clean
-  - [ ] **VECTOR-4: HNSW index implementation**
-    - HNSW graph: multi-layer navigable small world
-    - Insert, search (ANN), delete operations
-    - Thread-safe concurrent access
+  - [x] **VECTOR-4: HNSW index implementation** (committed 2026-07-12)
+    - [x] `hnsw_graph_t` class: full HNSW with insert, search_knn, remove
+    - [x] Multi-layer navigable small world, greedy descent, beam search
+    - [x] L2, cosine, inner product distance metrics
+    - [x] Serialization with INSTANTIATE_SERIALIZABLE_SINCE_v2_4
+    - [x] 16 unit tests, 403/403 non-Raft tests pass
   - [ ] **VECTOR-5: IVFFlat index implementation**
     - K-means clustering for IVF centroids
     - Flat quantization within clusters
