@@ -71,9 +71,11 @@
     - Add `r.vector([1.0, 2.0, 3.0])` ReQL datum type
     - Define `datum_t::R_VECTOR` variant
     - Serialization, wire protocol, ql2.proto
-  - [ ] **VECTOR-3: Distance functions**
-    - L2 (Euclidean), cosine similarity, inner product
-    - SIMD-accelerated implementations
+  - [x] **VECTOR-3: Distance functions** (committed 2026-07-12)
+    - [x] L2 (Euclidean), cosine similarity, inner product — all three implemented
+    - [x] SIMD-accelerated (AVX2/AVX-512 runtime detection)
+    - [x] 24 unit tests covering edge cases (zero norms, large/odd dimensions)
+    - [x] 388/388 full test suite passes, build clean
   - [ ] **VECTOR-4: HNSW index implementation**
     - HNSW graph: multi-layer navigable small world
     - Insert, search (ANN), delete operations
