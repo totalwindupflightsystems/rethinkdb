@@ -67,7 +67,7 @@
     - Define data structures, storage layout, serialization
     - Map integration points with existing sindex infrastructure
     - Output: `.coding-hermes/research/vector-index-design.md`
-  - [ ] **VECTOR-2: Vector data type support**
+  - [x] **VECTOR-2: Vector data type support** (committed 2026-07-12)
     - Add `r.vector([1.0, 2.0, 3.0])` ReQL datum type
     - Define `datum_t::R_VECTOR` variant
     - Serialization, wire protocol, ql2.proto
