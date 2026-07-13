@@ -95,7 +95,7 @@
     - [x] Forward vector, vector_dim, vector_metric from sindex_config_t to sindex_disk_info_t (write path)
     - [x] Copy vector fields back from disk_info to config (read path)
     - [x] Build clean, 420/420 unit tests pass
-  - [ ] **VECTOR-7b: Build + store HNSW graph on disk**
+  - [x] **VECTOR-7b: Build + store HNSW graph on disk** (commit `d73e904369`)
     - During post-construction, if sindex is VECTOR type: iterate sindex B-tree, build hnsw_graph_t, serialize and store in sindex superblock
     - Add opaque_vector_graph field to secondary_index_t or sindex superblock
     - Handle backward-compat deserialization (empty graph for non-vector sindexes)
