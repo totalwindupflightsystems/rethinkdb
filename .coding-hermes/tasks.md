@@ -86,7 +86,7 @@
     - K-means clustering for IVF centroids (Forgy init + Lloyd iteration)
     - Flat quantization within clusters (linear scan, top-k heap)
     - Insert, search, training phase (16/16 unit tests pass)
-  - [ ] **VECTOR-6: Sindex integration**
+  - [x] **VECTOR-6: Sindex integration** (committed `7d577d3`)
     - Add `sindex_vector_bool_t` enum + fields to config structs
     - Wire vector index creation into sindex execution path
     - ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
