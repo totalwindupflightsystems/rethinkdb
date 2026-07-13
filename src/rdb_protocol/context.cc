@@ -11,7 +11,9 @@
 #include "time.hpp"
 
 bool sindex_config_t::operator==(const sindex_config_t &o) const {
-    if (func_version != o.func_version || multi != o.multi || geo != o.geo) {
+    if (func_version != o.func_version || multi != o.multi || geo != o.geo
+        || fts != o.fts || vector != o.vector
+        || vector_dim != o.vector_dim || vector_metric != o.vector_metric) {
         return false;
     }
     /* This is kind of a hack--we compare the functions by serializing them and comparing

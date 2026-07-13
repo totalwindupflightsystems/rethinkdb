@@ -28,7 +28,8 @@ datum_string_t sindex_config_to_string(const sindex_config_t &config) {
     version.original_reql_version = config.func_version;
     version.latest_compatible_reql_version = config.func_version;
     version.latest_checked_reql_version = reql_version_t::LATEST;
-    sindex_disk_info_t disk_info(config.func, version, config.multi, config.geo, config.fts);
+    sindex_disk_info_t disk_info(config.func, version, config.multi, config.geo, config.fts,
+        config.vector, config.vector_dim, config.vector_metric);
 
     write_message_t wm;
     serialize_sindex_info(&wm, disk_info);
@@ -90,7 +91,10 @@ sindex_config_t sindex_config_from_string(
         sindex_info.mapping_version_info.original_reql_version,
         sindex_info.multi,
         sindex_info.geo,
-        sindex_info.fts);
+        sindex_info.fts,
+        sindex_info.vector,
+        sindex_info.vector_dim,
+        sindex_info.vector_metric);
 }
 
 // Helper for `sindex_status_to_datum()`
@@ -129,6 +133,16 @@ std::string format_index_create_query(
         }
         ret += "fts: true";
     }
+    if (config.vector == sindex_vector_bool_t::VECTOR) {
+        if (first_optarg) {
+            ret += ", {";
+            first_optarg = false;
+        } else {
+            ret += ", ";
+        }
+        ret += "vector: {dim: " + std::to_string(config.vector_dim)
+            + ", metric: \"" + config.vector_metric + "\"}";
+    }
     if (!first_optarg) {
         ret += "}";
     }
@@ -158,6 +172,12 @@ ql::datum_t sindex_status_to_datum(
         ql::datum_t::boolean(config.geo == sindex_geo_bool_t::GEO));
     stat.overwrite("fts",
         ql::datum_t::boolean(config.fts == sindex_fts_bool_t::FTS));
+    stat.overwrite("vector",
+        ql::datum_t::boolean(config.vector == sindex_vector_bool_t::VECTOR));
+    if (config.vector == sindex_vector_bool_t::VECTOR) {
+        stat.overwrite("vector_dim", ql::datum_t(static_cast<double>(config.vector_dim)));
+        stat.overwrite("vector_metric", ql::datum_t(datum_string_t(config.vector_metric)));
+    }
     stat.overwrite("function",
         ql::datum_t::binary(sindex_config_to_string(config)));
     stat.overwrite("query",
@@ -168,7 +188,7 @@ ql::datum_t sindex_status_to_datum(
 class sindex_create_term_t : public op_term_t {
 public:
     sindex_create_term_t(compile_env_t *env, const raw_term_t &term)
-        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo", "fts"})) { }
+        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo", "fts", "vector"})) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -185,6 +205,9 @@ public:
         config.multi = sindex_multi_bool_t::SINGLE;
         config.geo = sindex_geo_bool_t::REGULAR;
         config.fts = sindex_fts_bool_t::REGULAR;
+        config.vector = sindex_vector_bool_t::REGULAR;
+        config.vector_dim = 0;
+        config.vector_metric = "";
         if (args->num_args() == 3) {
             scoped_ptr_t<val_t> v = args->arg(env, 2);
             bool got_func = false;
@@ -239,6 +262,29 @@ public:
             config.fts = fts_val->as_bool()
                 ? sindex_fts_bool_t::FTS
                 : sindex_fts_bool_t::REGULAR;
+        }
+        /* Do we want to create a vector index? */
+        if (scoped_ptr_t<val_t> vector_val = args->optarg(env, "vector")) {
+            datum_t vector_obj = vector_val->as_datum();
+            rcheck(vector_obj.get_type() == datum_t::R_OBJECT,
+                   base_exc_t::LOGIC,
+                   "The `vector` optarg must be an object `{dim: <number>, metric: <string>}`.");
+            datum_t dim_d = vector_obj.get_field("dim", NOTHROW);
+            rcheck(dim_d.has() && dim_d.get_type() == datum_t::R_NUM,
+                   base_exc_t::LOGIC,
+                   "`vector` optarg must have a `dim` field with a numeric value.");
+            datum_t metric_d = vector_obj.get_field("metric", NOTHROW);
+            rcheck(metric_d.has() && metric_d.get_type() == datum_t::R_STR,
+                   base_exc_t::LOGIC,
+                   "`vector` optarg must have a `metric` field with a string value.");
+            std::string metric = metric_d.as_str().to_std();
+            rcheck(metric == "l2" || metric == "cosine" || metric == "inner_product",
+                   base_exc_t::LOGIC,
+                   "`vector` optarg `metric` must be one of \"l2\", \"cosine\", "
+                   "or \"inner_product\".");
+            config.vector = sindex_vector_bool_t::VECTOR;
+            config.vector_dim = static_cast<size_t>(dim_d.as_num());
+            config.vector_metric = metric;
         }
 
         try {
