@@ -6,8 +6,12 @@
 
 #include "stl_utils.hpp"
 
+#include "btree/depth_first_traversal.hpp"
+#include "btree/leaf_node.hpp"
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
+#include "buffer_cache/blob.hpp"
+#include "buffer_cache/serialize_onto_blob.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 #include "concurrency/cross_thread_watchable.hpp"
 #include "containers/archive/boost_types.hpp"
@@ -15,12 +19,16 @@
 #include "containers/disk_backed_queue.hpp"
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/changefeed.hpp"
+#include "rdb_protocol/context.hpp"
 #include "rdb_protocol/distribution_progress.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
+#include "rdb_protocol/hnsw.hpp"
+#include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/ql2proto.hpp"
 #include "rdb_protocol/serialize_datum.hpp"
 #include "rdb_protocol/store.hpp"
+#include "version.hpp"
 
 #include "debug.hpp"
 
@@ -39,6 +47,14 @@ void post_construct_and_drain_queue(
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
             &&mod_queue)
     THROWS_NOTHING;
+
+/* VECTOR-7b: build and persist the HNSW graph for a vector-type secondary index
+after its sindex B-tree has been fully post-constructed. See definition below. */
+void build_and_persist_hnsw_graph_for_sindex(
+        const uuid_u &sindex_id,
+        store_t *store,
+        signal_t *interruptor)
+    THROWS_ONLY(interrupted_exc_t, archive_exc_t);
 
 /* Creates a queue of operations for the sindex, runs a post construction for
  * the data already in the btree and finally drains the queue. */
@@ -176,6 +192,206 @@ void resume_construct_sindex(
         // Update the progress value
         current_progress = progress_estimator.estimate_progress(remaining_range.left);
     }
+
+    /* The sindex B-tree has been fully post-constructed. If this is a vector-type
+    sindex, build the HNSW graph from the sindex entries and persist it as a blob in a
+    child block of the sindex superblock. We do this in a fresh transaction so that we
+    can tolerate the sindex being torn down concurrently with this work. */
+    try {
+        build_and_persist_hnsw_graph_for_sindex(
+            sindex_to_construct, store, store_keepalive.get_drain_signal());
+    } catch (const interrupted_exc_t &) {
+        // Graceful shutdown — leave vector_graph_block as NULL_BLOCK_ID.
+    } catch (const archive_exc_t &) {
+        // Malformed opaque_definition or HNSW graph — leave as NULL_BLOCK_ID.
+    }
+}
+
+/* VECTOR-7b: builds and persists the HNSW graph for a vector-type secondary index.
+
+This is called from `resume_construct_sindex` after the sindex B-tree has been fully
+post-constructed. It:
+  1. Acquires the sindex superblock for write.
+  2. Reads the sindex's `opaque_definition` and checks `sindex_disk_info_t::vector`.
+  3. If the index is vector-typed, traverses the sindex B-tree to collect all
+     (vector, primary_key) pairs.
+  4. Builds an `hnsw_graph_t` from those pairs and serializes it to a blob in a new
+     child block of the sindex superblock.
+  5. Records that block_id in `sindex_superblock_t::vector_graph_block`.
+
+If any step fails (e.g. the sindex was deleted concurrently, or the B-tree is empty),
+we leave `vector_graph_block` as `NULL_BLOCK_ID` — k-NN search will treat that as
+"no graph". The function is intentionally tolerant: post-construction must not
+block other post-construction work. */
+namespace hnsw_build_helpers {
+
+/* Map the metric string stored in `sindex_disk_info_t::vector_metric` to the enum
+   used by `ql::hnsw_graph_t`. Unknown metrics default to L2. */
+ql::hnsw_graph_t::metric_t metric_from_string(const std::string &metric) {
+    if (metric == "cosine") return ql::hnsw_graph_t::metric_t::COSINE;
+    if (metric == "inner_product") return ql::hnsw_graph_t::metric_t::INNER_PRODUCT;
+    return ql::hnsw_graph_t::metric_t::L2;
+}
+
+/* A depth-first traversal callback that extracts (vector, primary_key) pairs from
+   the sindex B-tree. We tolerate corrupt entries (wrong dim, non-array values) by
+   skipping them rather than aborting — a single bad row should not lose the whole
+   graph. */
+class collect_vectors_cb_t : public depth_first_traversal_callback_t {
+public:
+    explicit collect_vectors_cb_t(size_t expected_dim)
+        : expected_dim_(expected_dim) {}
+
+    continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
+        store_key_t key(keyvalue.key());
+        store_key_t primary_key = ql::datum_t::extract_primary(key);
+        ql::datum_t vec_datum = get_data(
+            static_cast<const rdb_value_t *>(keyvalue.value()),
+            keyvalue.expose_buf());
+
+        // Vectors may be stored as native R_VECTOR datums (preferred) or as legacy
+        // R_ARRAY datums containing numbers. We support both forms so that we don't
+        // lose graphs if a cluster has a mix of formats.
+        if (vec_datum.get_type() == ql::datum_t::R_VECTOR) {
+            const std::vector<double> &v = vec_datum.as_vector();
+            if (v.size() != expected_dim_) return continue_bool_t::CONTINUE;
+            entries_.push_back(std::make_pair(v, primary_key));
+            return continue_bool_t::CONTINUE;
+        }
+
+        if (vec_datum.get_type() != ql::datum_t::R_ARRAY) {
+            return continue_bool_t::CONTINUE;
+        }
+        if (vec_datum.arr_size() != expected_dim_) {
+            return continue_bool_t::CONTINUE;
+        }
+
+        std::vector<double> vec;
+        vec.reserve(expected_dim_);
+        for (size_t i = 0; i < expected_dim_; ++i) {
+            ql::datum_t elem = vec_datum.get(i, ql::THROW);
+            if (elem.get_type() != ql::datum_t::R_NUM) {
+                return continue_bool_t::CONTINUE;
+            }
+            vec.push_back(elem.as_num());
+        }
+        entries_.push_back(std::make_pair(std::move(vec), primary_key));
+        return continue_bool_t::CONTINUE;
+    }
+
+    std::vector<std::pair<std::vector<double>, store_key_t>> entries_;
+private:
+    size_t expected_dim_;
+};
+
+}  // namespace hnsw_build_helpers
+
+void build_and_persist_hnsw_graph_for_sindex(
+        const uuid_u &sindex_id,
+        store_t *store,
+        signal_t *interruptor)
+    THROWS_ONLY(interrupted_exc_t, archive_exc_t) {
+
+    /* Acquire the primary superblock + sindex block. We need this to find the
+    sindex's opaque_definition and its superblock. */
+    write_token_t token;
+    store->new_write_token(&token);
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> real_sb;
+    store->acquire_superblock_for_write(
+        2,  // primary superblock + sindex block
+        write_durability_t::HARD,
+        &token,
+        &txn,
+        &real_sb,
+        interruptor);
+
+    buf_lock_t sindex_block(real_sb->expose_buf(),
+                            real_sb->get_sindex_block_id(),
+                            access_t::write);
+    real_sb->release();
+
+    secondary_index_t sindex;
+    bool found = get_secondary_index(&sindex_block, sindex_id, &sindex);
+    if (!found || sindex.being_deleted) {
+        sindex_block.reset_buf_lock();
+        txn->commit();
+        return;
+    }
+
+    /* Inspect the opaque_definition. If this is not a vector sindex, there is
+    nothing to do. */
+    sindex_disk_info_t disk_info;
+    deserialize_sindex_info_or_crash(sindex.opaque_definition, &disk_info);
+    if (disk_info.vector != sindex_vector_bool_t::VECTOR) {
+        sindex_block.reset_buf_lock();
+        txn->commit();
+        return;
+    }
+
+    /* Acquire the sindex superblock for write so we can store the graph block_id. */
+    buf_lock_t sindex_sb_lock(buf_parent_t(&sindex_block),
+                              sindex.superblock, access_t::write);
+    sindex_block.reset_buf_lock();
+    scoped_ptr_t<sindex_superblock_t> sindex_sb(
+        new sindex_superblock_t(std::move(sindex_sb_lock)));
+
+    /* Traverse the sindex B-tree to collect all (vector, primary_key) pairs. */
+    hnsw_build_helpers::collect_vectors_cb_t cb(disk_info.vector_dim);
+    btree_depth_first_traversal(
+        sindex_sb.get(),
+        key_range_t::universe(),
+        &cb,
+        access_t::read,
+        direction_t::FORWARD,
+        release_superblock_t::KEEP,
+        interruptor);
+
+    /* If we collected nothing, leave vector_graph_block as NULL_BLOCK_ID. An empty
+    index has no graph to search over. */
+    if (cb.entries_.empty()) {
+        sindex_sb->set_vector_graph_block_id(NULL_BLOCK_ID);
+        txn->commit();
+        return;
+    }
+
+    /* Build the HNSW graph. */
+    ql::hnsw_graph_t graph(/*M=*/16,
+                           /*ef_construction=*/200,
+                           /*dim=*/disk_info.vector_dim,
+                           hnsw_build_helpers::metric_from_string(
+                               disk_info.vector_metric));
+    for (const auto &entry : cb.entries_) {
+        graph.insert(entry.first.data(), entry.second);
+    }
+
+    /* Allocate a fresh block under the sindex superblock to hold the blob tree
+    containing the serialized HNSW graph. We zero the first blob::btree_maxreflen
+    bytes to give blob_t a fresh, empty ref to start from. */
+    buf_lock_t graph_block(sindex_sb->expose_buf(), alt_create_t::create);
+
+    /* Heap-allocated ref buffer; blob_t only reads it during construction, then
+    writes the (now populated) ref into it after serialize_onto_blob completes. */
+    std::vector<char> ref_buf(blob::btree_maxreflen, 0);
+    {
+        blob_t blob(sindex_sb->expose_buf().cache()->max_block_size(),
+                    ref_buf.data(),
+                    blob::btree_maxreflen);
+        serialize_onto_blob<cluster_version_t::LATEST_DISK>(
+            sindex_sb->expose_buf(), &blob, graph);
+    }
+    /* Persist the populated blob ref into the first btree_maxreflen bytes of the
+    newly allocated graph block. blob_t will reference this ref on subsequent
+    reads. */
+    {
+        buf_write_t ref_write(&graph_block);
+        char *ref_slot = static_cast<char *>(
+            ref_write.get_data_write(blob::btree_maxreflen));
+        memcpy(ref_slot, ref_buf.data(), blob::btree_maxreflen);
+    }
+
+    sindex_sb->set_vector_graph_block_id(graph_block.block_id());
+    txn->commit();
 }
 
 /* This function is used by resume_construct_sindex. It traverses the primary btree

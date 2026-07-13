@@ -63,6 +63,12 @@ public:
     we can delete such a sindex block when deleting the sindex superblock. */
     block_id_t get_sindex_block_id();
 
+    /* For vector-type secondary indexes, this points to a child block that holds the
+    serialized HNSW graph (as a blob). NULL_BLOCK_ID means no graph (e.g. for non-vector
+    indexes or for indexes where graph construction failed/was skipped). */
+    block_id_t get_vector_graph_block_id();
+    void set_vector_graph_block_id(block_id_t new_id);
+
     buf_parent_t expose_buf() { return buf_parent_t(&sb_buf_); }
 
 private:
