@@ -82,10 +82,10 @@
     - [x] L2, cosine, inner product distance metrics
     - [x] Serialization with INSTANTIATE_SERIALIZABLE_SINCE_v2_4
     - [x] 16 unit tests, 403/403 non-Raft tests pass
-  - [ ] **VECTOR-5: IVFFlat index implementation**
-    - K-means clustering for IVF centroids
-    - Flat quantization within clusters
-    - Insert, search, training phase
+  - [x] **VECTOR-5: IVFFlat index implementation** (commit `9e48192`)
+    - K-means clustering for IVF centroids (Forgy init + Lloyd iteration)
+    - Flat quantization within clusters (linear scan, top-k heap)
+    - Insert, search, training phase (16/16 unit tests pass)
   - [ ] **VECTOR-6: Sindex integration**
     - Add `sindex_vector_bool_t` enum + fields to config structs
     - Wire vector index creation into sindex execution path
