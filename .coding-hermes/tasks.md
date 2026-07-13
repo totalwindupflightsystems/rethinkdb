@@ -86,11 +86,11 @@
     - K-means clustering for IVF centroids (Forgy init + Lloyd iteration)
     - Flat quantization within clusters (linear scan, top-k heap)
     - Insert, search, training phase (16/16 unit tests pass)
-  - [x] **VECTOR-6: Sindex integration** (committed `7d577d3`)
-    - Add `sindex_vector_bool_t` enum + fields to config structs
-    - Wire vector index creation into sindex execution path
-    - ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
-    - ReQL: `r.vectorNear("vec_idx", query_vec, {k: 10})`
+  - [x] **VECTOR-6: Sindex integration** (`7d577d3245`)
+    - [x] Add `sindex_vector_bool_t` enum + fields to config structs
+    - [x] Wire vector index creation into sindex execution path
+    - [x] ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
+    - [x] ReQL: `r.vectorNear("vec_idx", query_vec, {k: 10})`
   - [ ] **VECTOR-7: Serialization & persistence**
     - Serialize/deserialize vector index metadata
     - Store HNSW graph / IVF centroids on disk
