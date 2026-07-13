@@ -15,10 +15,11 @@ ATTR_PACKED(struct reql_btree_superblock_t {
     block_id_t root_block;
     block_id_t stat_block;
     block_id_t sindex_block;
+    block_id_t vector_graph_block;
 
     static const int METAINFO_BLOB_MAXREFLEN
         = from_ser_block_size_t<DEVICE_BLOCK_SIZE>::cache_size - sizeof(block_magic_t)
-                                                               - 3 * sizeof(block_id_t);
+                                                               - 4 * sizeof(block_id_t);
 
     char metainfo_blob[METAINFO_BLOB_MAXREFLEN];
 });
@@ -139,6 +140,22 @@ block_id_t sindex_superblock_t::get_sindex_block_id() {
     return sb_data->sindex_block;
 }
 
+block_id_t sindex_superblock_t::get_vector_graph_block_id() {
+    buf_read_t read(&sb_buf_);
+    uint32_t sb_size;
+    const reql_btree_superblock_t *sb_data =
+        static_cast<const reql_btree_superblock_t *>(read.get_data_read(&sb_size));
+    guarantee(sb_size == REQL_BTREE_SUPERBLOCK_SIZE);
+    return sb_data->vector_graph_block;
+}
+
+void sindex_superblock_t::set_vector_graph_block_id(block_id_t new_id) {
+    buf_write_t write(&sb_buf_);
+    reql_btree_superblock_t *sb_data = static_cast<reql_btree_superblock_t *>(
+        write.get_data_write(REQL_BTREE_SUPERBLOCK_SIZE));
+    sb_data->vector_graph_block = new_id;
+}
+
 // Run backfilling at a reduced priority
 #define BACKFILL_CACHE_PRIORITY 10
 
@@ -177,6 +194,7 @@ void btree_slice_t::init_sindex_superblock(sindex_superblock_t *superblock) {
     sb->root_block = NULL_BLOCK_ID;
     sb->stat_block = NULL_BLOCK_ID;
     sb->sindex_block = NULL_BLOCK_ID;
+    sb->vector_graph_block = NULL_BLOCK_ID;
 }
 
 btree_slice_t::btree_slice_t(cache_t *c, perfmon_collection_t *parent,
