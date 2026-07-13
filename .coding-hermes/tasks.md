@@ -91,10 +91,26 @@
     - [x] Wire vector index creation into sindex execution path
     - [x] ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
     - [x] ReQL: `r.vectorNear("vec_idx", query_vec, {k: 10})`
-  - [ ] **VECTOR-7: Serialization & persistence**
-    - Serialize/deserialize vector index metadata
-    - Store HNSW graph / IVF centroids on disk
-    - Backward compatibility with existing sindex format
+  - [x] **VECTOR-7a: Config ↔ disk info flow** (`4acdfd2`)
+    - [x] Forward vector, vector_dim, vector_metric from sindex_config_t to sindex_disk_info_t (write path)
+    - [x] Copy vector fields back from disk_info to config (read path)
+    - [x] Build clean, 420/420 unit tests pass
+  - [ ] **VECTOR-7b: Build + store HNSW graph on disk**
+    - During post-construction, if sindex is VECTOR type: iterate sindex B-tree, build hnsw_graph_t, serialize and store in sindex superblock
+    - Add opaque_vector_graph field to secondary_index_t or sindex superblock
+    - Handle backward-compat deserialization (empty graph for non-vector sindexes)
+    - Files: btree.cc, secondary_operations.hpp/cc, btree_store.cc
+  - [ ] **VECTOR-7c: vector_read_t + protocol dispatch**
+    - Add vector_read_t struct to protocol.hpp (read_t variant)
+    - Add shard/unshard/unshard visitors in protocol.cc
+    - Add base_table_t::read_vector_nearest() virtual method
+    - Implement in store_t — reads sindex superblock, deserializes HNSW, searches
+    - Files: protocol.hpp, protocol.cc, context.hpp, btree_store.cc, store.hpp
+  - [ ] **VECTOR-7d: Wire vector_near to actual search**
+    - Replace placeholder empty-array return with table->get_vector_nearest() call
+    - Pass query vector, k, ef_search, sindex_name
+    - Return matching documents as datum array
+    - Files: terms/vector_near.cc, val.hpp, val.cc
   - [ ] **VECTOR-8: Tests**
     - Unit tests for distance functions, HNSW, IVF
     - Integration tests with real ReQL queries
