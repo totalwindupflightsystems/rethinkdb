@@ -1624,6 +1624,9 @@ void serialize_sindex_info(write_message_t *wm,
     serialize<cluster_version_t::LATEST_DISK>(wm, info.multi);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.geo);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.fts);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.vector);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.vector_dim);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.vector_metric);
 }
 
 void deserialize_sindex_info(
@@ -1713,6 +1716,24 @@ void deserialize_sindex_info(
     if (static_cast<size_t>(read_stream.tell()) < data.size()) {
         success = deserialize_for_version(cluster_version, &read_stream, &info_out->fts);
         throw_if_bad_deserialization(success, "sindex description");
+    }
+
+    // Vector fields: present in v2.6+ sindex info, absent in older data.
+    // Default to REGULAR/0/"" for backward compatibility.
+    info_out->vector = sindex_vector_bool_t::REGULAR;
+    info_out->vector_dim = 0;
+    info_out->vector_metric = "";
+    if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+        success = deserialize_for_version(cluster_version, &read_stream, &info_out->vector);
+        throw_if_bad_deserialization(success, "sindex description");
+        if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+            success = deserialize_for_version(cluster_version, &read_stream, &info_out->vector_dim);
+            throw_if_bad_deserialization(success, "sindex description");
+        }
+        if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+            success = deserialize_for_version(cluster_version, &read_stream, &info_out->vector_metric);
+            throw_if_bad_deserialization(success, "sindex description");
+        }
     }
 }
 

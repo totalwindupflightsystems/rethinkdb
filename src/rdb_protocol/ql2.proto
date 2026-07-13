@@ -813,6 +813,8 @@ message Term {
         // * Vector Operations
         // Converts an array of numbers into a VECTOR datum.
         VECTOR = 200; // ARRAY -> VECTOR
+        // Queries a vector index for nearest neighbor search.
+        VECTOR_NEAR = 201; // Table, STRING, Function, {k: NUMBER} -> ARRAY
     }
     optional TermType type = 1;
 

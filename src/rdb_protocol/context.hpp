@@ -65,6 +65,7 @@ template <class> class semilattice_read_view_t;
 enum class sindex_multi_bool_t { SINGLE = 0, MULTI = 1};
 enum class sindex_geo_bool_t { REGULAR = 0, GEO = 1};
 enum class sindex_fts_bool_t { REGULAR = 0, FTS = 1};
+enum class sindex_vector_bool_t { REGULAR = 0, VECTOR = 1};
 
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_multi_bool_t, int8_t,
         sindex_multi_bool_t::SINGLE, sindex_multi_bool_t::MULTI);
@@ -72,13 +73,19 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_geo_bool_t, int8_t,
         sindex_geo_bool_t::REGULAR, sindex_geo_bool_t::GEO);
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_fts_bool_t, int8_t,
         sindex_fts_bool_t::REGULAR, sindex_fts_bool_t::FTS);
+ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_vector_bool_t, int8_t,
+        sindex_vector_bool_t::REGULAR, sindex_vector_bool_t::VECTOR);
 
 class sindex_config_t {
 public:
     sindex_config_t() { }
     sindex_config_t(const ql::map_wire_func_t &_func, reql_version_t _func_version,
-            sindex_multi_bool_t _multi, sindex_geo_bool_t _geo, sindex_fts_bool_t _fts) :
-        func(_func), func_version(_func_version), multi(_multi), geo(_geo), fts(_fts) { }
+            sindex_multi_bool_t _multi, sindex_geo_bool_t _geo, sindex_fts_bool_t _fts,
+            sindex_vector_bool_t _vector = sindex_vector_bool_t::REGULAR,
+            size_t _vector_dim = 0,
+            const std::string &_vector_metric = "") :
+        func(_func), func_version(_func_version), multi(_multi), geo(_geo), fts(_fts),
+        vector(_vector), vector_dim(_vector_dim), vector_metric(_vector_metric) { }
 
     bool operator==(const sindex_config_t &o) const;
     bool operator!=(const sindex_config_t &o) const {
@@ -90,6 +97,9 @@ public:
     sindex_multi_bool_t multi;
     sindex_geo_bool_t geo;
     sindex_fts_bool_t fts;
+    sindex_vector_bool_t vector;
+    size_t vector_dim;
+    std::string vector_metric;
 };
 RDB_DECLARE_SERIALIZABLE(sindex_config_t);
 
