@@ -676,6 +676,10 @@ struct rdb_r_get_region_visitor : public boost::static_visitor<region_t> {
         return gr.region;
     }
 
+    region_t operator()(const vector_read_t &vr) const {
+        return vr.region;
+    }
+
     region_t operator()(const distribution_read_t &dg) const {
         return dg.region;
     }
@@ -851,6 +855,10 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         return rangey_read(gr);
     }
 
+    bool operator()(const vector_read_t &vr) const {
+        return rangey_read(vr);
+    }
+
     bool operator()(const distribution_read_t &dg) const {
         return rangey_read(dg);
     }
@@ -920,6 +928,7 @@ public:
     void operator()(const rget_read_t &rg);
     void operator()(const intersecting_geo_read_t &gr);
     void operator()(const nearest_geo_read_t &gr);
+    void operator()(const vector_read_t &vr);
     void operator()(const distribution_read_t &rg);
     void operator()(const changefeed_subscribe_t &);
     void operator()(const changefeed_limit_subscribe_t &);
@@ -1085,6 +1094,32 @@ void rdb_r_unshard_visitor_t::operator()(const nearest_geo_read_t &query) {
     }
     response_out->response = nearest_geo_read_response_t(
         std::move(combined_results));
+}
+
+void rdb_r_unshard_visitor_t::operator()(const vector_read_t &vr) {
+    vector_read_response_t::result_t all_results;
+    for (size_t i = 0; i < count; ++i) {
+        const vector_read_response_t *shard_resp =
+            boost::get<vector_read_response_t>(&responses[i].response);
+        if (shard_resp == nullptr) {
+            continue;
+        }
+        const auto *res = boost::get<vector_read_response_t::result_t>(
+            &shard_resp->results_or_error);
+        if (res != nullptr) {
+            all_results.insert(all_results.end(), res->begin(), res->end());
+        }
+    }
+    // Sort by distance and take top k
+    std::sort(all_results.begin(), all_results.end(),
+        [](const vector_read_response_t::dist_pair_t &a,
+           const vector_read_response_t::dist_pair_t &b) {
+            return a.first < b.first;
+        });
+    if (all_results.size() > vr.k) {
+        all_results.resize(vr.k);
+    }
+    response_out->response = vector_read_response_t(std::move(all_results));
 }
 
 void rdb_r_unshard_visitor_t::operator()(const rget_read_t &rg) {
@@ -1288,6 +1323,7 @@ struct use_snapshot_visitor_t : public boost::static_visitor<bool> {
     }
 
     bool operator()(const nearest_geo_read_t &) const {           return true;  }
+    bool operator()(const vector_read_t &) const {               return true;  }
     bool operator()(const changefeed_subscribe_t &) const {       return false; }
     bool operator()(const changefeed_limit_subscribe_t &) const { return false; }
     bool operator()(const changefeed_stamp_t &) const {           return false; }
@@ -1313,6 +1349,7 @@ struct route_to_primary_visitor_t : public boost::static_visitor<bool> {
     bool operator()(const point_read_t &) const {                 return false; }
     bool operator()(const dummy_read_t &) const {                 return false; }
     bool operator()(const nearest_geo_read_t &) const {           return false; }
+    bool operator()(const vector_read_t &) const {               return false; }
     bool operator()(const changefeed_subscribe_t &) const {       return true;  }
     bool operator()(const changefeed_limit_subscribe_t &) const { return true;  }
     bool operator()(const changefeed_stamp_t &) const {           return true;  }
@@ -1687,6 +1724,16 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     rget_read_response_t, stamp_response, result, reql_version);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(nearest_geo_read_response_t, results_or_error);
+
+RDB_IMPL_SERIALIZABLE_6_FOR_CLUSTER(
+    vector_read_t,
+    serializable_env,
+    region,
+    table_name,
+    sindex_id,
+    query_vector,
+    k);
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(vector_read_response_t, results_or_error);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(distribution_read_response_t, region, key_counts);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_subscribe_response_t, server_uuids, addrs);
