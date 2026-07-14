@@ -76,6 +76,13 @@ public:
         const ellipsoid_spec_t &geo_system,
         dist_unit_t dist_unit,
         const ql::configured_limits_t &limits);
+    ql::datum_t read_vector_nearest(
+        ql::env_t *env,
+        const std::string &sindex,
+        const std::string &table_name,
+        read_mode_t read_mode,
+        const std::vector<double> &query_vector,
+        size_t k);
 
     ql::datum_t write_batched_replace(
         ql::env_t *env,

@@ -82,10 +82,22 @@ public:
                          sindex_name.c_str(),
                          table->display_name().c_str()));
 
-        /* Placeholder: return empty array.
-         * Actual vector search dispatch will be wired in VECTOR-7. */
-        ql::datum_array_builder_t res(ql::configured_limits_t::unlimited);
-        return new_val(std::move(res).to_datum());
+        /* Extract query vector values */
+        std::vector<double> query_vec;
+        if (vector_datum.get_type() == datum_t::R_VECTOR) {
+            const std::vector<double> &vec = vector_datum.as_vector();
+            query_vec.assign(vec.begin(), vec.end());
+        } else {
+            // R_ARRAY
+            for (size_t i = 0; i < vector_datum.arr_size(); ++i) {
+                query_vec.push_back(vector_datum.get(i).as_num());
+            }
+        }
+
+        /* Dispatch vector search and return results */
+        datum_t result = table->get_vector_nearest(
+            env->env, sindex_name, query_vec, k);
+        return new_val(result);
     }
 
     virtual const char *name() const { return "vector_near"; }

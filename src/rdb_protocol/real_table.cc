@@ -188,6 +188,59 @@ ql::datum_t real_table_t::read_nearest(
     return std::move(formatted_result).to_datum();
 }
 
+ql::datum_t real_table_t::read_vector_nearest(
+        ql::env_t *env,
+        const std::string &sindex,
+        const std::string &table_name,
+        read_mode_t read_mode,
+        const std::vector<double> &query_vector,
+        size_t k) {
+
+    vector_read_t vec_read(
+        region_t::universe(),
+        table_name,
+        sindex,
+        query_vector,
+        k,
+        env->get_serializable_env());
+    read_t read(vec_read, env->profile(), read_mode);
+    read_response_t res;
+    try {
+        namespace_access.get()->read(
+            env->get_user_context(), read, &res, order_token_t::ignore, env->interruptor);
+    } catch (const cannot_perform_query_exc_t &ex) {
+        rfail_datum(ql::base_exc_t::OP_FAILED, "Cannot perform read: %s", ex.what());
+    } catch (auth::permission_error_t const &error) {
+        rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", error.what());
+    }
+
+    vector_read_response_t *v_res =
+        boost::get<vector_read_response_t>(&res.response);
+    r_sanity_check(v_res);
+
+    ql::exc_t *error = boost::get<ql::exc_t>(&v_res->results_or_error);
+    if (error != NULL) {
+        throw *error;
+    }
+
+    auto *result =
+        boost::get<vector_read_response_t::result_t>(&v_res->results_or_error);
+    guarantee(result != NULL);
+
+    // Build output: array of {dist: <double>, doc: <datum>} objects
+    ql::datum_array_builder_t formatted_result(ql::configured_limits_t::unlimited);
+    for (size_t i = 0; i < result->size(); ++i) {
+        ql::datum_object_builder_t one_result;
+        bool dup;
+        dup = one_result.add("dist", ql::datum_t((*result)[i].first));
+        r_sanity_check(!dup);
+        dup = one_result.add("doc", (*result)[i].second);
+        r_sanity_check(!dup);
+        formatted_result.add(std::move(one_result).to_datum());
+    }
+    return std::move(formatted_result).to_datum();
+}
+
 const size_t split_size = 128;
 template<class T>
 std::vector<std::vector<T> > split(std::vector<T> &&v) {

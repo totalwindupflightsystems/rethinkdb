@@ -555,6 +555,20 @@ datum_t table_t::get_nearest(
         limits);
 }
 
+datum_t table_t::get_vector_nearest(
+        env_t *env,
+        const std::string &sindex_name,
+        const std::vector<double> &query_vector,
+        size_t k) {
+    return tbl->read_vector_nearest(
+        env,
+        sindex_name,
+        display_name(),
+        read_mode,
+        query_vector,
+        k);
+}
+
 val_t::type_t::type_t(val_t::type_t::raw_type_t _raw_type) : raw_type(_raw_type) { }
 
 // NOTE: This *MUST* be kept in sync with the surrounding code (not that it
