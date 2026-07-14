@@ -100,12 +100,13 @@
     - Add opaque_vector_graph field to secondary_index_t or sindex superblock
     - Handle backward-compat deserialization (empty graph for non-vector sindexes)
     - Files: btree.cc, secondary_operations.hpp/cc, btree_store.cc
-  - [ ] **VECTOR-7c: vector_read_t + protocol dispatch**
-    - Add vector_read_t struct to protocol.hpp (read_t variant)
-    - Add shard/unshard/unshard visitors in protocol.cc
-    - Add base_table_t::read_vector_nearest() virtual method
-    - Implement in store_t — reads sindex superblock, deserializes HNSW, searches
-    - Files: protocol.hpp, protocol.cc, context.hpp, btree_store.cc, store.hpp
+  - [x] **VECTOR-7c: vector_read_t + protocol dispatch** (commit `f74849cbc6`)
+    - [x] Add vector_read_t struct to protocol.hpp (read_t variant)
+    - [x] Add shard/unshard/unshard visitors in protocol.cc
+    - [x] Implement store_t handler: reads sindex superblock, deserializes HNSW, searches
+    - [x] Wire get_region, use_snapshot, route_to_primary visitors
+    - [x] Add mock_namespace_interface_t visitor handler
+    - [x] Build clean, all 420 unit tests pass
   - [ ] **VECTOR-7d: Wire vector_near to actual search**
     - Replace placeholder empty-array return with table->get_vector_nearest() call
     - Pass query vector, k, ef_search, sindex_name
