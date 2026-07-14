@@ -107,11 +107,12 @@
     - [x] Wire get_region, use_snapshot, route_to_primary visitors
     - [x] Add mock_namespace_interface_t visitor handler
     - [x] Build clean, all 420 unit tests pass
-  - [ ] **VECTOR-7d: Wire vector_near to actual search**
-    - Replace placeholder empty-array return with table->get_vector_nearest() call
-    - Pass query vector, k, ef_search, sindex_name
-    - Return matching documents as datum array
-    - Files: terms/vector_near.cc, val.hpp, val.cc
+  - [x] **VECTOR-7d: Wire vector_near to actual search** (commit `4f6d539d17`)
+    - [x] Replace placeholder empty-array return with table->get_vector_nearest() call
+    - [x] Pass query vector, k, ef_search, sindex_name
+    - [x] Return matching documents as datum array
+    - Files: terms/vector_near.cc, val.hpp, val.cc (+ context.hpp, real_table.hpp/cc, artificial_table.hpp/cc)
+    - 8 files, +130/-4 lines; build+420 tests green; guard PASS
   - [ ] **VECTOR-8: Tests**
     - Unit tests for distance functions, HNSW, IVF
     - Integration tests with real ReQL queries
