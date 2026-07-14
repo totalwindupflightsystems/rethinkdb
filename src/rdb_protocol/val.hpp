@@ -54,6 +54,11 @@ public:
             dist_unit_t dist_unit,
             const std::string &new_sindex_id,
             const configured_limits_t &limits);
+    datum_t get_vector_nearest(
+            env_t *env,
+            const std::string &sindex_name,
+            const std::vector<double> &query_vector,
+            size_t k);
 
     scoped_ptr_t<reader_t> get_all_with_sindexes(
         env_t *env,
