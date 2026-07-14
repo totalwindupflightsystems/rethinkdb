@@ -151,6 +151,21 @@ struct nearest_geo_read_response_t {
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(nearest_geo_read_response_t);
 
+struct vector_read_response_t {
+    typedef std::pair<double, ql::datum_t> dist_pair_t;
+    typedef std::vector<dist_pair_t> result_t;
+    boost::variant<result_t, ql::exc_t> results_or_error;
+
+    vector_read_response_t() { }
+    explicit vector_read_response_t(result_t &&_results) {
+        results_or_error = result_t();
+        boost::get<result_t>(&results_or_error)->swap(_results);
+    }
+    explicit vector_read_response_t(const ql::exc_t &_error)
+        : results_or_error(_error) { }
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(vector_read_response_t);
+
 void scale_down_distribution(size_t result_limit, std::map<store_key_t, int64_t> *key_counts);
 
 struct distribution_read_response_t {
@@ -224,6 +239,7 @@ struct read_response_t {
     typedef boost::variant<point_read_response_t,
                            rget_read_response_t,
                            nearest_geo_read_response_t,
+                           vector_read_response_t,
                            changefeed_subscribe_response_t,
                            changefeed_limit_subscribe_response_t,
                            changefeed_stamp_response_t,
@@ -424,6 +440,34 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(nearest_geo_read_t);
 
+class vector_read_t {
+public:
+    vector_read_t() { }
+
+    vector_read_t(
+            const region_t &_region,
+            const std::string &_table_name,
+            const std::string &_sindex_id,
+            std::vector<double> _query_vector,
+            size_t _k,
+            serializable_env_t s_env)
+        : serializable_env(std::move(s_env)),
+          region(_region),
+          table_name(_table_name),
+          sindex_id(_sindex_id),
+          query_vector(std::move(_query_vector)),
+          k(_k) { }
+
+    serializable_env_t serializable_env;
+
+    region_t region;  // needed for sharding
+    std::string table_name;
+    std::string sindex_id;
+    std::vector<double> query_vector;
+    size_t k;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(vector_read_t);
+
 class distribution_read_t {
 public:
     distribution_read_t()
@@ -486,6 +530,7 @@ struct read_t {
                            rget_read_t,
                            intersecting_geo_read_t,
                            nearest_geo_read_t,
+                           vector_read_t,
                            changefeed_subscribe_t,
                            changefeed_stamp_t,
                            changefeed_limit_subscribe_t,

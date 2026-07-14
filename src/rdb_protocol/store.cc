@@ -6,6 +6,8 @@
 #include "btree/backfill_debug.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
+#include "buffer_cache/blob.hpp"
+#include "buffer_cache/serialize_onto_blob.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 #include "concurrency/cross_thread_watchable.hpp"
 #include "concurrency/wait_any.hpp"
@@ -15,6 +17,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/func.hpp"
+#include "rdb_protocol/hnsw.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/table_common.hpp"
 
@@ -588,6 +591,91 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             geo_read.region.inner,
             sindex_info,
             res);
+    }
+
+    void operator()(const vector_read_t &vec_read) {
+        response->response = vector_read_response_t();
+        vector_read_response_t *res =
+            boost::get<vector_read_response_t>(&response->response);
+
+        // 1. Acquire the sindex superblock for read.
+        sindex_disk_info_t sindex_info;
+        uuid_u sindex_uuid;
+        scoped_ptr_t<sindex_superblock_t> sindex_sb;
+        try {
+            sindex_sb = acquire_sindex_for_read(
+                store, superblock,
+                release_superblock_t::RELEASE,
+                vec_read.table_name,
+                vec_read.sindex_id,
+                &sindex_info, &sindex_uuid);
+        } catch (const ql::exc_t &e) {
+            res->results_or_error = e;
+            return;
+        }
+
+        // 2. Check this is a vector index.
+        if (sindex_info.vector != sindex_vector_bool_t::VECTOR) {
+            res->results_or_error = ql::exc_t(
+                ql::base_exc_t::LOGIC,
+                strprintf("Index `%s` is not a vector index.",
+                          vec_read.sindex_id.c_str()),
+                ql::backtrace_id_t::empty());
+            return;
+        }
+
+        // 3. Get the vector graph block ID.
+        block_id_t graph_block_id = sindex_sb->get_vector_graph_block_id();
+        if (graph_block_id == NULL_BLOCK_ID) {
+            // No graph — return empty results.
+            res->results_or_error = vector_read_response_t::result_t();
+            return;
+        }
+
+        // 4. Read the graph from the blob stored in the graph block.
+        // The first blob::btree_maxreflen bytes of the block are the blob ref.
+        buf_lock_t graph_block(sindex_sb->expose_buf(), graph_block_id,
+                               access_t::read);
+        // Read the ref from the first bytes of the block.
+        std::vector<char> ref_buf(blob::btree_maxreflen, 0);
+        {
+            buf_read_t ref_read(&graph_block);
+            uint32_t block_size;
+            const char *ref_slot = static_cast<const char *>(
+                ref_read.get_data_read(&block_size));
+            guarantee(block_size >= blob::btree_maxreflen);
+            memcpy(ref_buf.data(), ref_slot, blob::btree_maxreflen);
+        }
+
+        // Deserialize the HNSW graph from the blob.
+        ql::hnsw_graph_t graph;
+        blob_t blob(sindex_sb->expose_buf().cache()->max_block_size(),
+                    ref_buf.data(), blob::btree_maxreflen);
+        // Use the same deserialization pattern as lazy_btree_val / serialize_onto_blob.
+        {
+            buffer_group_t buffer_group;
+            blob_acq_t acq;
+            blob.expose_all(sindex_sb->expose_buf(), access_t::read,
+                            &buffer_group, &acq);
+            deserialize_for_version_from_group(
+                cluster_version_t::LATEST_DISK, const_view(&buffer_group), &graph);
+        }
+
+        // 5. Search KNN.
+        std::vector<std::pair<double, store_key_t>> results =
+            graph.search_knn(vec_read.query_vector.data(),
+                             static_cast<int>(vec_read.k),
+                             /*ef_search=*/100);
+
+        // 6. Build response — for each result, read the primary key's datum.
+        vector_read_response_t::result_t out;
+        out.reserve(results.size());
+        for (const auto &r : results) {
+            point_read_response_t pr_resp;
+            rdb_get(r.second, btree, superblock, &pr_resp, trace);
+            out.emplace_back(r.first, std::move(pr_resp.data));
+        }
+        res->results_or_error = std::move(out);
     }
 
     void operator()(const rget_read_t &rget) {
