@@ -1,0 +1,114 @@
+desc: Tests for BRIN index creation and between queries
+table_variable_name: tbl
+tests:
+
+    # ---- Setup ----
+
+    - py: r.db('test').table_create('brin_test')
+      ot: partial({'tables_created':1})
+    - def: tbl = r.db('test').table('brin_test')
+
+    # ---- BRIN index creation ----
+
+    # Single-column BRIN index over ts.
+    - cd: tbl.index_create('ts_brin', r.row['ts'], brin={'columns':['ts']})
+      ot: partial({'created': 1})
+
+    # Custom range_size.
+    - cd: tbl.index_create('ts_brin_small', r.row['ts'], brin={'columns':['ts'], 'range_size': 32})
+      ot: partial({'created': 1})
+
+    # Wait for both indexes to be ready before we insert (the post-construction
+    # sidecar build depends on the sindex B-tree being populated).
+    - cd: tbl.index_wait('ts_brin', 'ts_brin_small').pluck('index', 'ready')
+      ot: bag([{'index':'ts_brin','ready':True},
+               {'index':'ts_brin_small','ready':True}])
+
+    # ---- Insert documents ----
+
+    - py: tbl.insert([{'id': 1, 'ts': 100},
+                      {'id': 2, 'ts': 200},
+                      {'id': 3, 'ts': 300},
+                      {'id': 4, 'ts': 400},
+                      {'id': 5, 'ts': 500},
+                      {'id': 6, 'ts': 600},
+                      {'id': 7, 'ts': 700},
+                      {'id': 8, 'ts': 800}])
+      ot: partial({'errors':0, 'inserted':8})
+
+    # ---- Between queries through the BRIN index ----
+
+    # Closed range — both ids 2 and 3 hit (ts 200 and 300).
+    - py: tbl.between(150, 350, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [2, 3]
+
+    # Single-point query — exactly the document with ts=400.
+    - py: tbl.between(400, 400, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [4]
+
+    # Range covering the whole dataset.
+    - py: tbl.between(r.minval, r.maxval, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [1, 2, 3, 4, 5, 6, 7, 8]
+
+    # Range that targets documents straddling a range boundary.
+    # ts 300..500 should hit documents 3, 4, 5.
+    - py: tbl.between(300, 500, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [3, 4, 5]
+
+    # Range that hits no documents — verify BRIN pruning produces an empty result.
+    - py: tbl.between(900, 1000, index='ts_brin').count()
+      ot: 0
+
+    # Same queries against the smaller-range-size index should produce identical results.
+    - py: tbl.between(150, 350, index='ts_brin_small').get_field('id').coerce_to('array')
+      ot: [2, 3]
+    - py: tbl.between(400, 400, index='ts_brin_small').get_field('id').coerce_to('array')
+      ot: [4]
+
+    # ---- Insert more documents and verify pruning adapts ----
+
+    - py: tbl.insert([{'id': 9, 'ts': 1000}, {'id': 10, 'ts': 1100}])
+      ot: partial({'errors':0, 'inserted':2})
+
+    # A range that overlaps the new docs.
+    - py: tbl.between(950, 1050, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [9]
+
+    # A range that overlaps the original range.
+    - py: tbl.between(450, 750, index='ts_brin').get_field('id').coerce_to('array')
+      ot: [5, 6, 7]
+
+    # ---- Edge cases / negative tests ----
+
+    # brin optarg must be an object.
+    - py: err('tbl.index_create("bad_brin_str", r.row["ts"], brin="ts")')
+      ot: err('ReqlQueryLogicError', 'The `brin` optarg must be an object `{columns: [...]}`.')
+
+    # Multi-column BRIN is not implemented yet (rejects 0 col).
+    - py: err('tbl.index_create("bad_brin_empty", r.row["ts"], brin={"columns":[]})')
+      ot: err('ReqlQueryLogicError', 'Multi-column BRIN is not implemented. `columns` must have exactly one element.')
+
+    # Multi-column BRIN is not implemented yet (rejects 2+ col).
+    - py: err('tbl.index_create("bad_brin_multi", r.row["ts"], brin={"columns":["ts", "id"]})')
+      ot: err('ReqlQueryLogicError', 'Multi-column BRIN is not implemented. `columns` must have exactly one element.')
+
+    # range_size below the [16, 65536] window.
+    - py: err('tbl.index_create("bad_brin_small", r.row["ts"], brin={"columns":["ts"], "range_size": 8})')
+      ot: err('ReqlQueryLogicError', '`brin.range_size` must be an integer in [16, 65536].')
+
+    # range_size above the window.
+    - py: err('tbl.index_create("bad_brin_big", r.row["ts"], brin={"columns":["ts"], "range_size": 100000})')
+      ot: err('ReqlQueryLogicError', '`brin.range_size` must be an integer in [16, 65536].')
+
+    # range_size must be a number.
+    - py: err('tbl.index_create("bad_brin_bool", r.row["ts"], brin={"columns":["ts"], "range_size": true})')
+      ot: err('ReqlQueryLogicError', '`brin.range_size` must be a number.')
+
+    # Missing required columns optarg.
+    - py: err('tbl.index_create("bad_brin_no_cols", r.row["ts"], brin={"foo": "bar"})')
+      ot: err('ReqlQueryLogicError', '`brin` optarg must have a `columns` field with an array of column names.')
+
+    # ---- Cleanup ----
+
+    - py: r.db('test').table_drop('brin_test')
+      ot: partial({'tables_dropped':1})
