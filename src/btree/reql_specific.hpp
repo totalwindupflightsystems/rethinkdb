@@ -69,6 +69,11 @@ public:
     block_id_t get_vector_graph_block_id();
     void set_vector_graph_block_id(block_id_t new_id);
 
+    /* For BRIN-type secondary indexes, this points to a child block that holds the
+    serialized brin_index_t sidecar blob. NULL_BLOCK_ID means no sidecar. */
+    block_id_t get_brin_summary_block_id();
+    void set_brin_summary_block_id(block_id_t new_id);
+
     buf_parent_t expose_buf() { return buf_parent_t(&sb_buf_); }
 
 private:
