@@ -123,8 +123,8 @@
   - [x] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
   - [x] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage — `8f4e4b6378`, `abb61f6751`
   - [x] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern) — `bab098314e`
-  - [ ] **BRIN-5: Query integration** — `between` optimization using BRIN summaries
-  - [ ] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait`
+  - [x] **BRIN-5: Query integration** — `between` optimization using BRIN summaries — `0ce949be9b`
+  - [x] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait` (commit `9dba0afaae`)
   - [ ] **BRIN-7: Tests** — unit tests, correctness, integration, benchmarks
 
 ## Phase 3: v3.0 (Future)
