@@ -266,10 +266,14 @@ struct sindex_disk_info_t {
                        sindex_fts_bool_t _fts = sindex_fts_bool_t::REGULAR,
                        sindex_vector_bool_t _vector = sindex_vector_bool_t::REGULAR,
                        size_t _vector_dim = 0,
-                       const std::string &_vector_metric = "") :
+                       const std::string &_vector_metric = "",
+                       sindex_brin_bool_t _brin = sindex_brin_bool_t::REGULAR,
+                       const std::vector<std::string> &_brin_columns = std::vector<std::string>(),
+                       uint64_t _brin_range_size = 0) :
         mapping(_mapping), mapping_version_info(_mapping_version_info),
         multi(_multi), geo(_geo), fts(_fts),
-        vector(_vector), vector_dim(_vector_dim), vector_metric(_vector_metric) { }
+        vector(_vector), vector_dim(_vector_dim), vector_metric(_vector_metric),
+        brin(_brin), brin_columns(_brin_columns), brin_range_size(_brin_range_size) { }
     ql::map_wire_func_t mapping;
     sindex_reql_version_info_t mapping_version_info;
     sindex_multi_bool_t multi;
@@ -278,6 +282,9 @@ struct sindex_disk_info_t {
     sindex_vector_bool_t vector;
     size_t vector_dim;
     std::string vector_metric;
+    sindex_brin_bool_t brin;
+    std::vector<std::string> brin_columns;
+    uint64_t brin_range_size;
 };
 
 void serialize_sindex_info(write_message_t *wm,

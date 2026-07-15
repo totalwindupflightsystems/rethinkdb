@@ -1627,6 +1627,9 @@ void serialize_sindex_info(write_message_t *wm,
     serialize<cluster_version_t::LATEST_DISK>(wm, info.vector);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.vector_dim);
     serialize<cluster_version_t::LATEST_DISK>(wm, info.vector_metric);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.brin);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.brin_columns);
+    serialize<cluster_version_t::LATEST_DISK>(wm, info.brin_range_size);
 }
 
 void deserialize_sindex_info(
@@ -1734,6 +1737,24 @@ void deserialize_sindex_info(
             success = deserialize_for_version(cluster_version, &read_stream, &info_out->vector_metric);
             throw_if_bad_deserialization(success, "sindex description");
         }
+    }
+
+    // BRIN fields: present in v2.7+ sindex info, absent in older data.
+    // Default to REGULAR/empty/0 for backward compatibility.
+    info_out->brin = sindex_brin_bool_t::REGULAR;
+    info_out->brin_columns.clear();
+    info_out->brin_range_size = 0;
+    if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+        success = deserialize_for_version(cluster_version, &read_stream, &info_out->brin);
+        throw_if_bad_deserialization(success, "sindex description");
+    }
+    if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+        success = deserialize_for_version(cluster_version, &read_stream, &info_out->brin_columns);
+        throw_if_bad_deserialization(success, "sindex description");
+    }
+    if (static_cast<size_t>(read_stream.tell()) < data.size()) {
+        success = deserialize_for_version(cluster_version, &read_stream, &info_out->brin_range_size);
+        throw_if_bad_deserialization(success, "sindex description");
     }
 }
 

@@ -143,6 +143,19 @@ std::string format_index_create_query(
         ret += "vector: {dim: " + std::to_string(config.vector_dim)
             + ", metric: \"" + config.vector_metric + "\"}";
     }
+    if (config.brin == sindex_brin_bool_t::BRIN) {
+        if (first_optarg) {
+            ret += ", {";
+            first_optarg = false;
+        } else {
+            ret += ", ";
+        }
+        ret += "brin: {columns: [\"" + config.brin_columns[0] + "\"]";
+        if (config.brin_range_size != 128) {
+            ret += ", range_size: " + std::to_string(config.brin_range_size);
+        }
+        ret += "}";
+    }
     if (!first_optarg) {
         ret += "}";
     }
@@ -178,6 +191,17 @@ ql::datum_t sindex_status_to_datum(
         stat.overwrite("vector_dim", ql::datum_t(static_cast<double>(config.vector_dim)));
         stat.overwrite("vector_metric", ql::datum_t(datum_string_t(config.vector_metric)));
     }
+    stat.overwrite("brin",
+        ql::datum_t::boolean(config.brin == sindex_brin_bool_t::BRIN));
+    if (config.brin == sindex_brin_bool_t::BRIN) {
+        ql::datum_array_builder_t brin_cols_arr(config.brin_columns.size());
+        for (const auto &col : config.brin_columns) {
+            brin_cols_arr.add(ql::datum_t(datum_string_t(col)));
+        }
+        stat.overwrite("brin_columns", std::move(brin_cols_arr).to_datum());
+        stat.overwrite("brin_range_size",
+            ql::datum_t(static_cast<double>(config.brin_range_size)));
+    }
     stat.overwrite("function",
         ql::datum_t::binary(sindex_config_to_string(config)));
     stat.overwrite("query",
@@ -188,7 +212,7 @@ ql::datum_t sindex_status_to_datum(
 class sindex_create_term_t : public op_term_t {
 public:
     sindex_create_term_t(compile_env_t *env, const raw_term_t &term)
-        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo", "fts", "vector"})) { }
+        : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo", "fts", "vector", "brin"})) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -208,6 +232,9 @@ public:
         config.vector = sindex_vector_bool_t::REGULAR;
         config.vector_dim = 0;
         config.vector_metric = "";
+        config.brin = sindex_brin_bool_t::REGULAR;
+        config.brin_columns.clear();
+        config.brin_range_size = 0;
         if (args->num_args() == 3) {
             scoped_ptr_t<val_t> v = args->arg(env, 2);
             bool got_func = false;
@@ -285,6 +312,44 @@ public:
             config.vector = sindex_vector_bool_t::VECTOR;
             config.vector_dim = static_cast<size_t>(dim_d.as_num());
             config.vector_metric = metric;
+        }
+
+        /* Do we want to create a BRIN index? */
+        if (scoped_ptr_t<val_t> brin_val = args->optarg(env, "brin")) {
+            datum_t brin_obj = brin_val->as_datum();
+            rcheck(brin_obj.get_type() == datum_t::R_OBJECT,
+                   base_exc_t::LOGIC,
+                   "The `brin` optarg must be an object `{columns: [...]}`.");
+            datum_t cols_d = brin_obj.get_field("columns", NOTHROW);
+            rcheck(cols_d.has() && cols_d.get_type() == datum_t::R_ARRAY,
+                   base_exc_t::LOGIC,
+                   "`brin` optarg must have a `columns` field with an array of column names.");
+            rcheck(cols_d.arr_size() == 1,
+                   base_exc_t::LOGIC,
+                   "Multi-column BRIN is not implemented. `columns` must have exactly one element.");
+            for (size_t i = 0; i < cols_d.arr_size(); ++i) {
+                datum_t col = cols_d.get(i, NOTHROW);
+                rcheck(col.get_type() == datum_t::R_STR,
+                       base_exc_t::LOGIC,
+                       strprintf("BRIN column names must be strings (got %s).",
+                                 col.print().c_str()));
+                config.brin_columns.push_back(col.as_str().to_std());
+            }
+            datum_t range_d = brin_obj.get_field("range_size", NOTHROW);
+            if (range_d.has()) {
+                rcheck(range_d.get_type() == datum_t::R_NUM,
+                       base_exc_t::LOGIC,
+                       "`brin.range_size` must be a number.");
+                double range_val = range_d.as_num();
+                rcheck(range_val >= 16 && range_val <= 65536
+                           && range_val == static_cast<int64_t>(range_val),
+                       base_exc_t::LOGIC,
+                       "`brin.range_size` must be an integer in [16, 65536].");
+                config.brin_range_size = static_cast<uint64_t>(range_val);
+            } else {
+                config.brin_range_size = 128;  // default
+            }
+            config.brin = sindex_brin_bool_t::BRIN;
         }
 
         try {

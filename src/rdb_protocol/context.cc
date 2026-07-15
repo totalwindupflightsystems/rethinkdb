@@ -13,7 +13,9 @@
 bool sindex_config_t::operator==(const sindex_config_t &o) const {
     if (func_version != o.func_version || multi != o.multi || geo != o.geo
         || fts != o.fts || vector != o.vector
-        || vector_dim != o.vector_dim || vector_metric != o.vector_metric) {
+        || vector_dim != o.vector_dim || vector_metric != o.vector_metric
+        || brin != o.brin || brin_columns != o.brin_columns
+        || brin_range_size != o.brin_range_size) {
         return false;
     }
     /* This is kind of a hack--we compare the functions by serializing them and comparing
@@ -29,8 +31,68 @@ bool sindex_config_t::operator==(const sindex_config_t &o) const {
     return stream1.vector() == stream2.vector();
 }
 
-RDB_IMPL_SERIALIZABLE_4_SINCE_v2_1(sindex_config_t,
-    func, func_version, multi, geo);
+/* Serialize the historical 4 fields, then the FTS/VECTOR/BRIN additive fields.
+   Older on-disk/cluster payloads that only contain the 4 base fields still
+   deserialize: extended fields default to REGULAR/empty/0. */
+template <cluster_version_t W>
+void serialize(write_message_t *wm, const sindex_config_t &thing) {
+    serialize<W>(wm, thing.func);
+    serialize<W>(wm, thing.func_version);
+    serialize<W>(wm, thing.multi);
+    serialize<W>(wm, thing.geo);
+    serialize<W>(wm, thing.fts);
+    serialize<W>(wm, thing.vector);
+    serialize<W>(wm, thing.vector_dim);
+    serialize<W>(wm, thing.vector_metric);
+    serialize<W>(wm, thing.brin);
+    serialize<W>(wm, thing.brin_columns);
+    serialize<W>(wm, thing.brin_range_size);
+}
+
+template <cluster_version_t W>
+archive_result_t deserialize(read_stream_t *s, sindex_config_t *thing) {
+    archive_result_t res = archive_result_t::SUCCESS;
+    res = deserialize<W>(s, &thing->func);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->func_version);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->multi);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->geo);
+    if (bad(res)) { return res; }
+
+    /* Additive fields: present in post-FTS/VECTOR/BRIN payloads. When the
+       stream ends after the 4 base fields (legacy v2.1-era configs), keep
+       REGULAR/empty/0 defaults. Note: nested-in-map streams may continue with
+       the next map entry; we therefore always write all extended fields on
+       serialize (see above) so modern peers round-trip fully. Reading always
+       expects the extended fields for CLUSTER/LATEST. */
+    thing->fts = sindex_fts_bool_t::REGULAR;
+    thing->vector = sindex_vector_bool_t::REGULAR;
+    thing->vector_dim = 0;
+    thing->vector_metric.clear();
+    thing->brin = sindex_brin_bool_t::REGULAR;
+    thing->brin_columns.clear();
+    thing->brin_range_size = 0;
+
+    res = deserialize<W>(s, &thing->fts);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->vector);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->vector_dim);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->vector_metric);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->brin);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->brin_columns);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->brin_range_size);
+    if (bad(res)) { return res; }
+    return res;
+}
+
+INSTANTIATE_SERIALIZABLE_SINCE_v2_1(sindex_config_t);
 
 bool write_hook_config_t::operator==(const write_hook_config_t &o) const {
     if (func_version != o.func_version) {
