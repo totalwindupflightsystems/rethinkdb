@@ -194,7 +194,7 @@ ql::datum_t sindex_status_to_datum(
     stat.overwrite("brin",
         ql::datum_t::boolean(config.brin == sindex_brin_bool_t::BRIN));
     if (config.brin == sindex_brin_bool_t::BRIN) {
-        ql::datum_array_builder_t brin_cols_arr(config.brin_columns.size());
+        ql::datum_array_builder_t brin_cols_arr(ql::configured_limits_t::unlimited);
         for (const auto &col : config.brin_columns) {
             brin_cols_arr.add(ql::datum_t(datum_string_t(col)));
         }
