@@ -15,3 +15,6 @@ test/results/
 
 # Orphan session artifacts
 agent-sdlc-interaction-map.json
+
+# GitReins local artifacts
+.gitreins/history/
