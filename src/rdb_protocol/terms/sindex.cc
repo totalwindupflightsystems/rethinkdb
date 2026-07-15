@@ -29,7 +29,8 @@ datum_string_t sindex_config_to_string(const sindex_config_t &config) {
     version.latest_compatible_reql_version = config.func_version;
     version.latest_checked_reql_version = reql_version_t::LATEST;
     sindex_disk_info_t disk_info(config.func, version, config.multi, config.geo, config.fts,
-        config.vector, config.vector_dim, config.vector_metric);
+        config.vector, config.vector_dim, config.vector_metric,
+        config.brin, config.brin_columns, config.brin_range_size);
 
     write_message_t wm;
     serialize_sindex_info(&wm, disk_info);
@@ -94,7 +95,10 @@ sindex_config_t sindex_config_from_string(
         sindex_info.fts,
         sindex_info.vector,
         sindex_info.vector_dim,
-        sindex_info.vector_metric);
+        sindex_info.vector_metric,
+        sindex_info.brin,
+        sindex_info.brin_columns,
+        sindex_info.brin_range_size);
 }
 
 // Helper for `sindex_status_to_datum()`
