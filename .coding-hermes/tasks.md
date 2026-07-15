@@ -120,7 +120,7 @@
       - [x] Performance benchmarks — `d8e645b`: L2(128-dim×10K), HNSW(insert 1K + search 100), IVFFlat(train+insert 1K + search 100)
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
   - [x] **BRIN-1: Architecture spec & design document** — `brin-index-design.md` (632 lines, 10 sections, committed)
-  - [ ] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
+  - [x] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
   - [ ] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage
   - [ ] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern)
   - [ ] **BRIN-5: Query integration** — `between` optimization using BRIN summaries
