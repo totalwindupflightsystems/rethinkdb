@@ -113,11 +113,11 @@
     - [x] Return matching documents as datum array
     - Files: terms/vector_near.cc, val.hpp, val.cc (+ context.hpp, real_table.hpp/cc, artificial_table.hpp/cc)
     - 8 files, +130/-4 lines; build+420 tests green; guard PASS
-  - [ ] **VECTOR-8: Tests**
-    - Unit tests for distance functions, HNSW, IVF
-    - Integration tests with real ReQL queries
-    - Correctness tests (exact vs approximate recall)
-    - Performance benchmarks
+  - [ ] **VECTOR-8: Tests** (3/4 done — `d8e645b`)
+      - [x] Unit tests for distance functions, HNSW, IVF (56 tests pass: 24 dist, 16 HNSW, 16 IVF)
+      - [x] Correctness tests (exact vs approximate recall@k) — `d8e645b`: 12 tests (4 metric + 2 recall + 1 exact-match + 3 bench + 2 stress), all pass
+      - [ ] Integration tests with real ReQL queries (needs running server)
+      - [x] Performance benchmarks — `d8e645b`: L2(128-dim×10K), HNSW(insert 1K + search 100), IVFFlat(train+insert 1K + search 100)
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
 
 ## Phase 3: v3.0 (Future)
