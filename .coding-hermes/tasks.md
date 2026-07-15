@@ -125,7 +125,7 @@
   - [x] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern) — `bab098314e`
   - [x] **BRIN-5: Query integration** — `between` optimization using BRIN summaries — `0ce949be9b`
   - [x] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait` (commit `9dba0afaae`)
-  - [ ] **BRIN-7: Tests** — unit tests, correctness, integration, benchmarks
+  - [x] **BRIN-7: Tests** — 30 new tests (11 build pipeline, 11 pruning, 8 validation) + 114-line integration YAML. Commit `ab57d115ef`. Benchmarks deferred to v2.5 release testing.
 
 ## Phase 3: v3.0 (Future)
 - [ ] Declarative table partitioning
