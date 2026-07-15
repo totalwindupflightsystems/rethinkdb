@@ -1,0 +1,65 @@
+desc: Tests for vector index creation and vector_near queries
+table_variable_name: tbl
+tests:
+
+    # ---- Setup ----
+
+    - py: r.db('test').table_create('vector_test')
+      ot: partial({'tables_created':1})
+    - def: tbl = r.db('test').table('vector_test')
+
+    # ---- Vector index creation ----
+
+    - cd: tbl.index_create('v_l2', lambda doc:doc['emb'], vector={'dim':3, 'metric':'l2'})
+      ot: partial({'created': 1})
+
+    - cd: tbl.index_create('v_cos', lambda doc:doc['emb'], vector={'dim':3, 'metric':'cosine'})
+      ot: partial({'created': 1})
+
+    - cd: tbl.index_create('v_ip', lambda doc:doc['emb'], vector={'dim':3, 'metric':'inner_product'})
+      ot: partial({'created': 1})
+
+    # ---- Insert documents ----
+
+    - py: tbl.insert([{'id': 1, 'emb': [1.0, 0.0, 0.0]},
+                      {'id': 2, 'emb': [0.0, 1.0, 0.0]},
+                      {'id': 3, 'emb': [0.0, 0.0, 1.0]},
+                      {'id': 4, 'emb': [1.0, 1.0, 1.0]},
+                      {'id': 5, 'emb': [2.0, 2.0, 2.0]}])
+      ot: partial({'errors':0, 'inserted':5})
+
+    # ---- vector_near queries ----
+
+    - py: tbl.vector_near('v_l2', r.vector([1.0, 0.0, 0.0]), k=3).get_field('id')
+      ot: [1, 4, 5]
+
+    - py: tbl.vector_near('v_l2', r.vector([0.0, 1.0, 0.0]), k=3).get_field('id')
+      ot: [2, 4, 5]
+
+    - py: tbl.vector_near('v_l2', r.vector([0.0, 0.0, 1.0]), k=3).get_field('id')
+      ot: [3, 4, 5]
+
+    - py: tbl.vector_near('v_l2', r.vector([1.0, 0.0, 0.0]), k=1).get_field('id')
+      ot: [1]
+
+    - cd: tbl.vector_near('v_l2', r.vector([1.0, 0.0, 0.0]), k=5).count()
+      ot: 5
+
+    - py: tbl.vector_near('v_cos', r.vector([1.0, 0.0, 0.0]), k=3).get_field('id')
+      ot: [1, 4, 5]
+
+    # ---- Edge cases ----
+
+    - py: tbl.index_create('v_plain', lambda doc:doc['id'])
+      ot: partial({'created': 1})
+
+    - py: err('tbl.vector_near("v_plain", r.vector([1.0, 0.0, 0.0]), k=3)')
+
+    - py: err('tbl.vector_near("no_such_idx", r.vector([1.0, 0.0, 0.0]), k=3)')
+
+    - py: err('tbl.vector_near("v_l2", r.vector([1.0, 0.0, 0.0]), k=0)')
+
+    # ---- Cleanup ----
+
+    - py: r.db('test').table_drop('vector_test')
+      ot: partial({'tables_dropped':1})
