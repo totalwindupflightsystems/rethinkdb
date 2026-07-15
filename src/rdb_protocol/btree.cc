@@ -665,6 +665,7 @@ public:
     }
 private:
     friend class rget_cb_t;
+    friend class brin_rget_cb_t;
     ql::env_t *const env;
     scoped_ptr_t<ql::batcher_t> batcher;
     std::vector<scoped_ptr_t<ql::op_t> > transformers;
@@ -678,6 +679,7 @@ public:
         : response(_response), slice(_slice) { }
 private:
     friend class rget_cb_t;
+    friend class brin_rget_cb_t;
     rget_read_response_t *const response;
     btree_slice_t *const slice;
 };
@@ -1075,6 +1077,186 @@ void rdb_rget_slice(
         rget_cb_wrapper_t wrapper(&callback, 1, r_nullopt);
         cont = btree_concurrent_traversal(
             superblock, range, &wrapper, direction, release_superblock);
+    }
+    callback.finish(cont);
+}
+
+/* Callback for BRIN primary scans: apply the sindex mapping and drop rows that
+do not match the query datumspec (summaries can produce false positives). */
+class brin_rget_cb_t : public concurrent_traversal_callback_t {
+public:
+    brin_rget_cb_t(rget_io_data_t &&_io,
+                   job_data_t &&_job,
+                   const ql::datumspec_t &_datumspec,
+                   reql_version_t func_reql_version,
+                   ql::map_wire_func_t mapping,
+                   sindex_multi_bool_t multi)
+        : io(std::move(_io)),
+          job(std::move(_job)),
+          datumspec(_datumspec),
+          multi(multi),
+          bad_init(false) {
+        func = mapping.compile_wire_func();
+        sindex_env.init(new ql::env_t(job.env->interruptor,
+                                      ql::return_empty_normal_batches_t::NO,
+                                      func_reql_version));
+        disabler.init(new profile::disabler_t(job.env->trace));
+        sampler.init(new profile::sampler_t("BRIN range traversal doc evaluation.",
+                                            job.env->trace));
+    }
+
+    continue_bool_t handle_pair(
+            scoped_key_value_t &&keyvalue,
+            concurrent_traversal_fifo_enforcer_signal_t waiter)
+            THROWS_ONLY(interrupted_exc_t) override {
+        sampler->new_sample();
+        if (bad_init || boost::get<ql::exc_t>(&io.response->result) != nullptr) {
+            return continue_bool_t::ABORT;
+        }
+        store_key_t key(keyvalue.key());
+        lazy_btree_val_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
+                             keyvalue.expose_buf());
+        io.slice->stats.pm_keys_read.record();
+        io.slice->stats.pm_total_keys_read += 1;
+        ql::datum_t val = row.get();
+        guarantee(!row.references_parent());
+        keyvalue.reset();
+        waiter.wait_interruptible();
+
+        try {
+            ql::datum_t sindex_val =
+                func->call(sindex_env.get(), val)->as_datum();
+            if (multi == sindex_multi_bool_t::MULTI
+                && sindex_val.get_type() == ql::datum_t::R_ARRAY) {
+                /* Multi-indexes: accept if any element matches the query. */
+                size_t copies = 0;
+                for (size_t i = 0; i < sindex_val.arr_size(); ++i) {
+                    copies += datumspec.copies(sindex_val.get(i));
+                }
+                if (copies == 0) {
+                    return continue_bool_t::CONTINUE;
+                }
+            } else {
+                if (datumspec.copies(sindex_val) == 0) {
+                    return continue_bool_t::CONTINUE;
+                }
+            }
+
+            auto lazy_sindex_val = [&]() -> ql::datum_t {
+                return sindex_val;
+            };
+            ql::groups_t data = {{ql::datum_t(), ql::datums_t(1, val)}};
+            for (auto it = job.transformers.begin();
+                 it != job.transformers.end(); ++it) {
+                (**it)(job.env, &data, lazy_sindex_val);
+            }
+            return (*job.accumulator)(job.env, &data, key, lazy_sindex_val);
+        } catch (const ql::exc_t &e) {
+            io.response->result = e;
+            return continue_bool_t::ABORT;
+        } catch (const ql::datum_exc_t &e) {
+#ifndef NDEBUG
+            unreachable();
+#else
+            io.response->result = ql::exc_t(e, ql::backtrace_id_t::empty());
+            return continue_bool_t::ABORT;
+#endif
+        }
+    }
+
+    void finish(continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t) {
+        job.accumulator->finish(last_cb, &io.response->result);
+    }
+
+private:
+    rget_io_data_t io;
+    job_data_t job;
+    const ql::datumspec_t datumspec;
+    counted_t<const ql::func_t> func;
+    sindex_multi_bool_t multi;
+    scoped_ptr_t<ql::env_t> sindex_env;
+    bool bad_init;
+    scoped_ptr_t<profile::disabler_t> disabler;
+    scoped_ptr_t<profile::sampler_t> sampler;
+};
+
+void rdb_brin_rget_slice(
+        btree_slice_t *slice,
+        const region_t &shard,
+        const std::vector<key_range_t> &pk_ranges,
+        superblock_t *superblock,
+        ql::env_t *ql_env,
+        const ql::batchspec_t &batchspec,
+        const std::vector<transform_variant_t> &transforms,
+        const optional<terminal_variant_t> &terminal,
+        sorting_t sorting,
+        const ql::datumspec_t &datumspec,
+        const sindex_disk_info_t &sindex_info,
+        rget_read_response_t *response,
+        release_superblock_t release_superblock) {
+    r_sanity_check(boost::get<ql::exc_t>(&response->result) == nullptr);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do BRIN-pruned range scan on primary index.",
+        ql_env->trace);
+
+    if (pk_ranges.empty()) {
+        /* Produce an empty stream result. */
+        store_key_t last = !reversed(sorting)
+            ? store_key_t::max() : store_key_t::min();
+        rget_cb_t empty_cb(
+            rget_io_data_t(response, slice),
+            job_data_t(ql_env,
+                       batchspec,
+                       transforms,
+                       terminal,
+                       shard,
+                       last,
+                       sorting,
+                       require_sindexes_t::NO),
+            r_nullopt);
+        empty_cb.finish(continue_bool_t::CONTINUE);
+        return;
+    }
+
+    const reql_version_t sindex_func_reql_version =
+        sindex_info.mapping_version_info.latest_compatible_reql_version;
+
+    store_key_t initial_last = !reversed(sorting)
+        ? pk_ranges.front().left
+        : pk_ranges.front().right.key_or_max();
+
+    brin_rget_cb_t callback(
+        rget_io_data_t(response, slice),
+        job_data_t(ql_env,
+                   batchspec,
+                   transforms,
+                   terminal,
+                   shard,
+                   initial_last,
+                   sorting,
+                   require_sindexes_t::NO),
+        datumspec,
+        sindex_func_reql_version,
+        sindex_info.mapping,
+        sindex_info.multi);
+
+    direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
+    continue_bool_t cont = continue_bool_t::CONTINUE;
+    for (size_t i = 0; i < pk_ranges.size(); ++i) {
+        if (pk_ranges[i].is_empty()) {
+            continue;
+        }
+        const bool is_last = (i + 1 == pk_ranges.size());
+        cont = btree_concurrent_traversal(
+            superblock,
+            pk_ranges[i],
+            &callback,
+            direction,
+            is_last ? release_superblock : release_superblock_t::KEEP);
+        if (cont == continue_bool_t::ABORT) {
+            break;
+        }
     }
     callback.finish(cont);
 }

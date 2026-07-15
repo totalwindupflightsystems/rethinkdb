@@ -9,12 +9,15 @@
 #include "rdb_protocol/geo/distances.hpp"
 #include "rdb_protocol/context.hpp"
 #include "rdb_protocol/datum_stream.hpp"
+#include "rdb_protocol/datum_stream/array.hpp"
 #include "rdb_protocol/datum_stream/lazy.hpp"
 #include "rdb_protocol/datum_stream/readers.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/math_utils.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/shards.hpp"
+#include "rdb_protocol/val.hpp"
 
 
 namespace_id_t real_table_t::get_id() const {
@@ -59,6 +62,10 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
             ql::primary_readgen_t::make(
                 env, table_name, read_mode, datumspec, sorting));
     } else {
+        /* BRIN indexes do not produce ordinary sindex keys; eq_join on a BRIN
+        index is not supported. Fall through to the normal path which will fail
+        meaningfully if the caller expects sindex values. BRIN between is handled
+        in read_all(). */
         return make_scoped<ql::rget_reader_t>(
 	        counted_t<real_table_t>(this),
                 ql::sindex_readgen_t::make(
@@ -69,6 +76,32 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
                     datumspec,
                     sorting,
                     require_sindexes_t::YES));
+    }
+}
+
+/* Returns true if `sindex` is a BRIN-type secondary index on this table. */
+static bool sindex_is_brin(
+        table_meta_client_t *meta,
+        const namespace_id_t &table_id,
+        const std::string &sindex,
+        signal_t *interruptor) {
+    if (meta == nullptr) {
+        return false;
+    }
+    try {
+        std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > statuses;
+        meta->get_sindex_status(table_id, interruptor, &statuses);
+        auto it = statuses.find(sindex);
+        if (it == statuses.end()) {
+            return false;
+        }
+        return it->second.first.brin == sindex_brin_bool_t::BRIN;
+    } catch (const interrupted_exc_t &) {
+        throw;
+    } catch (const no_such_table_exc_t &) {
+        return false;
+    } catch (const failed_table_op_exc_t &) {
+        return false;
     }
 }
 
@@ -93,6 +126,54 @@ counted_t<ql::datum_stream_t> real_table_t::read_all(
 		counted_t<real_table_t>(this),
                 ql::primary_readgen_t::make(
                     env, table_name, read_mode, datumspec, sorting)),
+            bt);
+    } else if (sindex_is_brin(m_table_meta_client, uuid, sindex, env->interruptor)) {
+        /* BRIN between: dispatch a brin_read_t (vector_read_t pattern). Materialize
+        the full result set into a vector_reader so the caller-facing stream API is
+        unchanged. Batching/streaming for BRIN is a later optimization. */
+        brin_read_t br_read(
+            region_t::universe(),
+            table_name,
+            sindex,
+            datumspec,
+            sorting,
+            ql::batchspec_t::all(),
+            std::vector<ql::transform_variant_t>(),
+            r_nullopt,
+            ql::skey_version_t::post_1_16,
+            env->get_serializable_env());
+        read_t read(br_read, env->profile(), read_mode);
+        read_response_t res;
+        try {
+            namespace_access.get()->read(
+                env->get_user_context(), read, &res, order_token_t::ignore,
+                env->interruptor);
+        } catch (const cannot_perform_query_exc_t &ex) {
+            rfail_datum(ql::base_exc_t::OP_FAILED, "Cannot perform read: %s",
+                        ex.what());
+        } catch (auth::permission_error_t const &error) {
+            rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", error.what());
+        }
+
+        rget_read_response_t *r_res =
+            boost::get<rget_read_response_t>(&res.response);
+        r_sanity_check(r_res != nullptr);
+        if (auto *error = boost::get<ql::exc_t>(&r_res->result)) {
+            throw *error;
+        }
+
+        auto *gs = boost::get<ql::grouped_t<ql::stream_t> >(&r_res->result);
+        r_sanity_check(gs != nullptr);
+        ql::stream_t stream = ql::groups_to_batch(gs->get_underlying_map());
+
+        std::vector<ql::datum_t> items;
+        for (auto &&sub : stream.substreams) {
+            for (auto &&item : sub.second.stream) {
+                items.push_back(std::move(item.data));
+            }
+        }
+        return make_counted<ql::lazy_datum_stream_t>(
+            make_scoped<ql::vector_reader_t>(std::move(items)),
             bt);
     } else {
         return make_counted<ql::lazy_datum_stream_t>(
@@ -239,6 +320,66 @@ ql::datum_t real_table_t::read_vector_nearest(
         formatted_result.add(std::move(one_result).to_datum());
     }
     return std::move(formatted_result).to_datum();
+}
+
+counted_t<ql::datum_stream_t> real_table_t::get_brin(
+        ql::env_t *env,
+        const std::string &sindex,
+        ql::backtrace_id_t bt,
+        const std::string &table_name,
+        const ql::datumspec_t &datumspec,
+        sorting_t sorting,
+        read_mode_t read_mode) {
+    if (datumspec.is_empty()) {
+        return make_counted<ql::lazy_datum_stream_t>(
+            make_scoped<ql::empty_reader_t>(
+                counted_t<real_table_t>(this),
+                table_name),
+            bt);
+    }
+
+    /* One-shot BRIN read via protocol dispatch. A dedicated brin_readgen for
+    multi-batch streaming can be layered later; this path exercises the store
+    handler and returns a single batch as a lazy stream of collected items. */
+    brin_read_t br(
+        region_t::universe(),
+        table_name,
+        sindex,
+        datumspec,
+        sorting,
+        ql::batchspec_t::user(ql::batch_type_t::TERMINAL, env),
+        std::vector<ql::transform_variant_t>(),
+        r_nullopt,
+        ql::skey_version_t::post_1_16,
+        env->get_serializable_env());
+    read_t read(br, env->profile(), read_mode);
+    read_response_t res;
+    try {
+        namespace_access.get()->read(
+            env->get_user_context(), read, &res, order_token_t::ignore,
+            env->interruptor);
+    } catch (const cannot_perform_query_exc_t &ex) {
+        rfail_datum(ql::base_exc_t::OP_FAILED, "Cannot perform read: %s",
+                    ex.what());
+    } catch (auth::permission_error_t const &error) {
+        rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", error.what());
+    }
+
+    rget_read_response_t *r_res =
+        boost::get<rget_read_response_t>(&res.response);
+    r_sanity_check(r_res);
+
+    if (const ql::exc_t *error = boost::get<ql::exc_t>(&r_res->result)) {
+        throw *error;
+    }
+
+    /* Convert stream result into an array_datum_stream. */
+    scoped_ptr_t<ql::eager_acc_t> acc = ql::make_to_array();
+    acc->add_res(env, &r_res->result, sorting);
+    scoped_ptr_t<ql::val_t> val =
+        acc->finish_eager(bt, false, env->limits());
+    ql::datum_t arr = val->as_datum();
+    return make_counted<ql::array_datum_stream_t>(arr, bt);
 }
 
 const size_t split_size = 128;

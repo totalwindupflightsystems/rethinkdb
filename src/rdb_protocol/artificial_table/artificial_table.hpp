@@ -69,6 +69,14 @@ public:
         read_mode_t read_mode,
         const std::vector<double> &query_vector,
         size_t k);
+    counted_t<ql::datum_stream_t> get_brin(
+        ql::env_t *env,
+        const std::string &sindex,
+        ql::backtrace_id_t bt,
+        const std::string &table_name,
+        const ql::datumspec_t &datumspec,
+        sorting_t sorting,
+        read_mode_t read_mode);
 
     ql::datum_t write_batched_replace(
         ql::env_t *env,

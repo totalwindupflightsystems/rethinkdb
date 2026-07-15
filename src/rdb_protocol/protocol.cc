@@ -919,6 +919,10 @@ struct rdb_r_get_region_visitor : public boost::static_visitor<region_t> {
         return vr.region;
     }
 
+    region_t operator()(const brin_read_t &br) const {
+        return br.region;
+    }
+
     region_t operator()(const distribution_read_t &dg) const {
         return dg.region;
     }
@@ -1098,6 +1102,10 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         return rangey_read(vr);
     }
 
+    bool operator()(const brin_read_t &br) const {
+        return rangey_read(br);
+    }
+
     bool operator()(const distribution_read_t &dg) const {
         return rangey_read(dg);
     }
@@ -1168,6 +1176,7 @@ public:
     void operator()(const intersecting_geo_read_t &gr);
     void operator()(const nearest_geo_read_t &gr);
     void operator()(const vector_read_t &vr);
+    void operator()(const brin_read_t &br);
     void operator()(const distribution_read_t &rg);
     void operator()(const changefeed_subscribe_t &);
     void operator()(const changefeed_limit_subscribe_t &);
@@ -1359,6 +1368,11 @@ void rdb_r_unshard_visitor_t::operator()(const vector_read_t &vr) {
         all_results.resize(vr.k);
     }
     response_out->response = vector_read_response_t(std::move(all_results));
+}
+
+void rdb_r_unshard_visitor_t::operator()(const brin_read_t &br) {
+    /* BRIN shards return `rget_read_response_t`; reuse range-batch unsharding. */
+    unshard_range_batch<rget_read_response_t>(br, br.sorting);
 }
 
 void rdb_r_unshard_visitor_t::operator()(const rget_read_t &rg) {
@@ -1563,6 +1577,7 @@ struct use_snapshot_visitor_t : public boost::static_visitor<bool> {
 
     bool operator()(const nearest_geo_read_t &) const {           return true;  }
     bool operator()(const vector_read_t &) const {               return true;  }
+    bool operator()(const brin_read_t &) const {                 return true;  }
     bool operator()(const changefeed_subscribe_t &) const {       return false; }
     bool operator()(const changefeed_limit_subscribe_t &) const { return false; }
     bool operator()(const changefeed_stamp_t &) const {           return false; }
@@ -1589,6 +1604,7 @@ struct route_to_primary_visitor_t : public boost::static_visitor<bool> {
     bool operator()(const dummy_read_t &) const {                 return false; }
     bool operator()(const nearest_geo_read_t &) const {           return false; }
     bool operator()(const vector_read_t &) const {               return false; }
+    bool operator()(const brin_read_t &) const {                 return false; }
     bool operator()(const changefeed_subscribe_t &) const {       return true;  }
     bool operator()(const changefeed_limit_subscribe_t &) const { return true;  }
     bool operator()(const changefeed_stamp_t &) const {           return true;  }
@@ -2004,6 +2020,19 @@ RDB_IMPL_SERIALIZABLE_4_FOR_CLUSTER(sindex_rangespec_t,
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sorting_t, int8_t,
         sorting_t::UNORDERED, sorting_t::DESCENDING);
+RDB_IMPL_SERIALIZABLE_10_FOR_CLUSTER(
+    brin_read_t,
+    region,
+    table_name,
+    sindex_id,
+    datumspec,
+    sorting,
+    batchspec,
+    transforms,
+    terminal,
+    skey_version,
+    serializable_env);
+// Note: stamp is intentionally not serialized (always empty for BRIN).
 RDB_IMPL_SERIALIZABLE_12_FOR_CLUSTER(
     rget_read_t,
     stamp,

@@ -125,6 +125,11 @@ void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
 }
 
 void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
+        UNUSED const brin_read_t &br) {
+    throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
+}
+
+void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
         UNUSED const distribution_read_t &dg) {
     throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
 }

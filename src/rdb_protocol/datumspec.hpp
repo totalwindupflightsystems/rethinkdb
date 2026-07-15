@@ -26,6 +26,9 @@ public:
     bool operator<(const datum_range_t &o) const;
 
     bool contains(datum_t val) const;
+    /* True if this range may contain any value in the closed interval
+    [min, max]. Used by BRIN summary pruning (conservative). */
+    bool overlaps_closed_interval(datum_t min, datum_t max) const;
     bool is_empty() const;
     bool is_universe() const;
 
