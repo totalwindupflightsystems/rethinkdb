@@ -1,6 +1,7 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "rdb_protocol/store.hpp"
 
+#include <algorithm>
 #include <list>
 
 #include "btree/backfill_debug.hpp"
@@ -12,6 +13,7 @@
 #include "concurrency/cross_thread_watchable.hpp"
 #include "concurrency/wait_any.hpp"
 #include "containers/archive/vector_stream.hpp"
+#include "rdb_protocol/brin.hpp"
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/env.hpp"
@@ -676,6 +678,185 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             out.emplace_back(r.first, std::move(pr_resp.data));
         }
         res->results_or_error = std::move(out);
+    }
+
+    void operator()(const brin_read_t &brin_read) {
+        response->response = rget_read_response_t();
+        auto *res = boost::get<rget_read_response_t>(&response->response);
+
+        // 1. Acquire the sindex superblock for read.
+        // KEEP the primary superblock — BRIN scans the primary B-tree after
+        // pruning, so we still need it.
+        sindex_disk_info_t sindex_info;
+        uuid_u sindex_uuid;
+        scoped_ptr_t<sindex_superblock_t> sindex_sb;
+        try {
+            sindex_sb = acquire_sindex_for_read(
+                store, superblock,
+                release_superblock_t::KEEP,
+                brin_read.table_name,
+                brin_read.sindex_id,
+                &sindex_info, &sindex_uuid);
+        } catch (const ql::exc_t &e) {
+            res->result = e;
+            return;
+        }
+
+        // 2. Check this is a BRIN index.
+        if (sindex_info.brin != sindex_brin_bool_t::BRIN) {
+            res->result = ql::exc_t(
+                ql::base_exc_t::LOGIC,
+                strprintf("Index `%s` is not a BRIN index.",
+                          brin_read.sindex_id.c_str()),
+                ql::backtrace_id_t::empty());
+            return;
+        }
+
+        res->reql_version =
+            sindex_info.mapping_version_info.latest_compatible_reql_version;
+
+        // 3. Get the BRIN summary sidecar block.
+        block_id_t summary_block_id = sindex_sb->get_brin_summary_block_id();
+        if (summary_block_id == NULL_BLOCK_ID) {
+            // Empty sidecar — return empty stream.
+            sindex_sb.reset();
+            ql::env_t ql_env(
+                ctx,
+                ql::return_empty_normal_batches_t::NO,
+                interruptor,
+                brin_read.serializable_env,
+                trace);
+            rdb_brin_rget_slice(
+                btree,
+                brin_read.region,
+                std::vector<key_range_t>(),
+                superblock,
+                &ql_env,
+                brin_read.batchspec,
+                brin_read.transforms,
+                brin_read.terminal,
+                brin_read.sorting,
+                brin_read.datumspec,
+                sindex_info,
+                res,
+                release_superblock_t::RELEASE);
+            return;
+        }
+
+        // 4. Read and deserialize brin_index_t from the blob.
+        buf_lock_t summary_block(sindex_sb->expose_buf(), summary_block_id,
+                                 access_t::read);
+        std::vector<char> ref_buf(blob::btree_maxreflen, 0);
+        {
+            buf_read_t ref_read(&summary_block);
+            uint32_t block_size;
+            const char *ref_slot = static_cast<const char *>(
+                ref_read.get_data_read(&block_size));
+            guarantee(block_size >= blob::btree_maxreflen);
+            memcpy(ref_buf.data(), ref_slot, blob::btree_maxreflen);
+        }
+
+        brin_index_t brin_idx;
+        {
+            blob_t blob(sindex_sb->expose_buf().cache()->max_block_size(),
+                        ref_buf.data(), blob::btree_maxreflen);
+            buffer_group_t buffer_group;
+            blob_acq_t acq;
+            blob.expose_all(sindex_sb->expose_buf(), access_t::read,
+                            &buffer_group, &acq);
+            deserialize_for_version_from_group(
+                cluster_version_t::LATEST_DISK, const_view(&buffer_group),
+                &brin_idx);
+        }
+
+        // Done with sindex; free locks before primary scan.
+        summary_block.reset_buf_lock();
+        sindex_sb.reset();
+
+        // 5. Prune summaries that cannot overlap the query.
+        const ql::datum_range_t query_range =
+            brin_read.datumspec.covering_range();
+        std::vector<key_range_t> candidate_ranges;
+        candidate_ranges.reserve(brin_idx.summaries.size());
+
+        for (const brin_summary_t &summary : brin_idx.summaries) {
+            if (summary.live_row_count == 0
+                || summary.minimum.empty()
+                || summary.maximum.empty()) {
+                continue;
+            }
+            // Phase 1: single column.
+            if (!query_range.overlaps_closed_interval(
+                    summary.minimum[0], summary.maximum[0])) {
+                continue;
+            }
+
+            /* Intersect summary primary-key range with the local shard. */
+            key_range_t pk_range;
+            pk_range.left = summary.primary_key_left;
+            pk_range.right = summary.primary_key_right;
+            key_range_t intersected = pk_range.intersection(brin_read.region.inner);
+            if (!intersected.is_empty()) {
+                candidate_ranges.push_back(std::move(intersected));
+            }
+        }
+
+        // 6. Merge adjacent ranges to reduce traversal overhead.
+        if (!candidate_ranges.empty()) {
+            std::sort(candidate_ranges.begin(), candidate_ranges.end(),
+                [](const key_range_t &a, const key_range_t &b) {
+                    return a.left < b.left;
+                });
+            std::vector<key_range_t> merged;
+            merged.push_back(candidate_ranges[0]);
+            for (size_t i = 1; i < candidate_ranges.size(); ++i) {
+                key_range_t &last = merged.back();
+                const key_range_t &cur = candidate_ranges[i];
+                // Adjacent or overlapping if cur.left <= last.right
+                if (!last.right.unbounded
+                    && cur.left <= last.right.key_or_max()) {
+                    if (last.right < cur.right) {
+                        last.right = cur.right;
+                    }
+                } else if (last.right.unbounded) {
+                    // last already covers everything after
+                } else {
+                    merged.push_back(cur);
+                }
+            }
+            candidate_ranges = std::move(merged);
+        }
+
+        // 7. Scan surviving primary-key ranges with mapping recheck.
+        if (brin_read.transforms.size() != 0 || brin_read.terminal) {
+            rassert(brin_read.serializable_env.global_optargs.has_optarg("db"));
+        }
+        ql::env_t ql_env(
+            ctx,
+            ql::return_empty_normal_batches_t::NO,
+            interruptor,
+            brin_read.serializable_env,
+            trace);
+        try {
+            rdb_brin_rget_slice(
+                btree,
+                brin_read.region,
+                candidate_ranges,
+                superblock,
+                &ql_env,
+                brin_read.batchspec,
+                brin_read.transforms,
+                brin_read.terminal,
+                brin_read.sorting,
+                brin_read.datumspec,
+                sindex_info,
+                res,
+                release_superblock_t::RELEASE);
+        } catch (const ql::exc_t &e) {
+            res->result = e;
+        } catch (const ql::datum_exc_t &e) {
+            res->result = ql::exc_t(e, ql::backtrace_id_t::empty());
+        }
     }
 
     void operator()(const rget_read_t &rget) {

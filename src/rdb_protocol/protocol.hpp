@@ -468,6 +468,51 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(vector_read_t);
 
+/* BRIN range-pruned between read. Response reuses `rget_read_response_t`. */
+class brin_read_t {
+public:
+    brin_read_t()
+        : sorting(sorting_t::UNORDERED),
+          batchspec(ql::batchspec_t::empty()),
+          skey_version(ql::skey_version_t::post_1_16) { }
+
+    brin_read_t(region_t _region,
+                std::string _table_name,
+                std::string _sindex_id,
+                ql::datumspec_t _datumspec,
+                sorting_t _sorting,
+                ql::batchspec_t _batchspec,
+                std::vector<ql::transform_variant_t> _transforms,
+                optional<ql::terminal_variant_t> _terminal,
+                ql::skey_version_t _skey_version,
+                serializable_env_t s_env)
+        : region(std::move(_region)),
+          table_name(std::move(_table_name)),
+          sindex_id(std::move(_sindex_id)),
+          datumspec(std::move(_datumspec)),
+          sorting(_sorting),
+          batchspec(std::move(_batchspec)),
+          transforms(std::move(_transforms)),
+          terminal(std::move(_terminal)),
+          skey_version(_skey_version),
+          serializable_env(std::move(s_env)) { }
+
+    region_t region;  // needed for sharding; after shard = local shard region
+    std::string table_name;
+    std::string sindex_id;
+    ql::datumspec_t datumspec;
+    sorting_t sorting;
+    ql::batchspec_t batchspec;
+    std::vector<ql::transform_variant_t> transforms;
+    optional<ql::terminal_variant_t> terminal;
+    ql::skey_version_t skey_version;
+    serializable_env_t serializable_env;
+    /* Present so `unshard_range_batch` can share code with `rget_read_t`.
+    BRIN reads never use changefeed stamps. */
+    optional<changefeed_stamp_t> stamp;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(brin_read_t);
+
 class distribution_read_t {
 public:
     distribution_read_t()
@@ -531,6 +576,7 @@ struct read_t {
                            intersecting_geo_read_t,
                            nearest_geo_read_t,
                            vector_read_t,
+                           brin_read_t,
                            changefeed_subscribe_t,
                            changefeed_stamp_t,
                            changefeed_limit_subscribe_t,

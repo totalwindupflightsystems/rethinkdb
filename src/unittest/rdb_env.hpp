@@ -84,6 +84,7 @@ private:
         void NORETURN operator()(UNUSED const intersecting_geo_read_t &gr);
         void NORETURN operator()(UNUSED const nearest_geo_read_t &gr);
         void NORETURN operator()(UNUSED const vector_read_t &vr);
+        void NORETURN operator()(UNUSED const brin_read_t &br);
         void NORETURN operator()(UNUSED const distribution_read_t &dg);
 
         read_visitor_t(mock_namespace_interface_t *parent, read_response_t *_response);

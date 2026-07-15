@@ -239,6 +239,28 @@ ql::datum_t artificial_table_t::read_vector_nearest(
         error_message_index_not_found(sindex, table_name).c_str());
 }
 
+counted_t<ql::datum_stream_t> artificial_table_t::get_brin(
+        ql::env_t *env,
+        const std::string &sindex,
+        ql::backtrace_id_t,
+        const std::string &table_name,
+        UNUSED const ql::datumspec_t &datumspec,
+        UNUSED sorting_t sorting,
+        UNUSED read_mode_t read_mode) {
+    try {
+        env->get_user_context().require_read_permission(
+            m_rdb_context, m_database_id, m_backend->get_table_id());
+    } catch (auth::permission_error_t const &permission_error) {
+        rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", permission_error.what());
+    }
+
+    guarantee(
+        sindex != m_primary_key_name,
+        "get_brin() should never be called with the primary index");
+    rfail_datum(ql::base_exc_t::OP_FAILED, "%s",
+        error_message_index_not_found(sindex, table_name).c_str());
+}
+
 ql::datum_t artificial_table_t::write_batched_replace(
         ql::env_t *env,
         const std::vector<ql::datum_t> &keys,

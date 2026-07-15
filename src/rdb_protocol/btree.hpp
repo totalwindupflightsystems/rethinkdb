@@ -154,6 +154,24 @@ void rdb_rget_slice(
     rget_read_response_t *response,
     release_superblock_t release_superblock);
 
+/* Primary-key range scan with BRIN recheck: for every row, apply the sindex
+mapping and emit only rows whose mapped value satisfies `datumspec`. Multiple
+candidate ranges may be scanned into the same response via KEEP/RELEASE. */
+void rdb_brin_rget_slice(
+    btree_slice_t *slice,
+    const region_t &shard,
+    const std::vector<key_range_t> &pk_ranges,
+    superblock_t *superblock,
+    ql::env_t *ql_env,
+    const ql::batchspec_t &batchspec,
+    const std::vector<ql::transform_variant_t> &transforms,
+    const optional<ql::terminal_variant_t> &terminal,
+    sorting_t sorting,
+    const ql::datumspec_t &datumspec,
+    const sindex_disk_info_t &sindex_info,
+    rget_read_response_t *response,
+    release_superblock_t release_superblock);
+
 void rdb_rget_secondary_slice(
     btree_slice_t *slice,
     const region_t &shard,

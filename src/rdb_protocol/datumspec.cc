@@ -65,6 +65,27 @@ bool datum_range_t::contains(datum_t val) const {
             || (right_cmp == 0 && right_bound_type == key_range_t::closed));
 }
 
+bool datum_range_t::overlaps_closed_interval(datum_t min, datum_t max) const {
+    r_sanity_check(left_bound.has() && right_bound.has());
+    r_sanity_check(min.has() && max.has());
+
+    /* No overlap if [min, max] is entirely left of this range. */
+    int cmp_max_left = max.cmp(left_bound);
+    if (cmp_max_left < 0
+        || (cmp_max_left == 0 && left_bound_type == key_range_t::open)) {
+        return false;
+    }
+
+    /* No overlap if [min, max] is entirely right of this range. */
+    int cmp_min_right = min.cmp(right_bound);
+    if (cmp_min_right > 0
+        || (cmp_min_right == 0 && right_bound_type == key_range_t::open)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool datum_range_t::is_empty() const {
     r_sanity_check(left_bound.has() && right_bound.has());
 
