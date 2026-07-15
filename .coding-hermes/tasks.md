@@ -119,32 +119,13 @@
       - [x] Integration tests with real ReQL queries — `bd6c110f`: 13 scenarios in test/rql_test/src/vector.yaml (index create, vector_near, edge cases)
       - [x] Performance benchmarks — `d8e645b`: L2(128-dim×10K), HNSW(insert 1K + search 100), IVFFlat(train+insert 1K + search 100)
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
-  - [ ] **BRIN-1: Architecture spec & design document**
-    - Design BRIN index API (ReQL terms, data types)
-    - Define data structures: range summaries (min/max per block), storage layout
-    - Choose block size and range strategy (fixed-size blocks vs adaptive)
-    - Map integration points with existing sindex infrastructure
-    - Output: `.coding-hermes/research/brin-index-design.md`
-  - [ ] **BRIN-2: BRIN index function + ReQL terms**
-    - Add `r.indexCreate("idx", func, {brin: true})` optarg
-    - Define BRIN range summary structure (min/max per block range)
-    - Wire into term.cc, terms.hpp, ql2.proto
-  - [ ] **BRIN-3: Storage layer**
-    - Serialization for BRIN range summaries
-    - Superblock integration (store alongside sindex data)
-    - Backward-compat deserialization
-  - [ ] **BRIN-4: Sindex integration**
-    - Add `sindex_brin_bool_t` enum + fields to config structs
-    - Wire BRIN index creation into sindex execution path
-    - Build range summaries during post-construction
-  - [ ] **BRIN-5: Query execution**
-    - BRIN-aware query planning (skip blocks outside range)
-    - Integration with existing read path
-  - [ ] **BRIN-6: Tests**
-    - Unit tests for range summary construction
-    - Integration tests with real ReQL queries
-    - Performance benchmarks (compare BRIN vs full scan)
-- [ ] **INFRA — CI zero runs**, likely GitHub Actions billing exhaustion. Active workflow but no runs for recent commits.
+  - [x] **BRIN-1: Architecture spec & design document** — `brin-index-design.md` (632 lines, 10 sections, committed)
+  - [ ] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
+  - [ ] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage
+  - [ ] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern)
+  - [ ] **BRIN-5: Query integration** — `between` optimization using BRIN summaries
+  - [ ] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait`
+  - [ ] **BRIN-7: Tests** — unit tests, correctness, integration, benchmarks
 
 ## Phase 3: v3.0 (Future)
 - [ ] Declarative table partitioning
