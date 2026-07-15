@@ -66,6 +66,7 @@ enum class sindex_multi_bool_t { SINGLE = 0, MULTI = 1};
 enum class sindex_geo_bool_t { REGULAR = 0, GEO = 1};
 enum class sindex_fts_bool_t { REGULAR = 0, FTS = 1};
 enum class sindex_vector_bool_t { REGULAR = 0, VECTOR = 1};
+enum class sindex_brin_bool_t { REGULAR = 0, BRIN = 1};
 
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_multi_bool_t, int8_t,
         sindex_multi_bool_t::SINGLE, sindex_multi_bool_t::MULTI);
@@ -75,6 +76,8 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_fts_bool_t, int8_t,
         sindex_fts_bool_t::REGULAR, sindex_fts_bool_t::FTS);
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_vector_bool_t, int8_t,
         sindex_vector_bool_t::REGULAR, sindex_vector_bool_t::VECTOR);
+ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_brin_bool_t, int8_t,
+        sindex_brin_bool_t::REGULAR, sindex_brin_bool_t::BRIN);
 
 class sindex_config_t {
 public:
@@ -83,9 +86,13 @@ public:
             sindex_multi_bool_t _multi, sindex_geo_bool_t _geo, sindex_fts_bool_t _fts,
             sindex_vector_bool_t _vector = sindex_vector_bool_t::REGULAR,
             size_t _vector_dim = 0,
-            const std::string &_vector_metric = "") :
+            const std::string &_vector_metric = "",
+            sindex_brin_bool_t _brin = sindex_brin_bool_t::REGULAR,
+            const std::vector<std::string> &_brin_columns = std::vector<std::string>(),
+            uint64_t _brin_range_size = 0) :
         func(_func), func_version(_func_version), multi(_multi), geo(_geo), fts(_fts),
-        vector(_vector), vector_dim(_vector_dim), vector_metric(_vector_metric) { }
+        vector(_vector), vector_dim(_vector_dim), vector_metric(_vector_metric),
+        brin(_brin), brin_columns(_brin_columns), brin_range_size(_brin_range_size) { }
 
     bool operator==(const sindex_config_t &o) const;
     bool operator!=(const sindex_config_t &o) const {
@@ -100,6 +107,9 @@ public:
     sindex_vector_bool_t vector;
     size_t vector_dim;
     std::string vector_metric;
+    sindex_brin_bool_t brin;
+    std::vector<std::string> brin_columns;
+    uint64_t brin_range_size;
 };
 RDB_DECLARE_SERIALIZABLE(sindex_config_t);
 

@@ -387,7 +387,8 @@ void store_t::sindex_create(
     version_info.latest_compatible_reql_version = config.func_version;
     version_info.latest_checked_reql_version = reql_version_t::LATEST;
     sindex_disk_info_t info(config.func, version_info, config.multi, config.geo,
-        config.fts, config.vector, config.vector_dim, config.vector_metric);
+        config.fts, config.vector, config.vector_dim, config.vector_metric,
+        config.brin, config.brin_columns, config.brin_range_size);
 
     write_message_t wm;
     serialize_sindex_info(&wm, info);
