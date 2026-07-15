@@ -121,7 +121,7 @@
 - [ ] **PHASE 2c: BRIN-like sparse indexes**
   - [x] **BRIN-1: Architecture spec & design document** — `brin-index-design.md` (632 lines, 10 sections, committed)
   - [x] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
-  - [x] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage — `8f4e4b6378`
+  - [x] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage — `8f4e4b6378`, `abb61f6751`
   - [ ] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern)
   - [ ] **BRIN-5: Query integration** — `between` optimization using BRIN summaries
   - [ ] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait`
