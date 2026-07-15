@@ -23,6 +23,7 @@
 #include "rdb_protocol/distribution_progress.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
+#include "rdb_protocol/brin.hpp"
 #include "rdb_protocol/hnsw.hpp"
 #include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/ql2proto.hpp"
@@ -51,6 +52,14 @@ void post_construct_and_drain_queue(
 /* VECTOR-7b: build and persist the HNSW graph for a vector-type secondary index
 after its sindex B-tree has been fully post-constructed. See definition below. */
 void build_and_persist_hnsw_graph_for_sindex(
+        const uuid_u &sindex_id,
+        store_t *store,
+        signal_t *interruptor)
+    THROWS_ONLY(interrupted_exc_t, archive_exc_t);
+
+/* BRIN-4: build and persist the BRIN sidecar for a BRIN-type secondary index
+after its sindex B-tree has been fully post-constructed. See definition below. */
+void build_and_persist_brin_sidecar_for_sindex(
         const uuid_u &sindex_id,
         store_t *store,
         signal_t *interruptor)
@@ -204,6 +213,17 @@ void resume_construct_sindex(
         // Graceful shutdown — leave vector_graph_block as NULL_BLOCK_ID.
     } catch (const archive_exc_t &) {
         // Malformed opaque_definition or HNSW graph — leave as NULL_BLOCK_ID.
+    }
+
+    /* BRIN-4: after vector post-construction, build and persist the BRIN sidecar
+    for BRIN-type sindexes. Same fail-safe pattern as the HNSW call above. */
+    try {
+        build_and_persist_brin_sidecar_for_sindex(
+            sindex_to_construct, store, store_keepalive.get_drain_signal());
+    } catch (const interrupted_exc_t &) {
+        // Graceful shutdown — leave brin_summary_block as NULL_BLOCK_ID.
+    } catch (const archive_exc_t &) {
+        // Malformed opaque_definition or BRIN sidecar — leave as NULL_BLOCK_ID.
     }
 }
 
@@ -391,6 +411,225 @@ void build_and_persist_hnsw_graph_for_sindex(
     }
 
     sindex_sb->set_vector_graph_block_id(graph_block.block_id());
+    txn->commit();
+}
+
+/* BRIN-4: builds and persists the BRIN sidecar for a BRIN-type secondary index.
+
+This is called from `resume_construct_sindex` after the sindex B-tree has been fully
+post-constructed. It:
+  1. Acquires the sindex superblock for write.
+  2. Reads the sindex's `opaque_definition` and checks `sindex_disk_info_t::brin`.
+  3. If the index is BRIN-typed, traverses the sindex B-tree to collect all
+     (primary_key, indexed_datum) pairs.
+  4. Sorts them by primary_key and builds `brin_summary_t` entries grouped into
+     logical ranges of `brin_range_size` live rows each.
+  5. Serializes the `brin_index_t` to a blob in a new child block of the sindex
+     superblock.
+  6. Records that block_id in `sindex_superblock_t::brin_summary_block`.
+
+If any step fails (e.g. the sindex was deleted concurrently, or the B-tree is empty),
+we leave `brin_summary_block` as `NULL_BLOCK_ID` — range pruning will treat that as
+"no sidecar". The function is intentionally tolerant: post-construction must not
+block other post-construction work. */
+namespace brin_build_helpers {
+
+/* A depth-first traversal callback that collects (primary_key, indexed_datum) pairs
+   from the sindex B-tree. We skip entries whose indexed value is null or not an
+   orderable scalar — those rows don't contribute to BRIN summaries. */
+class collect_brin_entries_cb_t : public depth_first_traversal_callback_t {
+public:
+    continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
+        store_key_t key(keyvalue.key());
+        store_key_t primary_key = ql::datum_t::extract_primary(key);
+        ql::datum_t indexed_datum = get_data(
+            static_cast<const rdb_value_t *>(keyvalue.value()),
+            keyvalue.expose_buf());
+
+        /* Only orderable scalars enter BRIN summaries. Nulls, arrays, objects,
+           geometry, and vectors are skipped. R_NUM covers both plain numbers and
+           pseudo-types (e.g. time is stored as R_NUM + reql_type). */
+        if (!indexed_datum.has()) {
+            ++null_count_;
+            return continue_bool_t::CONTINUE;
+        }
+        ql::datum_t::type_t t = indexed_datum.get_type();
+        if (t != ql::datum_t::R_NUM && t != ql::datum_t::R_STR
+            && t != ql::datum_t::R_BOOL && t != ql::datum_t::R_BINARY) {
+            ++null_count_;
+            return continue_bool_t::CONTINUE;
+        }
+
+        entries_.push_back(std::make_pair(primary_key, indexed_datum));
+        return continue_bool_t::CONTINUE;
+    }
+
+    std::vector<std::pair<store_key_t, ql::datum_t>> entries_;
+    uint64_t null_count_ = 0;
+};
+
+}  // namespace brin_build_helpers
+
+void build_and_persist_brin_sidecar_for_sindex(
+        const uuid_u &sindex_id,
+        store_t *store,
+        signal_t *interruptor)
+    THROWS_ONLY(interrupted_exc_t, archive_exc_t) {
+
+    /* Acquire the primary superblock + sindex block. We need this to find the
+    sindex's opaque_definition and its superblock. */
+    write_token_t token;
+    store->new_write_token(&token);
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> real_sb;
+    store->acquire_superblock_for_write(
+        2,  // primary superblock + sindex block
+        write_durability_t::HARD,
+        &token,
+        &txn,
+        &real_sb,
+        interruptor);
+
+    buf_lock_t sindex_block(real_sb->expose_buf(),
+                            real_sb->get_sindex_block_id(),
+                            access_t::write);
+    real_sb->release();
+
+    secondary_index_t sindex;
+    bool found = get_secondary_index(&sindex_block, sindex_id, &sindex);
+    if (!found || sindex.being_deleted) {
+        sindex_block.reset_buf_lock();
+        txn->commit();
+        return;
+    }
+
+    /* Inspect the opaque_definition. If this is not a BRIN sindex, there is
+    nothing to do. */
+    sindex_disk_info_t disk_info;
+    deserialize_sindex_info_or_crash(sindex.opaque_definition, &disk_info);
+    if (disk_info.brin != sindex_brin_bool_t::BRIN) {
+        sindex_block.reset_buf_lock();
+        txn->commit();
+        return;
+    }
+
+    /* Acquire the sindex superblock for write so we can store the sidecar
+    block_id. */
+    buf_lock_t sindex_sb_lock(buf_parent_t(&sindex_block),
+                              sindex.superblock, access_t::write);
+    sindex_block.reset_buf_lock();
+    scoped_ptr_t<sindex_superblock_t> sindex_sb(
+        new sindex_superblock_t(std::move(sindex_sb_lock)));
+
+    /* Traverse the sindex B-tree to collect all (primary_key, indexed_datum) pairs.
+    These will be sorted by primary_key to build summaries over primary-key ranges. */
+    brin_build_helpers::collect_brin_entries_cb_t cb;
+    btree_depth_first_traversal(
+        sindex_sb.get(),
+        key_range_t::universe(),
+        &cb,
+        access_t::read,
+        direction_t::FORWARD,
+        release_superblock_t::KEEP,
+        interruptor);
+
+    /* If we collected nothing, leave brin_summary_block as NULL_BLOCK_ID. An empty
+    index has no summaries to build. */
+    if (cb.entries_.empty()) {
+        sindex_sb->set_brin_summary_block_id(NULL_BLOCK_ID);
+        txn->commit();
+        return;
+    }
+
+    /* Sort by primary_key so summaries cover contiguous primary-key-space ranges. */
+    std::sort(cb.entries_.begin(), cb.entries_.end(),
+              [](const std::pair<store_key_t, ql::datum_t> &a,
+                 const std::pair<store_key_t, ql::datum_t> &b) {
+                  return a.first < b.first;
+              });
+
+    /* Build summary ranges. Each range covers up to `range_size` live (non-null)
+    primary-key-adjacent entries. Null entries are skipped during collection, so
+    each range may span more primary keys than range_size if there are non-indexable
+    rows interspersed. */
+    uint64_t range_size = disk_info.brin_range_size;
+    if (range_size < BRIN_RANGE_SIZE_MIN || range_size > BRIN_RANGE_SIZE_MAX) {
+        range_size = BRIN_RANGE_SIZE_DEFAULT;
+    }
+
+    brin_index_t brin_idx;
+    brin_idx.format_version = BRIN_FORMAT_VERSION;
+    brin_idx.range_size = range_size;
+    brin_idx.columns = disk_info.brin_columns;
+
+    size_t n = cb.entries_.size();
+    size_t range_start = 0;
+    while (range_start < n) {
+        size_t range_end = std::min(range_start + range_size, n);
+
+        brin_summary_t summary;
+        summary.primary_key_left = cb.entries_[range_start].first;
+
+        /* Set right bound: exclusive of first key in the NEXT range, or unbounded
+           if this is the last range. */
+        if (range_end < n) {
+            summary.primary_key_right =
+                key_range_t::right_bound_t(cb.entries_[range_end].first);
+        } else {
+            summary.primary_key_right = key_range_t::right_bound_t::make_unbounded();
+        }
+
+        /* Compute min/max for the (single) BRIN column. */
+        ql::datum_t col_min = cb.entries_[range_start].second;
+        ql::datum_t col_max = cb.entries_[range_start].second;
+        summary.live_row_count = 0;
+        summary.null_row_count = 0;
+        summary.dirty = false;
+
+        for (size_t i = range_start; i < range_end; ++i) {
+            const ql::datum_t &val = cb.entries_[i].second;
+            if (!val.has()) {
+                summary.null_row_count++;
+                continue;
+            }
+            summary.live_row_count++;
+            if (val.cmp(col_min) < 0) col_min = val;
+            if (col_max.cmp(val) < 0) col_max = val;
+        }
+
+        summary.minimum.push_back(col_min);
+        summary.maximum.push_back(col_max);
+
+        brin_idx.summaries.push_back(std::move(summary));
+        range_start = range_end;
+    }
+
+    /* Allocate a fresh block under the sindex superblock to hold the blob tree
+    containing the serialized BRIN index. We zero the first btree_maxreflen bytes
+    to give blob_t a fresh, empty ref to start from. */
+    buf_lock_t sidecar_block(sindex_sb->expose_buf(), alt_create_t::create);
+
+    /* Heap-allocated ref buffer; blob_t only reads it during construction, then
+    writes the (now populated) ref into it after serialize_onto_blob completes. */
+    std::vector<char> ref_buf(blob::btree_maxreflen, 0);
+    {
+        blob_t blob(sindex_sb->expose_buf().cache()->max_block_size(),
+                    ref_buf.data(),
+                    blob::btree_maxreflen);
+        serialize_onto_blob<cluster_version_t::LATEST_DISK>(
+            sindex_sb->expose_buf(), &blob, brin_idx);
+    }
+    /* Persist the populated blob ref into the first btree_maxreflen bytes of the
+    newly allocated sidecar block. blob_t will reference this ref on subsequent
+    reads. */
+    {
+        buf_write_t ref_write(&sidecar_block);
+        char *ref_slot = static_cast<char *>(
+            ref_write.get_data_write(blob::btree_maxreflen));
+        memcpy(ref_slot, ref_buf.data(), blob::btree_maxreflen);
+    }
+
+    sindex_sb->set_brin_summary_block_id(sidecar_block.block_id());
     txn->commit();
 }
 
