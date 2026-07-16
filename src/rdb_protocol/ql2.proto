@@ -815,6 +815,13 @@ message Term {
         VECTOR = 200; // ARRAY -> VECTOR
         // Queries a vector index for nearest neighbor search.
         VECTOR_NEAR = 201; // Table, STRING, Function, {k: NUMBER} -> ARRAY
+
+        // * Partitioning Operations
+        // Returns the table's declarative partition layout (type, by, epoch, state).
+        PARTITION_INFO = 202; // Table -> OBJECT
+        // Online repartition of a table; accepts the same layout as tableCreate's
+        // `partitions` optarg plus optional {wait: BOOL}.
+        REPARTITION = 203; // Table, OBJECT {wait: BOOL} -> OBJECT
     }
     optional TermType type = 1;
 

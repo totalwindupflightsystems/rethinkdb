@@ -294,7 +294,8 @@ bool real_reql_cluster_interface_t::table_create(
         write_durability_t durability,
         signal_t *interruptor_on_caller,
         ql::datum_t *result_out,
-        admin_err_t *error_out) {
+        admin_err_t *error_out,
+        optional<partition_config_t> partition_config) {
     guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
         "real_reql_cluster_interface_t should never get queries for system tables");
 
@@ -334,6 +335,12 @@ bool real_reql_cluster_interface_t::table_create(
 
         config.config.write_ack_config = write_ack_config_t::MAJORITY;
         config.config.durability = durability;
+
+        if (partition_config.has_value()) {
+            config.config.partitioning = *partition_config;
+            config.config.basic.partition_type = partition_config->type;
+            config.config.basic.partition_key_field = partition_config->key_field;
+        }
 
         table_id = generate_uuid();
         m_table_meta_client->create(table_id, config, &interruptor_on_home);
@@ -588,6 +595,124 @@ bool real_reql_cluster_interface_t::table_status(
         *error_out = admin_op_exc.to_admin_err();
         return false;
     } CATCH_NAME_ERRORS(db->name, name, error_out)
+}
+
+bool real_reql_cluster_interface_t::table_partition_info(
+        counted_t<const ql::db_t> db,
+        const name_string_t &name,
+        signal_t *interruptor_on_caller,
+        ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
+        "real_reql_cluster_interface_t should never get queries for system tables");
+    try {
+        cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
+        on_thread_t thread_switcher(home_thread());
+
+        namespace_id_t table_id;
+        m_table_meta_client->find(db->id, name, &table_id);
+
+        table_config_and_shards_t config;
+        m_table_meta_client->get_config(table_id, &interruptor_on_home, &config);
+
+        *result_out = partition_config_to_datum(config.config.partitioning);
+        return true;
+    } catch (const admin_op_exc_t &admin_op_exc) {
+        *error_out = admin_op_exc.to_admin_err();
+        return false;
+    } CATCH_NAME_ERRORS(db->name, name, error_out)
+      CATCH_OP_ERRORS(db->name, name, error_out, "", "")
+}
+
+bool real_reql_cluster_interface_t::table_repartition(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &name,
+        const partition_config_t &partition_config,
+        bool dry_run,
+        bool wait,
+        signal_t *interruptor_on_caller,
+        ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
+        "real_reql_cluster_interface_t should never get queries for system tables");
+    try {
+        cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
+        on_thread_t thread_switcher(home_thread());
+
+        namespace_id_t table_id;
+        m_table_meta_client->find(db->id, name, &table_id);
+        user_context.require_config_permission(m_rdb_context, db->id, table_id);
+
+        table_config_and_shards_t old_config;
+        m_table_meta_client->get_config(table_id, &interruptor_on_home, &old_config);
+
+        const uint64_t old_epoch = old_config.config.partitioning.epoch;
+
+        partition_config_t new_partitioning = partition_config;
+        new_partitioning.epoch = old_epoch + 1;
+
+        ql::datum_t old_info =
+            partition_config_to_datum(old_config.config.partitioning);
+        ql::datum_t new_info = partition_config_to_datum(new_partitioning);
+
+        if (!dry_run) {
+            table_config_and_shards_change_t change(
+                table_config_and_shards_change_t::set_partition_config_t{
+                    old_epoch, new_partitioning});
+            m_table_meta_client->set_config(
+                table_id, change, &interruptor_on_home);
+
+            /* Also keep basic.* partition summary fields in sync via a full
+             * config write when the layout changes. Epoch was already advanced
+             * by set_partition_config; re-fetch and patch basic fields. */
+            table_config_and_shards_t refreshed;
+            m_table_meta_client->get_config(
+                table_id, &interruptor_on_home, &refreshed);
+            if (refreshed.config.basic.partition_type != new_partitioning.type
+                    || refreshed.config.basic.partition_key_field
+                        != new_partitioning.key_field) {
+                refreshed.config.basic.partition_type = new_partitioning.type;
+                refreshed.config.basic.partition_key_field =
+                    new_partitioning.key_field;
+                table_config_and_shards_change_t basic_change(
+                    table_config_and_shards_change_t::set_table_config_and_shards_t{
+                        refreshed});
+                m_table_meta_client->set_config(
+                    table_id, basic_change, &interruptor_on_home);
+            }
+
+            /* PART-03 surface only: online data movement arrives in PART-07.
+             * `wait` is accepted for API completeness; metadata is already
+             * committed above, so there is nothing further to await yet. */
+            (void)wait;
+        }
+
+        ql::datum_object_builder_t result_builder;
+        result_builder.overwrite("reconfigured",
+            ql::datum_t(dry_run ? 0.0 : 1.0));
+        result_builder.overwrite("old_epoch",
+            ql::datum_t(static_cast<double>(old_epoch)));
+        result_builder.overwrite("new_epoch",
+            ql::datum_t(static_cast<double>(new_partitioning.epoch)));
+        result_builder.overwrite("config_changes",
+            make_replacement_pair(old_info, new_info));
+        *result_out = std::move(result_builder).to_datum();
+        return true;
+    } catch (const config_change_exc_t &) {
+        *error_out = admin_err_t{
+            strprintf("Could not apply partition config to table `%s.%s` "
+                      "(epoch mismatch or concurrent repartition).",
+                      db->name.c_str(), name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    } catch (const admin_op_exc_t &admin_op_exc) {
+        *error_out = admin_op_exc.to_admin_err();
+        return false;
+    } CATCH_NAME_ERRORS(db->name, name, error_out)
+      CATCH_OP_ERRORS(db->name, name, error_out,
+        "The table was not repartitioned.",
+        "The table may or may not have been repartitioned.")
 }
 
 bool real_reql_cluster_interface_t::table_wait(

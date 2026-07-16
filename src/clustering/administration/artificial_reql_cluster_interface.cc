@@ -109,7 +109,8 @@ bool artificial_reql_cluster_interface_t::table_create(
         write_durability_t durability,
         signal_t *interruptor,
         ql::datum_t *result_out,
-        admin_err_t *error_out) {
+        admin_err_t *error_out,
+        optional<partition_config_t> partition_config) {
     if (db->name == artificial_reql_cluster_interface_t::database_name) {
         *error_out = admin_err_t{
             strprintf("Database `%s` is special; you can't create new tables "
@@ -126,7 +127,8 @@ bool artificial_reql_cluster_interface_t::table_create(
         durability,
         interruptor,
         result_out,
-        error_out);
+        error_out,
+        std::move(partition_config));
 }
 
 bool artificial_reql_cluster_interface_t::table_drop(
@@ -266,6 +268,47 @@ bool artificial_reql_cluster_interface_t::table_status(
     }
     return next_or_error(error_out) && m_next->table_status(
         db, name, bt, env, selection_out, error_out);
+}
+
+bool artificial_reql_cluster_interface_t::table_partition_info(
+        counted_t<const ql::db_t> db,
+        const name_string_t &name,
+        signal_t *interruptor,
+        ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            strprintf("Database `%s` is special; the system tables in it are "
+                      "not partitionable.",
+                      artificial_reql_cluster_interface_t::database_name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    }
+    return next_or_error(error_out) && m_next->table_partition_info(
+        db, name, interruptor, result_out, error_out);
+}
+
+bool artificial_reql_cluster_interface_t::table_repartition(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &name,
+        const partition_config_t &partition_config,
+        bool dry_run,
+        bool wait,
+        signal_t *interruptor,
+        ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            strprintf("Database `%s` is special; the system tables in it are "
+                      "not partitionable.",
+                      artificial_reql_cluster_interface_t::database_name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    }
+    return next_or_error(error_out) && m_next->table_repartition(
+        user_context, db, name, partition_config, dry_run, wait,
+        interruptor, result_out, error_out);
 }
 
 bool artificial_reql_cluster_interface_t::table_wait(
