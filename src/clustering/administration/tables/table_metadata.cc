@@ -97,6 +97,17 @@ public:
         return true;
     }
 
+    result_type operator()(
+            const set_partition_config_t &set_partition_config) const {
+        if (set_partition_config.expected_epoch !=
+                table_config_and_shards->config.partitioning.epoch) {
+            return false;
+        }
+        table_config_and_shards->config.partitioning =
+            set_partition_config.new_config;
+        return true;
+    }
+
 private:
     table_config_and_shards_t *table_config_and_shards;
 };
@@ -121,10 +132,10 @@ bool  table_config_and_shards_change_t::name_and_database_equal(const table_basi
 
 
 
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_1(table_basic_config_t,
-    name, database, primary_key);
-RDB_IMPL_EQUALITY_COMPARABLE_3(table_basic_config_t,
-    name, database, primary_key);
+RDB_IMPL_SERIALIZABLE_5_SINCE_v2_1(table_basic_config_t,
+    name, database, primary_key, partition_type, partition_key_field);
+RDB_IMPL_EQUALITY_COMPARABLE_5(table_basic_config_t,
+    name, database, primary_key, partition_type, partition_key_field);
 
 RDB_IMPL_SERIALIZABLE_3_SINCE_v2_1(table_config_t::shard_t,
     all_replicas, nonvoting_replicas, primary_replica);
@@ -150,6 +161,9 @@ void serialize(write_message_t *wm, const table_config_t &tc) {
 
     write_durability_t durability = tc.durability;
     serialize<W>(wm, durability);
+
+    partition_config_t partitioning = tc.partitioning;
+    serialize<W>(wm, partitioning);
 }
 
 INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(table_config_t);
@@ -217,12 +231,17 @@ archive_result_t deserialize(
     res = deserialize<W>(s, &durability);
     if (bad(res)) { return res; }
 
+    partition_config_t partitioning;
+    res = deserialize<W>(s, &partitioning);
+    if (bad(res)) { return res; }
+
     *tc = table_config_t{std::move(basic),
                          std::move(shards),
                          std::move(sindexes),
                          std::move(write_hook),
                          std::move(write_ack_config),
-                         std::move(durability)};
+                         std::move(durability),
+                         std::move(partitioning)};
 
     return res;
 }
@@ -248,8 +267,8 @@ archive_result_t deserialize<cluster_version_t::v2_3>(
 template archive_result_t deserialize<cluster_version_t::v2_4_is_latest>(
     read_stream_t *, table_config_t *);
 
-RDB_IMPL_EQUALITY_COMPARABLE_6(table_config_t,
-    basic, shards, write_hook, sindexes, write_ack_config, durability);
+RDB_IMPL_EQUALITY_COMPARABLE_7(table_config_t,
+    basic, shards, write_hook, sindexes, write_ack_config, durability, partitioning);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);
@@ -271,6 +290,9 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(table_config_and_shards_change_t::sindex_ren
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_create_t, config);
 RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_drop_t);
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
+    table_config_and_shards_change_t::set_partition_config_t,
+    expected_epoch, new_config);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(database_semilattice_metadata_t, name);
 RDB_IMPL_SEMILATTICE_JOINABLE_1(database_semilattice_metadata_t, name);

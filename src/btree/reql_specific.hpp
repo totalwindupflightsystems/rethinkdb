@@ -16,6 +16,24 @@ They should probably be moved out of the `btree/` directory. */
 
 class binary_blob_t;
 
+/* -- Partition catalog types (Phase 3 declarative partitioning) -- */
+
+#include "containers/uuid.hpp"
+#include "rdb_protocol/protocol.hpp"
+
+struct partition_store_ref_t {
+    uuid_u partition_id;
+    namespace_id_t storage_id;
+    std::vector<block_id_t> shard_superblocks;
+};
+
+struct partition_catalog_t {
+    uint32_t format_version;
+    uint64_t epoch;
+    block_id_t primary_key_directory_block;
+    std::vector<partition_store_ref_t> stores;
+};
+
 /* `real_superblock_t` represents the superblock for the primary B-tree of a table. */
 class real_superblock_t : public superblock_t {
 public:

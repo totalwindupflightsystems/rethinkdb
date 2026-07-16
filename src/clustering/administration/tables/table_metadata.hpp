@@ -14,6 +14,7 @@
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/partition_config.hpp"
 #include "rpc/connectivity/server_id.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
 #include "rpc/serialize_macros.hpp"
@@ -28,6 +29,8 @@ public:
     name_string_t name;
     database_id_t database;
     std::string primary_key;
+    partition_type_t partition_type = partition_type_t::NONE;
+    std::string partition_key_field;
 };
 
 RDB_DECLARE_SERIALIZABLE(table_basic_config_t);
@@ -64,6 +67,7 @@ public:
     optional<write_hook_config_t> write_hook;
     write_ack_config_t write_ack_config;
     write_durability_t durability;
+    partition_config_t partitioning;
 };
 
 RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
@@ -140,6 +144,12 @@ public:
         bool overwrite;
     };
 
+    class set_partition_config_t {
+    public:
+        uint64_t expected_epoch;
+        partition_config_t new_config;
+    };
+
     table_config_and_shards_change_t() { }
 
     explicit table_config_and_shards_change_t(set_table_config_and_shards_t &&_change)
@@ -153,6 +163,8 @@ public:
     explicit table_config_and_shards_change_t(write_hook_create_t &&_change)
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(write_hook_drop_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(set_partition_config_t &&_change)
         : change(std::move(_change)) { }
 
 
@@ -171,7 +183,8 @@ private:
         sindex_drop_t,
         sindex_rename_t,
         write_hook_create_t,
-        write_hook_drop_t> change;
+        write_hook_drop_t,
+        set_partition_config_t> change;
 
     class apply_change_visitor_t;
 };
@@ -182,5 +195,6 @@ RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::write_hook_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_rename_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::set_partition_config_t);
 
 #endif // CLUSTERING_ADMINISTRATION_TABLES_TABLE_METADATA_HPP_
