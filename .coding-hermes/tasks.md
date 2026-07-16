@@ -158,12 +158,12 @@
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
 
 ## Discovery Sweep Findings (2026-07-16 tick)
-- [ ] **SPEC — Phase 3 design documents (v3.0 roadmap specs)**
-  - [x] Write design spec for "Declarative table partitioning" — 10-section axiom-level (interfaces, data structures, error paths, DDL, ReQL surface) — `264f649b52`
-  - [ ] Write design spec for "Parallel query execution" — query planner changes, worker pool, partition-aware executors
-  - [ ] Write design spec for "Logical replication / CDC streaming" — WAL shipping, change capture protocol, consumer API
-  - [ ] Write design spec for "Async I/O subsystem" — io_uring/epoll abstraction, coroutine scheduler, buffer management
-  - [ ] Write design spec for "JSONB/JSONPath improvements" — operator support, indexing, PG-compatible path expressions
+- [x] **SPEC — Phase 3 design documents (v3.0 roadmap specs)** — all 5 complete (`fae6aec36c`)
+  - [x] Write design spec for "Declarative table partitioning" — `phase3-table-partitioning.md` (926 lines, 18 serialization macros)
+  - [x] Write design spec for "Parallel query execution" — `phase3-parallel-query.md` (1,054 lines, 10 sections)
+  - [x] Write design spec for "Logical replication / CDC streaming" — `phase3-cdc-streaming.md` (923 lines, 40 sections, 52 ReQL examples)
+  - [x] Write design spec for "Async I/O subsystem" — `phase3-async-io.md` (1,303 lines, 12 sections)
+  - [x] Write design spec for "JSONB/JSONPath improvements" — `phase3-jsonb-jsonpath.md` (1,335 lines, 103 ReQL examples)
   - Files: `.coding-hermes/specs/phase3-<feature>.md`
 - [ ] **BUILD — Fix `make test` target: web-assets dependency broken**
   - `test/build.mk:3` has `test-deps: ... web-assets` but `web-assets/` directory does not exist
