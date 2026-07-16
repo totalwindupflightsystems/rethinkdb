@@ -1,1054 +1,1356 @@
-# Phase 3 / v3.0 — Parallel Query Execution
-
-**Status:** implementation-ready design specification
-
-**Scope:** server-local intra-query parallelism for scan-heavy ReQL reads. This is a v3.0 storage/query-runtime feature; it does not change the ReQL wire protocol, table sharding protocol, consistency model, or client-visible result shape.
-
-**Source constraints verified in this repository:**
-
-- `read_t` is a `boost::variant` whose range-read member is `rget_read_t` (`src/rdb_protocol/protocol.hpp:312-614`).
-- Range reads enter `store_t::read()`, acquire a read transaction and a `real_superblock_t`, then invoke `store_t::protocol_read()` (`src/rdb_protocol/btree_store.cc:186-203`). `protocol_read()` dispatches through `rdb_read_visitor_t` (`src/rdb_protocol/store.cc:299-997`).
-- `rdb_rget_slice()` scans a `key_range_t` through `btree_concurrent_traversal()` and applies transforms and terminals (`src/rdb_protocol/btree.cc:1012-1082`). A `key_range_t` is left-inclusive/right-exclusive (`src/btree/keys.hpp:225-355`).
-- The server already owns `linux_thread_pool_t`, one event queue per server thread, and `do_on_thread(threadnum_t, callable)` for cross-core dispatch (`src/arch/runtime/thread_pool.hpp`, `src/do_on_thread.hpp`). It must be reused; this feature must not create an independent `std::thread` pool.
-- `store_t::read()` currently calls `assert_thread()` and owns one `cache_conn_t` plus one primary `btree_slice_t` (`src/rdb_protocol/btree_store.cc:186-203`, `src/rdb_protocol/store.hpp:368-377`). Therefore the existing `store_t`, `real_superblock_t`, `ql::env_t`, response object, and B-tree callback objects are not legal to pass to a different server thread unchanged.
-
-The last constraint is a hard design gate, not an optimization note. A parallel plan is permitted only after the worker-local read-view API in §2 is implemented and verified. Until then the planner must select the existing sequential `rdb_rget_slice()` path.
-
----
-
-## 1. Overview
-
-### 1.1 Definition
-
-Parallel query execution means **intra-query parallelism within one local shard replica**. For an eligible `rget_read_t`, the local server splits the shard-local primary-key or secondary-index key range into disjoint ordered sub-ranges. It evaluates each sub-range on a server runtime worker thread using a worker-local, read-only B-tree/cache view pinned to the same snapshot. The owner thread merges partial streams or partial terminal states and returns the normal `rget_read_response_t`.
-
-This is distinct from **inter-query concurrency**:
-
-| Concern | Existing behavior | v3.0 behavior |
-|---|---|---|
-| Inter-query concurrency | Independent client queries can already be routed/scheduled concurrently by the server runtime and cluster. | Preserved. Admission control prevents parallel scans from starving ordinary reads or writes. |
-| Intra-query parallelism | A local `rget_read_t` is scanned by one query pipeline/coroutine. | One eligible local scan is split into 2..N worker tasks and merged before the existing shard response is returned. |
-| Inter-server work | The query router already shards a read and unshards replies. | Unchanged. Each server applies this feature only to the shard fragment it owns. No additional RPCs and no cross-server worker pool. |
-
-A multi-shard ReQL query can therefore have two levels of existing/new parallelism: the coordinator already has one response per shard; each shard server may execute its own eligible fragment with local workers. The coordinator remains unaware of worker count and receives exactly one `read_response_t` per shard.
-
-### 1.2 Semantics that must not change
-
-1. The read observes one valid per-shard snapshot, exactly as a sequential `read_t::use_snapshot()` read does.
-2. A successful parallel result has the same rows, multiplicities, order, terminal value, ReQL version behavior, and error behavior as the sequential implementation for the same request and snapshot.
-3. User code and ReQL transforms are evaluated in worker-local environments. No `ql::env_t`, `term_t`, accumulator, stream, `read_response_t`, `real_superblock_t`, or `buf_lock_t` is shared concurrently.
-4. Parallelism is an implementation decision. No ReQL optarg, protocol field, driver change, or client capability negotiation is added.
-5. A failed or cancelled parallel execution never returns a partial successful result. It either restarts once sequentially before producing output, or returns one defined query error.
-
-### 1.3 v3.0 supported plan class
-
-The feature applies only to a local `rget_read_t` satisfying every eligibility rule in §4. Eligible logical inputs are:
-
-- primary-key table scans and primary-key `between()` selections;
-- ordered or unordered primary-key scans where all transforms are deterministic and stateless per row;
-- secondary-index `between()` and `get_all()` range scans when their index-range stream can be divided at canonical secondary-key boundaries;
-- `filter`, `map`, `pluck`, `without`, and other row-local transforms represented in `rget_read_t::transforms` when `is_parallel_row_safe()` returns true;
-- `count()` and `sum()` terminals when their merge algebra is declared by §4.7.
-
-The feature explicitly uses `rget_read_t`; it does not add a new member to the serialized `read_t` variant. This avoids a cluster-version wire-format change. The parallel executor is selected only after a normal `rget_read_t` has reached the local `rdb_read_visitor_t`.
-
-### 1.4 Explicit exclusions
-
-The planner MUST select sequential execution for: point reads; geo reads; vector reads; BRIN reads in v3.0; distribution reads; changefeed subscribe/stamp reads; reads with `rget_read_t::stamp`; reads with `primary_keys`; non-deterministic transforms; transforms that mutate query-global state; `group`, `reduce`, `fold`, `distinct`, `order_by` that requires a materializing global sort, `eq_join`, and all terminals without an approved associative merge descriptor. Excluding a plan is correct graceful degradation, not an error.
-
----
-
-## 2. Dependencies
-
-### 2.1 Query pipeline and planner placement
-
-The implementation spans these existing paths:
-
-```
-client term tree
-  -> ql::term_t / runtime_term_t::eval(scope_env_t *)
-  -> table/datum-stream read generator
-  -> rget_read_t inside read_t
-  -> cluster routing and existing read_t::shard()/unshard()
-  -> store_t::read()
-  -> store_t::protocol_read()
-  -> rdb_read_visitor_t::operator()(const rget_read_t &)
-  -> sequential rdb_rget_slice() OR parallel_query_executor_t
-```
-
-`ql::term_t` is an evaluated visitor-style term hierarchy (`src/rdb_protocol/term.hpp:31-86`); it is not a thread-safe worker object. The main evaluation still creates `rget_read_t` exactly as today. The executor consumes the already-serialized query description and creates worker-local evaluation state from `rget_read_t::serializable_env` and the transform/terminal definitions.
-
-### 2.2 B-tree, buffer cache, and snapshot prerequisite
-
-The following interface is required before the planner may enable parallel execution:
-
-```cpp
-// New file: src/rdb_protocol/parallel_read_view.hpp
-class parallel_read_view_t {
-public:
-    parallel_read_view_t(const parallel_read_view_t &) = delete;
-    parallel_read_view_t &operator=(const parallel_read_view_t &) = delete;
-    ~parallel_read_view_t();
-
-    btree_slice_t *primary_btree() const;
-    sindex_superblock_t *secondary_superblock() const;
-    superblock_t *superblock() const;
-    ql::env_t *env() const;
-
-private:
-    friend class store_t;
-    parallel_read_view_t(store_t *store,
-                         const parallel_read_snapshot_t &snapshot,
-                         const parallel_scan_task_t &task,
-                         threadnum_t owner_thread,
-                         signal_t *interruptor);
-
-    threadnum_t owner_thread_;
-    cache_conn_t cache_conn_;
-    scoped_ptr_t<txn_t> txn_;
-    scoped_ptr_t<real_superblock_t> primary_superblock_;
-    scoped_ptr_t<sindex_superblock_t> secondary_superblock_;
-    scoped_ptr_t<btree_slice_t> primary_btree_;
-    scoped_ptr_t<btree_slice_t> secondary_btree_;
-    scoped_ptr_t<ql::env_t> env_;
-};
-```
-
-`parallel_read_view_t` is owned by exactly one worker task and is constructed and destroyed on that task's `owner_thread_`. It must use a worker-local `cache_conn_t`, transaction, superblock wrapper, and B-tree slice. It must never borrow `store_t::general_cache_conn`, `store_t::btree`, an existing `real_superblock_t *`, or an existing `ql::env_t *` from the owner thread.
-
-`store_t` gains this factory:
-
-```cpp
-parallel_read_snapshot_t store_t::make_parallel_read_snapshot(
-    read_token_t *token,
-    const read_t &read,
-    signal_t *interruptor)
-    THROWS_ONLY(interrupted_exc_t);
-
-scoped_ptr_t<parallel_read_view_t> store_t::make_parallel_read_view(
-    const parallel_read_snapshot_t &snapshot,
-    const parallel_scan_task_t &task,
-    threadnum_t owner_thread,
-    signal_t *interruptor)
-    THROWS_ONLY(interrupted_exc_t);
-```
-
-`make_parallel_read_snapshot()` acquires the existing snapshot semantics once, records immutable snapshot identity, and increments the pinned-snapshot reference count. Each worker view independently acquires a read transaction at that exact snapshot identity. The cache and serializer implementation must guarantee that concurrent read-only page access via independent `cache_conn_t` objects is safe. It must retain page pins until each worker completes. Writes remain serialized through the existing write path and may continue while snapshot readers scan.
-
-**Required gating tests before enabling the feature flag:**
-
-1. Two server threads create worker-local views of the same snapshot and repeatedly scan disjoint leaf ranges while writers update unrelated keys; each worker always reads a valid pre-write or post-write snapshot, never mixed rows.
-2. Page eviction/rehydration under concurrent worker reads produces no `assert_thread`, cache-lock violation, use-after-free, or checksum failure.
-3. Destroying a worker view after cancellation releases every transaction, superblock, B-tree slice, and cache pin on the worker's home thread.
-4. A table/drop/shutdown drain waits for all `parallel_read_view_t` instances through `store_t::drainer`.
-
-Until all four pass, `parallel_query_enabled` must remain false regardless of command-line options.
-
-### 2.3 Existing runtime concurrency primitives
-
-Use the existing `linux_thread_pool_t` server threads. `linux_thread_pool_t::n_threads` is the upper bound on physical execution threads; `do_on_thread()` transfers a callback to a selected `threadnum_t`. `linux_thread_pool_t::run_in_blocker_pool()` must not be used: it is for blocking calls and is not an event-loop query worker scheduler.
-
-New code must not use raw `pthread_create`, `std::thread`, a third-party executor, or a per-query OS thread pool. Worker completion is posted to the planner's home thread through `do_on_thread(home_thread, ...)`. A small `std::mutex` is permitted only inside the result accumulator to protect ownership transfer between server threads; it must never protect B-tree, cache, `ql::env_t`, or query execution itself.
-
-### 2.4 Cluster boundary
-
-The executor runs **per server, per local shard fragment**. It is constructed in the store-layer visitor after cluster routing. `read_t::shard()` and `read_t::unshard()` remain unchanged. The server does not split a task to a remote server, does not change replication/read-mode routing, and does not use a global worker budget across nodes. Every server independently enforces its own limits.
-
-This placement preserves failure domains: a server failure remains an existing shard-read failure handled by the normal cluster read path, and one worker failure is local to one shard response.
-
-### 2.5 Existing B-tree mechanisms to reuse and mechanisms not to reuse
-
-- Reuse `key_range_t` as the canonical half-open scan interval. Adjacent task ranges must satisfy `task[i].range.right == task[i+1].range.left`, except for the final unbounded right edge.
-- Reuse `btree_concurrent_traversal()` for each worker's local range traversal. Its existing “concurrent” name does not authorize sharing its callback/response objects across server threads.
-- Reuse B-tree split metadata/leaf boundaries exposed through a new read-only `btree_slice_t::sample_split_keys()` helper. Do not split arbitrary serialized key bytes or call `store_key_t::increment()` to invent a key boundary.
-- `btree_parallel_traversal()` (`src/btree/parallel_traversal.hpp`) is a structural traversal helper, not a query result executor. It must not be repurposed as the query worker pool because it does not provide snapshot-isolated ReQL evaluation, task cancellation, ordered merge, or terminal merge semantics.
-
----
-
-## 3. Interface (C++ API)
-
-### 3.1 New files and ownership
-
-| File | Responsibility |
-|---|---|
-| `src/rdb_protocol/parallel_query.hpp` | Public executor, plan, task, merge, statistics, and configuration types. |
-| `src/rdb_protocol/parallel_query.cc` | Planner, task dispatch, worker completion, merge, cancellation, and error selection. |
-| `src/rdb_protocol/parallel_read_view.hpp/.cc` | Worker-local snapshot/cache/B-tree/environment construction. |
-| `src/rdb_protocol/btree.hpp/.cc` | Read-only split-key sampling and worker-local range scan primitive. |
-| `src/rdb_protocol/store.hpp/.cc` | Snapshot/view factory, server admission object, and visitor integration. |
-| `src/rdb_protocol/configured_limits.hpp/.cc` | Parallel-query configuration validation and startup defaults. |
-| `src/unittest/parallel_query_test.cc` | Unit tests for planning, splitting, merging, cancellation, and error precedence. |
-| `test/rql_test/src/parallel_query.yaml` | ReQL integration scenarios defined in §8. |
-
-No serialization declaration is added for `parallel_*` types. They are process-local executor state and must never enter `read_t`, RPC messages, disk metadata, or changefeed state.
-
-### 3.2 Configuration API
-
-```cpp
-enum class parallel_query_mode_t {
-    OFF,
-    AUTO,
-    FORCE
-};
-
-struct parallel_query_config_t {
-    parallel_query_mode_t mode;
-    uint32_t max_workers_per_query;
-    uint32_t max_parallel_queries;
-    uint64_t threshold_rows;
-    uint64_t merge_buffer_bytes;
-    uint64_t worker_timeout_ms;
-    uint64_t sequential_restart_timeout_ms;
-    uint64_t cache_pressure_threshold_percent;
-
-    parallel_query_config_t();
-    void validate(uint32_t server_threads) const;
-};
-```
-
-Defaults and startup flags:
-
-| Flag | Type/default | Validation |
-|---|---|---|
-| `--parallel-query-mode` | `off|auto|force`, default `off` | Reject any other string with `Invalid value for --parallel-query-mode: expected off, auto, or force.` |
-| `--parallel-query-workers` | unsigned integer, default `min(4, max(1, server_threads - 1))` | Must be in `[1, server_threads]`; reject `0` with `--parallel-query-workers must be at least 1.` |
-| `--parallel-query-threshold-rows` | unsigned integer, default `100000` | Must be `>= 1`; reject `0` with `--parallel-query-threshold-rows must be at least 1.` |
-| `--parallel-query-max-queries` | unsigned integer, default `1` | Must be `>= 1`; reject `0` with `--parallel-query-max-queries must be at least 1.` |
-| `--parallel-query-merge-buffer-mb` | unsigned integer, default `64` | Convert to bytes with checked multiplication; must be `>= 1`. |
-| `--parallel-query-worker-timeout-ms` | unsigned integer, default `30000` | Must be `>= 100`; zero is invalid. |
-
-`parallel_query_config_t::validate()` clamps `max_workers_per_query` to `server_threads - 1` in AUTO mode when there is more than one thread, preserving one event-loop thread for nonparallel work. In FORCE mode it clamps to `server_threads`; it never oversubscribes server threads. If `server_threads == 1`, AUTO selects sequential and FORCE returns the defined “requires two” error in §7.
-
-### 3.3 Executor API
-
-The required executor class and required two-argument execution API are:
-
-```cpp
-class parallel_query_executor_t {
-public:
-    parallel_query_executor_t(store_t *store,
-                              btree_slice_t *primary_btree,
-                              real_superblock_t *owner_superblock,
-                              const parallel_query_config_t &config,
-                              parallel_query_admission_t *admission,
-                              profile::trace_t *trace,
-                              signal_t *interruptor);
-
-    // Required API: the owner-thread env and read fully describe the local query.
-    // On success this returns the normal local read response.
-    read_response_t execute(ql::env_t *env, const read_t &read)
-        THROWS_ONLY(interrupted_exc_t, ql::exc_t);
-
-private:
-    store_t *const store_;
-    btree_slice_t *const primary_btree_;
-    real_superblock_t *const owner_superblock_;
-    const parallel_query_config_t config_;
-    parallel_query_admission_t *const admission_;
-    profile::trace_t *const trace_;
-    signal_t *const interruptor_;
-    executor_state_t state_;
-    uint64_t query_id_;
-    DISABLE_COPYING(parallel_query_executor_t);
-};
-```
-
-`execute()` is called only on the store's current home thread and only from the `rget_read_t` visitor path. It validates that `read.read` holds `rget_read_t`; receiving another variant is a programmer error (`guarantee`) because the planner must not construct this executor for another type. It returns a complete `read_response_t`, never a pointer to worker-owned storage.
-
-### 3.4 Server admission controller
-
-```cpp
-class parallel_query_admission_t {
-public:
-    explicit parallel_query_admission_t(uint32_t max_parallel_queries);
-
-    bool try_acquire();
-    void release();
-    uint32_t active_queries() const;
-
-private:
-    mutable std::mutex mutex_;
-    uint32_t active_queries_;
-    const uint32_t max_parallel_queries_;
-    DISABLE_COPYING(parallel_query_admission_t);
-};
-```
-
-One instance is owned by the server `rdb_context_t` and is injected into every `store_t`. `try_acquire()` does not wait. In AUTO mode a failed acquisition selects sequential execution. In FORCE mode it waits no longer than `worker_timeout_ms`; expiration returns the admission timeout error in §7.
-
-### 3.5 Planner and partition scan interfaces
-
-```cpp
-enum class parallel_plan_kind_t {
-    SEQUENTIAL,
-    PARALLEL_PRIMARY_RANGE,
-    PARALLEL_SECONDARY_RANGE
-};
-
-enum class parallel_reject_reason_t {
-    DISABLED,
-    INSUFFICIENT_SERVER_THREADS,
-    ADMISSION_FULL,
-    BELOW_ROW_THRESHOLD,
-    ONE_LEAF_RANGE,
-    UNSUPPORTED_READ_VARIANT,
-    CHANGEFEED,
-    EXPLICIT_PRIMARY_KEYS,
-    UNSUPPORTED_TRANSFORM,
-    UNSUPPORTED_TERMINAL,
-    NONDETERMINISTIC_TERM,
-    UNSAFE_SNAPSHOT_VIEW,
-    CACHE_PRESSURE,
-    NO_SPLIT_KEYS
-};
-
-struct parallel_query_plan_t {
-    parallel_plan_kind_t kind;
-    parallel_reject_reason_t reject_reason;
-    uint32_t worker_count;
-    uint64_t estimated_rows;
-    uint64_t estimated_bytes;
-    bool preserve_order;
-    bool may_restart_sequentially;
-    std::vector<scan_range_t> ranges;
-};
-
-class partition_range_scan_t {
-public:
-    partition_range_scan_t(btree_slice_t *slice,
-                           const parallel_query_config_t &config);
-
-    parallel_query_plan_t plan(const rget_read_t &read,
-                               const parallel_read_snapshot_t &snapshot,
-                               uint32_t available_workers,
-                               uint64_t estimated_rows,
-                               uint64_t estimated_bytes,
-                               uint64_t cache_pressure_percent,
-                               signal_t *interruptor)
-        THROWS_ONLY(interrupted_exc_t);
-
-private:
-    btree_slice_t *const slice_;
-    const parallel_query_config_t config_;
-    DISABLE_COPYING(partition_range_scan_t);
-};
-```
-
-`partition_range_scan_t::plan()` has no side effects beyond read-only B-tree metadata lookup. It returns `SEQUENTIAL` with one explicit `parallel_reject_reason_t` rather than throwing for a nonbeneficial plan. It throws only interruption or an existing B-tree/storage query error.
-
-### 3.6 Worker scheduler interface
-
-```cpp
-class parallel_query_task_queue_t {
-public:
-    explicit parallel_query_task_queue_t(uint32_t server_thread_count);
-
-    void dispatch(const parallel_scan_task_t &task,
-                  parallel_result_collector_t *collector,
-                  store_t *store,
-                  const parallel_read_snapshot_t &snapshot,
-                  signal_t *interruptor);
-
-private:
-    uint32_t server_thread_count_;
-    std::atomic<uint32_t> next_thread_offset_;
-    DISABLE_COPYING(parallel_query_task_queue_t);
-};
-```
-
-`dispatch()` selects a target worker `threadnum_t` by round-robin over non-owner server threads, posts one closure with `do_on_thread()`, and returns immediately. The closure constructs `parallel_read_view_t`, scans exactly `task.range`, creates a `worker_scan_result_t`, and posts that result back to the collector's home thread. Tasks are immutable after dispatch.
-
-### 3.7 Result collector and ordered merge interfaces
-
-```cpp
-class parallel_result_collector_t {
-public:
-    parallel_result_collector_t(threadnum_t home_thread,
-                                uint32_t expected_tasks,
-                                uint64_t maximum_buffer_bytes,
-                                signal_t *interruptor);
-
-    void publish(worker_scan_result_t result);
-    worker_scan_result_t wait_for(uint32_t ordinal)
-        THROWS_ONLY(interrupted_exc_t);
-    void cancel_all();
-    bool is_cancelled() const;
-    uint64_t buffered_bytes() const;
-
-private:
-    const threadnum_t home_thread_;
-    const uint32_t expected_tasks_;
-    const uint64_t maximum_buffer_bytes_;
-    signal_t *const interruptor_;
-    mutable std::mutex mutex_;
-    std::condition_variable ready_;
-    std::map<uint32_t, worker_scan_result_t> completed_;
-    uint64_t buffered_bytes_;
-    bool cancelled_;
-    uint32_t published_tasks_;
-    DISABLE_COPYING(parallel_result_collector_t);
-};
-
-class merge_cursor_t {
-public:
-    merge_cursor_t(const parallel_query_plan_t &plan,
-                   parallel_result_collector_t *collector,
-                   ql::env_t *owner_env,
-                   signal_t *interruptor);
-
-    void merge_into(rget_read_response_t *response)
-        THROWS_ONLY(interrupted_exc_t, ql::exc_t);
-
-private:
-    const parallel_query_plan_t &plan_;
-    parallel_result_collector_t *const collector_;
-    ql::env_t *const owner_env_;
-    signal_t *const interruptor_;
-    DISABLE_COPYING(merge_cursor_t);
-};
-```
-
-`publish()` is callable from any server thread. It moves one result into `completed_`, updates `buffered_bytes_`, and signals `ready_`. It rejects publication after cancellation by destroying the result on the publishing worker's return path. `wait_for()` is called only from `home_thread_`; it waits interruptibly for the range ordinal requested by the merger. The collector holds no B-tree objects and no user datum references into a worker cache page.
-
-### 3.8 Integration points
-
-1. In `store_t::read()`, retain the existing `assert_thread()`, token acquisition, metainfo check, and response ownership. Do not acquire a superblock once per worker through the existing public method.
-2. Add `store_t::make_parallel_read_snapshot()` and `store_t::make_parallel_read_view()` as §2.2 defines.
-3. In `store_t::protocol_read()`, keep profile tracing and the `rdb_read_visitor_t` dispatch boundary.
-4. In `rdb_read_visitor_t::operator()(const rget_read_t &)`, create the existing owner-thread `ql::env_t`; invoke the planner before calling `do_read()`/`rdb_rget_slice()`.
-5. When the plan is `SEQUENTIAL`, execute the existing `do_read()` unchanged. When it is parallel, construct `parallel_query_executor_t` and set `response->response` to the returned `rget_read_response_t`.
-6. Changefeed initialization continues to use the current path. If `rget.stamp` has a value, it must bypass the executor before any task or snapshot allocation.
-7. `read_response_t::n_shards`, event-log extraction, and stop event remain owned by `store_t::protocol_read()` and are never set by workers.
-
----
-
-## 4. Behavior
-
-### 4.1 Planner decision tree
-
-```mermaid
-flowchart TD
-    A[local rget_read_t arrives in rdb_read_visitor_t] --> B{parallel-query mode off?}
-    B -- yes --> S[existing sequential do_read]
-    B -- no --> C{at least 2 server threads and safe worker read views enabled?}
-    C -- no --> S
-    C -- yes --> D{rget has stamp, primary_keys, or unsupported read semantics?}
-    D -- yes --> S
-    D -- no --> E{transforms and terminal deterministic, row-safe, mergeable?}
-    E -- no --> S
-    E -- yes --> F{estimated rows >= threshold and >= 2 leaf ranges?}
-    F -- no --> S
-    F -- yes --> G{cache pressure below limit and admission acquired?}
-    G -- no --> S
-    G -- yes --> H[derive 2..N canonical sub-ranges]
-    H --> I{at least 2 nonempty ranges?}
-    I -- no --> S
-    I -- yes --> P[dispatch worker tasks and ordered merge]
-```
-
-`FORCE` changes only the threshold/admission behavior: it permits a plan below `threshold_rows` when the read remains semantically eligible and has two or more leaf-aligned ranges. It never bypasses snapshot safety, changefeed exclusions, unsafe transform exclusions, or resource limits.
-
-### 4.2 Eligibility and cost model
-
-The planner computes:
-
-```text
-candidate_workers = min(config.max_workers_per_query,
-                        available_server_threads,
-                        estimated_rows / config.threshold_rows)
-worker_count = clamp(candidate_workers, 2, config.max_workers_per_query)
-```
-
-The division is integer division. If `estimated_rows / threshold_rows < 2`, AUTO rejects with `BELOW_ROW_THRESHOLD`. `estimated_rows` is obtained from the primary B-tree stat block for a primary range. For a secondary range it uses secondary B-tree cardinality multiplied by an index selectivity estimate. If no stable estimate is available, use `estimated_rows = threshold_rows - 1` in AUTO (sequential) and use split-key availability in FORCE.
-
-The planner selects parallel only when all conditions hold:
-
-- `read.read` is `rget_read_t`;
-- `rget.stamp` is empty, `rget.primary_keys` is empty, and `rget.current_shard` identifies a valid local shard;
-- the query has no changefeed, geospatial, vector, BRIN, or unsupported ordered/global operator state;
-- `rget.sorting` is `UNORDERED`, primary-key forward/backward, or a secondary-key forward/backward order that the merger can compare exactly;
-- every transform is deterministic and `is_parallel_row_safe()`; evaluation cannot depend on mutable query-global values;
-- terminal is absent (stream result), `count`, or `sum`; see §4.7;
-- the B-tree sampler finds at least `worker_count - 1` canonical split keys;
-- cache pressure is strictly below `cache_pressure_threshold_percent`;
-- server admission succeeds; and
-- no active shutdown/drainer signal is set.
-
-Index selectivity is used to choose the estimate, never to alter result semantics. A low-selectivity secondary index with estimated result rows below the threshold stays sequential even when the physical index spans many pages.
-
-### 4.3 Work splitting
-
-`partition_range_scan_t` determines the scanned index range:
-
-- primary scan: use the current local shard intersection of `rget.region.inner`;
-- secondary scan: use the existing canonical secondary-key range produced by the range read generation path, retaining the primary-key suffix ordering used by the secondary B-tree;
-- reverse scan: derive the same ascending nonoverlapping ranges and reverse only dispatch/merge order.
-
-It requests up to `worker_count - 1` split keys from `btree_slice_t::sample_split_keys()`. Each returned split key is the first key in a leaf subtree and lies strictly within the requested index range. The sampler must return keys sorted ascending and must not return the range's left bound, right bound, duplicates, truncated secondary keys, or a key outside the shard range.
-
-From bounds `[L, K1, K2, ..., R)`, create tasks:
-
-```text
-range 0 = [L,  K1)
-range 1 = [K1, K2)
-...
-range n = [Kn, R)
-```
-
-Empty ranges are discarded before dispatch. `ordinal` is the ascending range index. For reverse scans, `ordinal == 0` denotes the highest key range, so the merger consumes ordinals in descending key order. A secondary-key split must include the full composite ordering key (secondary datum encoding plus primary-key tie-breaker) so duplicate secondary values cannot be lost or emitted twice.
-
-The executor must never split one `primary_keys` lookup map, never divide an individual B-tree leaf at an arbitrary byte, and never infer boundaries by incrementing an arbitrary key. These rules protect exact coverage.
-
-### 4.4 Parallel scan work distribution
+# Parallel Query Execution Design — RethinkDB v3.0
+
+**Status:** Proposed design (Phase 3)  
+**Scope:** parallelize eligible execution *within one shard* and across the
+server's local worker threads without changing RethinkDB's existing cross-node
+sharding/routing model.  
+**Primary consumers:** ReQL query planner, local shard executor, B-tree range
+reader, query profiling, and admission control.
+
+## 1. Overview — parallel work in a cooperative RethinkDB runtime
+
+### 1.1 Problem statement
+
+RethinkDB currently processes an individual query as one serial execution path:
+a ReQL term tree produces `read_t` or `write_t` work, routing sends it through
+`table_query_client_t`, and a local `store_t` performs the relevant B-tree
+operation. This is simple and preserves existing ordering, cancellation, and
+error behavior, but it leaves independent scan, filter, and aggregation work
+unexploited for large analytical reads.
+
+Phase 3 introduces an explicit parallel-query execution layer. It decomposes an
+eligible local-shard query into independent fragments, schedules those fragments
+on RethinkDB's cooperative runtime, and merges their results into the same
+logical ReQL result that serial execution would have returned. It is a query
+execution feature, not a new distributed-query system.
+
+### 1.2 Scope and terminology
+
+This design uses the following terms consistently:
+
+| Term | Meaning |
+| --- | --- |
+| **Query coordinator** | The coroutine that owns the client-visible query, chooses a plan, admits workers, and owns final cancellation/error state. |
+| **Fragment** | A self-contained range or sub-plan assigned to one worker. A fragment has a non-overlapping input domain and a stable ordinal. |
+| **Worker** | A cooperative coroutine executing one fragment. A worker may run on the coordinator's home thread or on an admitted thread-pool worker, but it is never an unmanaged OS thread. |
+| **Intra-shard parallelism** | Splitting one shard-local read into multiple independent coroutines. This is useful even when all coroutines share a CPU core because I/O, page-cache waits, and batched streaming can interleave. |
+| **Multi-core parallelism** | Scheduling independent fragment workers onto more than one existing runtime thread-pool worker, subject to thread affinity and storage safety constraints. |
+| **Ordered plan** | A plan whose externally observable result order is prescribed by ReQL, such as `orderBy`, an explicitly ordered range scan, or an order-sensitive terminal. |
+| **Unordered plan** | A plan whose existing ReQL contract permits arbitrary result order, such as the normal result of a table `filter`. |
+| **Admission budget** | Per-query and per-principal limits for worker count, buffered rows, buffered bytes, CPU time, and wall-clock duration. |
+
+### 1.3 What this feature is
+
+The executor has two complementary execution modes:
+
+1. **Intra-shard coroutine parallelism.** One shard-local B-tree range is split
+   into disjoint key ranges. Each range is executed by a separate coroutine. On
+   a single runtime thread, workers cooperatively yield while awaiting page
+   cache, RPC, output-buffer, or batch-consumer progress. This reduces latency
+   hidden behind blocking points and allows concurrent fragment pipelines.
+
+2. **Local multi-core parallelism.** When the planner, admission controller, and
+   storage layer deem it safe, independent fragments are dispatched to existing
+   `thread_pool_t` workers. Work is moved using normal runtime mailbox/coroutine
+   mechanisms; no feature code creates `std::thread`, shares an unsynchronized
+   B-tree cursor, or preempts a coroutine.
+
+The coordinator may combine both: one worker coroutine per admitted fragment,
+with workers located on eligible runtime threads and using bounded local buffers.
+
+### 1.4 What this feature is not
+
+This phase deliberately does **not**:
+
+- alter existing table sharding, replica selection, contract coordination, or
+  cross-node RPC routing;
+- convert the runtime to preemptive scheduling or permit blocking synchronization
+  primitives in query execution;
+- parallelize writes, transactions, schema changes, index builds, or table
+  configuration operations;
+- promise speedup for every query, small tables, highly selective point reads,
+  changefeeds, or order-sensitive streams;
+- change default ReQL ordering, determinism, error, authorization, or cursor
+  semantics;
+- expose a new ReQL term or require clients/drivers to be upgraded for ordinary
+  serial queries.
+
+### 1.5 Architectural placement
 
 ```mermaid
 flowchart LR
-    Q[owner-thread rget_read_t] --> P[partition_range_scan_t]
-    P --> R0[scan_range_t 0: L..K1)
-    P --> R1[scan_range_t 1: K1..K2)
-    P --> RN[scan_range_t N: Kn..R)
-    R0 --> W0[server worker thread A\nparallel_read_view_t]
-    R1 --> W1[server worker thread B\nparallel_read_view_t]
-    RN --> WN[server worker thread C\nparallel_read_view_t]
-    W0 --> C[result collector]
-    W1 --> C
-    WN --> C
-    C --> M[owner-thread merge_cursor_t]
-    M --> O[normal rget_read_response_t]
+    C[Client ReQL query] --> T[ql term evaluation]
+    T --> P{parallel hint and eligibility}
+    P -->|serial| Q[existing read_t / write_t path]
+    P -->|parallel read| PL[query_planner_t]
+    PL --> E[parallel_executor_t coordinator]
+    E --> F1[query_fragment_t 0]
+    E --> F2[query_fragment_t 1]
+    E --> FN[query_fragment_t N]
+    F1 --> S[table_query_client_t / store_t]
+    F2 --> S
+    FN --> S
+    S --> B[btree + buffer_cache]
+    F1 --> M[result_merger_t]
+    F2 --> M
+    FN --> M
+    M --> R[existing read_response_t stream]
 ```
 
-Each task scans only its `scan_range_t::key_range`. It applies the task-local compiled transforms and task-local partial terminal state. It emits owned `ql::datum_t` values or an owned terminal partial; a result may not retain a `lazy_btree_val_t`, `scoped_key_value_t`, cache lock, B-tree pointer, or worker `ql::env_t` after its task completes.
+The serial path remains the compatibility baseline. A parallel plan is an
+implementation detail beneath the existing ReQL terms and must be able to fall
+back to that baseline before the first client-visible row is emitted.
 
-### 4.5 Ordering
+### 1.6 Core invariants
 
-For `sorting_t::UNORDERED`, worker results may be collected in completion order. The final stream remains semantically unordered; no artificial sorting is allowed.
+1. Every parallel fragment has a disjoint input domain, or a documented
+   deduplication key that makes overlap harmless. Phase 3 range plans use
+   disjoint domains only.
+2. For a deterministic, snapshot-consistent eligible read, parallel output is
+   value-equivalent to the serial plan evaluated at the same snapshot.
+3. A plan requiring order produces the serial plan's required order; unordered
+   plans never advertise a stronger ordering guarantee merely because fragments
+   happened to finish in one order.
+4. A failure, cancellation, deadline expiry, or authorization revocation stops
+   all live sibling workers before the coordinator completes the query.
+5. Worker buffering is bounded by an aggregate query budget; slow consumers must
+   induce backpressure rather than unbounded accumulation.
+6. The executor never bypasses `store_t`, transaction/snapshot ownership,
+   routing, permissions, profiling, or existing query-error conversion paths.
+7. If planning, admission, worker creation, or merger setup cannot safely
+   proceed before output starts, execution falls back to the existing serial
+   path without observable semantic difference.
 
-For primary/secondary forward ordering, the merger consumes task ordinals from lowest range to highest. For reverse ordering, it consumes the highest key range to the lowest. Every worker itself uses the current directional B-tree traversal within its range. This is an ordered concatenation, not a comparison sort, so it uses bounded buffering and retains the existing key ordering exactly.
+## 2. API Design / ReQL Surface
 
-If task 3 completes before task 0, its result remains buffered until tasks 0, 1, and 2 have been consumed. When `merge_buffer_bytes` would be exceeded, dispatch pauses unscheduled tasks; running tasks are allowed to finish. The owner drains the next required ordinal before dispatch resumes. If a single worker's owned result exceeds the cap, it reports the memory-pressure error; it is not permitted to bypass ordering or spill unencrypted temporary rows to disk in v3.0.
+### 2.1 Opt-in policy
 
-### 4.6 Changefeeds, joins, aggregates, and limits
+Parallel execution is initially opt-in. The default value of `parallel` is
+`false`, even when the planner sees a large table. This preserves current
+execution timing and ordering expectations while the implementation matures.
 
-- **Changefeeds:** Any `rget_read_t::stamp` or changefeed setup remains entirely sequential. It depends on stamp ordering, snapshot timing, and changefeed server state (`src/rdb_protocol/store.cc:862-900`). No parallel initial scan is permitted in v3.0.
-- **Joins:** `eq_join`, joins that issue additional reads, and join transforms are sequential. They can observe and schedule other reads; task-local execution would alter scheduling and resource accounting.
-- **Row-local filter/map:** Supported if deterministic and side-effect free. Each worker evaluates it in a private `ql::env_t` built from the serialized environment.
-- **`count()`:** Supported. Each task reports `uint64_t count`; the owner sums in ordinal-independent order with overflow detection. Overflow returns the defined terminal overflow error.
-- **`sum()`:** Supported only for the same numeric semantics as the sequential terminal and only when the sum terminal advertises `parallel_merge_kind_t::SUM`. Workers produce a partial in input order; owner combines partials by ordinal so floating-point evaluation order is deterministic relative to range order. Type promotion/error behavior is delegated to the existing terminal merge helper.
-- **`limit(n)`:** Supported only for ordered stream output and `count()` after the executor installs a shared atomic remaining-row budget. Workers may read ahead but must not publish more rows than their ordinal-prefix can consume. The owner initially dispatches the first task only; it dispatches the next range after the preceding range proves it emitted fewer than the remaining limit. This preserves exact ordered `limit()` semantics but may yield less parallelism. For unordered `limit`, v3.0 selects sequential because completion order would change the selected rows.
-- **`order_by`:** A table's natural primary-key order or an index-backed order already represented by `rget.sorting` is supported by ordered concatenation. A materializing global `order_by` is sequential; it requires a global sort.
-- **`group`, `reduce`, `fold`, `distinct`, `min`, `max`, `avg`:** sequential in v3.0. No worker merge descriptor means no parallel plan.
+`parallel: true` expresses permission for the server to use a parallel plan; it
+is not a demand to create a particular number of workers. The planner may still
+choose serial execution because the query is ineligible, the table is too small,
+no range split is viable, quota/admission is exhausted, or estimated overhead
+outweighs benefit.
 
-### 4.7 Result merging pipeline
+The server must expose profile metadata explaining whether a requested parallel
+plan ran in parallel, ran serially by cost decision, or fell back because a
+resource limit was reached.
+
+### 2.2 ReQL hint syntax
+
+The hint is an existing optional argument carried at a sequence-producing plan
+boundary. Drivers represent it with their normal optarg API:
+
+```javascript
+// Permit the planner to parallelize this filter scan.
+r.table("data")
+ .filter(r.row("state").eq("active"))
+ .optArg("parallel", true)
+
+// Permit at most four fragment workers for this query.
+r.table("events")
+ .between(start, end, {index: "timestamp"})
+ .filter(predicate)
+ .optArg("parallel", true)
+ .optArg("max_workers", 4)
+
+// Parallel local scan with a parallelizable aggregation terminal.
+r.table("metrics")
+ .filter(r.row("host").eq("db-17"))
+ .optArg("parallel", true)
+ .optArg("max_workers", 8)
+ .count()
+```
+
+The exact parsing seam is the ReQL term/sequence option plumbing that currently
+propagates query options into `rget_read_t`/read generation. The implementation
+must keep the option internal to server execution and must not add a wire-level
+result shape that older clients need to understand.
+
+### 2.3 Option contract
+
+| Option | Type | Default | Required behavior |
+| --- | --- | --- | --- |
+| `parallel` | ReQL boolean | `false` | Grants the planner permission to consider a parallel local-read plan. `false` forces serial execution. |
+| `max_workers` | finite integral ReQL number | server/query-class default | Upper bound on admitted fragment workers, inclusive of workers on other local runtime threads but excluding the coordinator. |
+| `parallel_timeout_ms` | finite integral ReQL number | inherited query deadline | Optional tighter aggregate deadline for the parallel section. It may shorten but never extend the normal query deadline. |
+| `parallel_buffer_bytes` | finite integral ReQL number | server policy default | Requested aggregate merger-buffer cap, clamped to the caller's quota and server hard maximum. |
+
+Only `parallel` and `max_workers` are required public options for the initial
+feature. The timeout and buffer options are design-reserved: they may be
+implemented after server-side policy exists, but if accepted they must follow
+this contract. Unsupported options must be rejected explicitly rather than
+silently ignored.
+
+Validation requirements:
+
+- `parallel` accepts only a ReQL boolean.
+- `max_workers` accepts an integer in `[1, server_parallel_workers_hard_max]`.
+  `0`, negative values, fractions, NaN, infinity, arrays, objects, and strings
+  return a ReQL logic error.
+- `max_workers: 1` is valid but normally plans serially; profile output records
+  the requested limit and the selected worker count.
+- A hint on an ineligible operation is not itself an error. The operation runs
+  serially and exposes `ineligible_operation` in profiling. This prevents an
+  availability feature from becoming a compatibility hazard.
+- A hint on a write, transaction, or admin operation is rejected only if such
+  terms would otherwise consume the option. The parser must not accidentally
+  reinterpret unknown optargs as storage options.
+
+### 2.4 Auto-parallelism roadmap
+
+The initial release is opt-in. Once production profiling establishes stable
+cost estimates, a server setting may enable auto-parallelism for eligible reads.
+Auto-parallelism uses the same planner and resource ceilings as an explicit
+hint, but only activates when all of the following are true:
+
+- estimated scanned rows exceed 10,000, **or** estimated serial execution time
+  exceeds 100 ms;
+- at least two independent fragments can be formed without scanning the same
+  primary-key range twice;
+- estimated per-fragment useful work dominates decomposition plus merge cost;
+- the query does not need unsupported ordering, changefeed, or terminal
+  semantics;
+- admission can reserve at least two workers and minimum buffer budget.
+
+The 10,000-row and 100-ms values are initial guardrails, not constants embedded
+throughout the code. They belong in planner configuration and are surfaced in
+profiling for calibration.
+
+### 2.5 User-visible semantics
+
+For `filter`, `map`, and an ordinary `between`, ReQL's existing unordered
+sequence semantics remain unchanged. Parallel plans may return batches in
+fragment-completion order, but applications must receive no less deterministic
+behavior than they receive today.
+
+For `orderBy`, ordered range streams, `slice` over an ordered result, and
+order-sensitive terminals, the executor either uses an order-preserving merge
+or chooses serial execution. It must never silently emit fragment order.
+
+The hint does not weaken atomicity/snapshot behavior. A parallel scan captures
+one logical read snapshot through existing read machinery. A plan that cannot
+hold or re-establish one compatible snapshot across all fragments is ineligible
+and must run serially.
+
+### 2.6 Observability and profile shape
+
+When query profiling is enabled, the result profile includes a `parallel` object
+without changing the ordinary data result:
+
+```javascript
+{
+  parallel: {
+    requested: true,
+    selected: true,
+    fallback_reason: null,
+    requested_max_workers: 4,
+    admitted_workers: 4,
+    completed_workers: 4,
+    fragments_total: 4,
+    fragments_completed: 4,
+    rows_estimated: 250000,
+    rows_scanned: 251048,
+    rows_emitted: 7421,
+    merger_peak_bytes: 2097152,
+    ordered_merge: false,
+    planning_us: 83,
+    execution_us: 122441
+  }
+}
+```
+
+If serial execution is selected, `selected` is `false` and `fallback_reason` is
+one of `not_requested`, `below_threshold`, `ineligible_operation`,
+`insufficient_ranges`, `quota_limited`, `coro_pool_exhausted`,
+`thread_affinity`, or `cost_not_beneficial`. These strings are diagnostics, not
+a compatibility promise for programmatic control flow.
+
+## 3. Data Structures
+
+### 3.1 Design constraints
+
+The new types must be small, RAII-owned, non-copyable where they own runtime
+resources, and created/destroyed on the correct runtime thread. They must pass
+serializable request information across runtime boundaries rather than sharing a
+live B-tree cursor, a `signal_t`, a transaction object, or mutable `ql::env_t`
+state between worker threads.
+
+The snippets below define the intended interfaces, not an assertion that all
+referenced existing types have these exact constructors. Implementation must
+adapt them to the checked-in `read_t`, `read_response_t`, `store_t`, coroutine,
+and archive APIs while preserving the named responsibilities.
+
+### 3.2 Fragment descriptor
+
+```cpp
+// src/rdb_protocol/parallel_executor.hpp
+class query_fragment_t {
+public:
+    enum class kind_t {
+        PRIMARY_KEY_RANGE,
+        SECONDARY_INDEX_RANGE,
+        FILTERED_PRIMARY_RANGE,
+        PARTIAL_AGGREGATION
+    };
+
+    query_fragment_t(
+        size_t ordinal,
+        kind_t kind,
+        key_range_t input_range,
+        int64_t estimated_rows,
+        int64_t estimated_bytes);
+
+    size_t ordinal() const;
+    kind_t kind() const;
+    const key_range_t &input_range() const;
+    int64_t estimated_rows() const;
+    int64_t estimated_bytes() const;
+
+private:
+    size_t ordinal_;
+    kind_t kind_;
+    key_range_t input_range_;
+    int64_t estimated_rows_;
+    int64_t estimated_bytes_;
+};
+```
+
+A fragment identifies an input domain, never a pre-opened cursor. Fragment
+boundaries are half-open wherever the B-tree range representation permits it:
+`[start, end)`. Adjacent fragments therefore meet at one boundary without
+omission or duplication. A fragment may represent an unbounded first/last
+range using the normal `key_range_t` universe endpoints.
+
+A secondary-index fragment additionally includes the encoded sindex range and
+stable primary-key tie-breaker boundaries required by the existing index scan.
+It must not split a set of equal sindex keys in a way that duplicates or omits
+rows. Where an equal-key run cannot be bounded cheaply, the planner chooses
+primary-key partitioning or declines the parallel plan.
+
+### 3.3 Parallel plan and planning result
+
+```cpp
+class parallel_plan_t {
+public:
+    enum class ordering_t { UNORDERED, PRIMARY_KEY_ASCENDING, EXPLICIT_ORDER };
+    enum class terminal_t { STREAM, COUNT, SUM, AVG, MIN, MAX, REDUCE };
+
+    parallel_plan_t(
+        std::vector<query_fragment_t> fragments,
+        ordering_t ordering,
+        terminal_t terminal,
+        int64_t estimated_serial_us,
+        int64_t estimated_parallel_us);
+
+    const std::vector<query_fragment_t> &fragments() const;
+    ordering_t ordering() const;
+    terminal_t terminal() const;
+    bool preserves_serial_semantics() const;
+
+private:
+    std::vector<query_fragment_t> fragments_;
+    ordering_t ordering_;
+    terminal_t terminal_;
+    int64_t estimated_serial_us_;
+    int64_t estimated_parallel_us_;
+};
+
+struct parallel_planning_result_t {
+    scoped_ptr_t<parallel_plan_t> plan;
+    std::string serial_reason;
+};
+```
+
+The planner returns either a complete executable plan or a reason for serial
+selection. It must not return a partial plan and leave the executor to invent
+missing coverage.
+
+### 3.4 Executor and cancellation ownership
+
+```cpp
+class parallel_executor_t : public home_thread_mixin_t {
+public:
+    parallel_executor_t(
+        store_t *store,
+        const read_t &base_read,
+        const parallel_plan_t &plan,
+        const parallel_execution_limits_t &limits,
+        signal_t *parent_interruptor);
+    ~parallel_executor_t();
+
+    DISABLE_COPYING(parallel_executor_t);
+
+    void run(read_response_t *response_out);
+    void request_cancel(const interruption_t &reason);
+
+private:
+    void launch_worker(const query_fragment_t &fragment);
+    void run_fragment(const query_fragment_t &fragment);
+    void handle_worker_result(fragment_result_t result);
+    void fail_all(const query_exc_t &error);
+    void await_workers();
+
+    store_t *store_;
+    const read_t &base_read_;
+    const parallel_plan_t &plan_;
+    parallel_execution_limits_t limits_;
+    signal_t *parent_interruptor_;
+    cond_t canceled_;
+    result_merger_t merger_;
+};
+```
+
+`parallel_executor_t` is the sole owner of worker lifecycle. It installs one
+combined interruptor per worker: parent interruption OR aggregate timeout OR
+executor cancellation. It accepts exactly one terminal state: successful merge,
+first query error, cancellation, or deadline expiry. The winning state is
+latched on the coordinator home thread before sibling cancellation begins.
+
+`base_read_` is treated as immutable template data. Each worker creates an
+isolated read/scan request containing its `query_fragment_t`; it does not mutate
+or reuse a concurrent `read_t` object.
+
+### 3.5 Worker result and bounded channels
+
+```cpp
+struct fragment_batch_t {
+    size_t fragment_ordinal;
+    uint64_t sequence_number;
+    std::vector<ql::datum_t> rows;
+    int64_t encoded_bytes;
+    bool end_of_fragment;
+};
+
+struct partial_aggregate_t {
+    size_t fragment_ordinal;
+    ql::datum_t state;
+    int64_t input_rows;
+};
+
+class fragment_result_t {
+public:
+    enum class state_t { BATCH, PARTIAL, COMPLETE, ERROR, CANCELED };
+    // Tagged payload implementation follows local project conventions.
+};
+```
+
+Workers send batches or partial aggregate states through an executor-owned,
+bounded channel. The channel accounts for serialized/result memory before
+accepting a batch. When the aggregate limit is reached, a worker waits on a
+space-available condition while its cancellation/deadline interruptor remains
+active. Workers must never spin or retain an unbounded private vector while
+waiting for the merger.
+
+### 3.6 Result merger
+
+```cpp
+class result_merger_t : public home_thread_mixin_t {
+public:
+    result_merger_t(
+        parallel_plan_t::ordering_t ordering,
+        int64_t memory_limit_bytes,
+        signal_t *interruptor);
+
+    void push_batch(fragment_batch_t batch);
+    void push_partial(partial_aggregate_t partial);
+    void mark_fragment_complete(size_t ordinal);
+    void fail(const query_exc_t &error);
+    void drain_into(read_response_t *out);
+
+private:
+    void drain_unordered(read_response_t *out);
+    void drain_ordered(read_response_t *out);
+    void merge_partials(read_response_t *out);
+};
+```
+
+For unordered streams, the merger forwards any available fragment batch subject
+to backpressure. For ordered streams, it preserves fragment ordinal and within-
+fragment key order. An `EXPLICIT_ORDER` plan is only admitted where the planner
+can prove that ordinal order corresponds to the requested ordering; otherwise
+it requires an external merge strategy with a hard memory/spill design and is
+out of scope for Phase 3.
+
+For terminal aggregates, the merger accepts only algebraically valid partial
+states. `count`, `sum`, `min`, `max`, and `avg` have defined partial forms.
+General `reduce` is parallelizable only when the term advertises an associative,
+identity-bearing reducer under ReQL's semantics; absent that proof it is serial.
+
+### 3.7 Limits and admission token
+
+```cpp
+struct parallel_execution_limits_t {
+    size_t max_workers;
+    int64_t aggregate_buffer_bytes;
+    int64_t per_worker_buffer_bytes;
+    int64_t aggregate_timeout_ms;
+    int64_t per_worker_timeout_ms;
+};
+
+class parallel_admission_token_t {
+public:
+    parallel_admission_token_t(size_t workers, int64_t bytes);
+    ~parallel_admission_token_t();
+    DISABLE_COPYING(parallel_admission_token_t);
+};
+```
+
+Admission is all-or-serial before output. The executor reserves a token for the
+selected worker count and aggregate memory budget. It does not launch two
+workers, emit data, then wait indefinitely for two more permits. If the desired
+reservation cannot be made, the planner lowers worker count only if the revised
+plan remains beneficial; otherwise the query stays serial.
+
+### 3.8 Integration with existing request types
+
+The feature must preserve the current `read_t` / `read_response_t` contract:
+
+- `read_t` remains the routed representation of a read. A parallel read adds a
+  fragment envelope or a parallel-specific read variant containing one normal
+  shard-local subrange, not a mutable vector of active workers.
+- `read_response_t` remains client-visible result/batch machinery. The merger
+  fills it through existing response construction rather than introducing a
+  parallel-only client protocol.
+- `store_t` remains the local storage interface. It receives one fragment scan
+  at a time, with normal snapshot, batch, transform, and interruptor context.
+- `btree_store_t` owns B-tree traversal and page-cache interaction. Parallel
+  orchestration must not reach into B-tree internals from `ql` code.
+
+## 4. Query Planner / Optimizer
+
+### 4.1 Planner responsibility
+
+`query_planner_t` decides whether a hint can become a parallel plan and, if so,
+produces a complete set of fragments before any worker starts. It operates after
+term compilation has resolved table/index references and before local scan
+execution begins. It does not replace the current distributed table routing;
+routing still invokes the relevant local plans per shard.
+
+```mermaid
+flowchart TD
+    A[Compiled ReQL sequence / terminal] --> B{parallel true?}
+    B -->|no| S[serial plan]
+    B -->|yes| C{eligible read shape?}
+    C -->|no| S
+    C -->|yes| D[obtain range/cardinality estimates]
+    D --> E{>= 10K rows or >= 100ms?}
+    E -->|no| S
+    E -->|yes| F[choose primary or sindex partitioning]
+    F --> G[validate non-overlap and coverage]
+    G --> H[estimate execution + merge cost]
+    H --> I{beneficial and admissible?}
+    I -->|no| S
+    I -->|yes| P[parallel_plan_t]
+```
+
+### 4.2 Eligibility matrix
+
+| Operation shape | Initial status | Parallel planning rule |
+| --- | --- | --- |
+| Primary-key `between` / table range scan | Eligible | Split on sampled B-tree key boundaries. |
+| Secondary-index `between` | Eligible with restrictions | Split index-key ranges only when equal-key boundary correctness is established; otherwise split candidate primary ranges after index selection. |
+| `filter` over a range/table scan | Eligible | Push deterministic predicate evaluation into each worker; merge unordered results. |
+| Deterministic `map` over eligible source | Eligible | Push map evaluation to workers when it has no order/global-state dependency. |
+| `count`, `sum`, `avg`, `min`, `max` | Eligible | Use partial aggregation and final merge. |
+| General `reduce`, `fold`, `group` | Serial initially | Future work requires explicit algebraic semantics, stable grouping ownership, and memory/spill design. |
+| `orderBy` | Conditional | Preserve order by fragment ordering only for compatible primary-key order; otherwise serial in Phase 3. |
+| `distinct`, `union`, `zip`, joins | Serial initially | Global dedupe/join ownership is outside Phase 3. |
+| `get`, point sindex lookup, tiny `limit` | Serial | Fragment overhead dominates. |
+| Writes/transactions | Ineligible | Must use current serialization/atomicity path. |
+| Changefeed | Serial initial scan and feed | See Section 4.7. |
+
+### 4.3 Range-based decomposition
+
+For a primary B-tree range, the planner samples or obtains approximate key
+quantiles through a bounded metadata/range-estimate operation. It divides the
+requested `key_range_t` into `W` sorted, non-overlapping subranges, where `W` is
+at most the admitted worker target and never exceeds useful estimated work.
+
+For boundaries `b0 < b1 < ... < bW`, fragments are:
+
+```text
+F0 = [b0, b1)
+F1 = [b1, b2)
+...
+F(W-1) = [b(W-1), bW)
+```
+
+The first/last bounds preserve the caller's original open/closed/unbounded
+semantics. A pure boundary helper must prove:
+
+- each emitted fragment is non-empty or discarded before execution;
+- fragments are strictly ordered;
+- no fragment intersects another;
+- their union equals the original eligible key range;
+- all keys equal to a split boundary belong to exactly one fragment.
+
+The planner must not estimate boundaries by converting arbitrary ReQL data to
+lossy numeric intervals. It uses the storage layer's canonical `store_key_t` and
+`key_range_t` comparison/encoding behavior.
+
+### 4.4 Secondary-index decomposition
+
+For a secondary-index `between`, splitting by index-key range is useful only
+when range endpoints can be selected safely. Secondary keys can have duplicate
+values and may include primary-key suffix/tie-breaker components. The fragment
+boundary must therefore be a complete scan key `(secondary_key, primary_key)` or
+another existing cursor boundary format that covers an equal-key run exactly
+once.
+
+If index statistics do not provide stable complete boundaries, use one of these
+safe alternatives:
+
+1. execute the secondary-index selection serially into bounded primary-key range
+   descriptors, then parallelize non-overlapping primary B-tree fetch/filter
+   work only if the descriptor set is small and bounded; or
+2. decline the parallel plan and run the current serial sindex scan.
+
+The planner must never split solely at the visible ReQL secondary value and
+assume equal values do not cross the split.
+
+### 4.5 Filter and transform decomposition
+
+A deterministic, row-local filter/map is copied into every fragment plan and
+runs before result batches reach the merger. Pushing the transform down reduces
+cross-coroutine buffering and allows the cost model to account for selectivity.
+
+A transform is ineligible when it depends on:
+
+- sequence position, a global accumulator, or prior input rows;
+- a nondeterministic value not already stabilized by normal query evaluation;
+- a mutable environment that cannot be safely snapshotted per worker;
+- exception timing that would make parallel execution observe different visible
+  error precedence than serial evaluation.
+
+When in doubt, planner conservatism is required: choose serial execution.
+
+### 4.6 Cost model
+
+The initial cost model is deliberately transparent and calibrated by profiles:
+
+```text
+serial_us = scan_rows * scan_cost_us
+          + filter_rows * filter_cost_us
+          + expected_output_bytes * encode_cost_us_per_byte
+
+parallel_us = planning_us
+            + max(fragment_scan_us + fragment_filter_us)
+            + merge_us
+            + startup_us * workers
+            + cross_thread_handoff_us
+```
+
+The planner selects parallel execution only when:
+
+```text
+estimated_serial_us >= 100000 OR estimated_scan_rows >= 10000
+AND workers >= 2
+AND estimated_parallel_us < estimated_serial_us * benefit_margin
+AND aggregate_buffer_budget is reservable
+```
+
+`benefit_margin` starts at `0.85`, requiring a predicted 15% gain to offset
+estimation error. All inputs are server configuration or profile-derived
+statistics, not magic literals scattered through terms.
+
+Useful estimates include requested key-range fraction, table cardinality,
+per-range page/row estimates, available secondary index selectivity, observed
+filter selectivity, row width, active worker saturation, and known ordered-merge
+cost. Missing statistics bias toward serial execution.
+
+### 4.7 Changefeed interaction
+
+Changefeeds are excluded from initial parallel execution. A changefeed combines
+an optional initial query result with a long-lived ordered stream of updates,
+state tracking, and client backpressure. Parallelizing only its initial scan
+would complicate the handoff boundary and could reorder initial values versus
+changes.
+
+Required Phase 3 behavior:
+
+- `parallel: true` on a changefeed records `ineligible_operation` in profiling
+  and uses the current serial feed path;
+- no feed worker is spawned and no changefeed state is partitioned;
+- existing changefeed ordering, squashing, include-initial, include-states, and
+  cancellation semantics are regression requirements.
+
+A later phase may define parallel initial scans only with an explicit barrier:
+all fragments must complete at one snapshot, the feed registration must capture
+post-snapshot updates, and merger ordering must complete before any update is
+visible. That work is not implicit in this design.
+
+### 4.8 Aggregation decomposition
+
+The planner supports the following partial/final forms:
+
+| Terminal | Worker partial state | Final merge |
+| --- | --- | --- |
+| `count` | unsigned row count | integer addition |
+| `sum` | datum sum plus numeric-kind validation | ReQL-consistent addition in stable validation order |
+| `avg` | `(sum, count)` | sum partial sums, sum counts, divide once |
+| `min` / `max` | candidate datum or empty marker | ReQL datum comparison |
+| `reduce` | not selected by default | serial |
+
+Partial states are materially smaller than full rows and therefore receive a
+separate small buffer allowance. Error behavior deserves special care: a worker
+that discovers an invalid numeric value reports it to the coordinator, which
+cancels siblings and uses normal query-error formatting. The implementation must
+not hide an invalid value merely because another fragment completed first.
+
+## 5. Integration Points
+
+### 5.1 New source files
+
+| Path | Responsibility |
+| --- | --- |
+| `src/rdb_protocol/parallel_executor.hpp` | Fragment, plan, limits, executor, merger interfaces and pure boundary/aggregate declarations. |
+| `src/rdb_protocol/parallel_executor.cc` | Coordinator lifecycle, coroutine launch/collection, cancellation fan-out, bounded channels, ordered/unordered merge, aggregate finalization, profile counters. |
+| `src/rdb_protocol/query_planner.hpp` | Parallel planning input/output types, eligibility and cost-model interfaces. |
+| `src/rdb_protocol/query_planner.cc` | Range boundary selection, secondary-index split validation, cost decision, auto/explicit hint handling, serial fallback reasons. |
+| `src/btree/parallel_scan.hpp` | Storage-facing fragment scan request, key-range invariants, sampling/estimate interfaces. |
+| `src/btree/parallel_scan.cc` | Isolated B-tree range scans, safe key quantile/range estimation, fragment-local cursor setup, per-batch interruption checks. |
+| `src/unittest/parallel_executor_test.cc` | Pure planner, fragment coverage, merger, cancellation, timeout, and aggregate tests. |
+
+All new `.cc` files must be added to the project's existing source/build list
+using the conventions of neighboring `rdb_protocol` and `btree` units. No
+external parallelism library is introduced.
+
+### 5.2 Existing modification points
+
+| Existing area | Required change | Boundary that must remain intact |
+| --- | --- | --- |
+| `src/rdb_protocol/store_t` declarations and `store_t::read()` implementation | Recognize a validated fragment-local read request and delegate to the local parallel-scan interface. | `store_t` continues to own storage dispatch, snapshot/error behavior, and normal serial reads. |
+| `src/rdb_protocol/btree_store_t` | Create fragment-local B-tree scan state and expose bounded estimates/sampling to planner. | No shared cursor or page-lock ownership crosses workers. |
+| `src/rdb_protocol/val.cc` | Preserve/propagate parallel optargs through sequence construction and invoke planner at the correct lazy/eager execution seam. | ReQL term behavior and serial option handling remain unchanged. |
+| `src/rdb_protocol` read-generation / datum-stream path | Attach an immutable parallel planning request to eligible scan sources and keep transform semantics intact. | Existing serial `rget` batching stays the fallback implementation. |
+| `src/rdb_protocol` profile construction | Add optional parallel profile object and counters. | Result datum/wire format without profile is unchanged. |
+| `arch/runtime/` coroutine-pool/thread-pool call sites | Use established coroutine/mailbox primitives to dispatch, interrupt, and join workers. | Do not change scheduler policy globally or introduce preemption. |
+| authorization/query context | Obtain principal quota and cancellation signal before admission. | Existing auth decisions remain authoritative. |
+
+The precise filenames and symbols for the read-generation, profile, and runtime
+seams must be confirmed during implementation against the checkout; this spec
+does not authorize speculative broad refactors. The listed `store_t::read()`,
+`btree_store_t`, and `val.cc` sites are required architectural integration
+points, not permission to bypass intervening layers.
+
+### 5.3 Request flow
 
 ```mermaid
 sequenceDiagram
-    participant O as Owner thread
-    participant Q as Task queue
-    participant W as Worker thread(s)
-    participant C as Result collector
-    participant M as Merge cursor
+    participant Q as ql evaluator
+    participant P as query_planner_t
+    participant E as parallel_executor_t
+    participant R as table_query_client_t
+    participant S as store_t / btree_store_t
+    participant M as result_merger_t
 
-    O->>O: plan and pin one read snapshot
-    O->>Q: dispatch immutable range tasks
-    Q->>W: do_on_thread(task)
-    W->>W: build local cache/txn/B-tree/env view
-    W->>W: scan one half-open range
-    W->>C: publish owned partial result or error
-    O->>M: wait_for(next required ordinal)
-    M->>C: consume ordered partial
-    M->>O: append stream / merge terminal
-    O->>O: release snapshot and admission slot
+    Q->>P: eligible read + options + estimates
+    P-->>Q: serial reason OR parallel_plan_t
+    Q->>E: execute immutable plan
+    loop each admitted fragment
+        E->>R: fragment-local read_t
+        R->>S: routed shard-local range read
+        S-->>E: bounded batches / partial aggregate
+        E->>M: batch or partial state
+    end
+    M-->>E: merged output ready
+    E-->>Q: existing read_response_t
 ```
 
-For stream output, `merge_cursor_t` builds the same `ql::grouped_t<ql::stream_t>`/range response shape used by the sequential path. The merging implementation must use a new `rget_response_builder_t` that owns materialized datum batches and invokes the existing response/accumulator finish rules on the owner thread. It must not concatenate serialized driver batches because batching is an internal transport optimization and must preserve resume/cursor state.
+### 5.4 Layering rules
 
-For terminal output, each worker returns exactly one `parallel_terminal_partial_t`. The owner validates that every expected task produced the same terminal kind, merges in range ordinal order where required, calls the existing terminal finalizer once, and constructs one normal `rget_read_response_t`.
+- `ql`/planner code may describe fragments but may not manipulate B-tree pages,
+  page locks, or buffer-cache state.
+- `btree` code may scan a supplied fragment range but may not decide client
+  quotas, public ReQL optarg semantics, or global merge ordering.
+- runtime code schedules coroutines; it may not know ReQL value semantics.
+- only the coordinator owns client response emission and terminal error choice.
+- all cross-thread result delivery uses the project runtime's established
+  mailbox/coroutine transfer discipline, never an ad hoc mutex-protected queue
+  containing live thread-affine state.
 
-### 4.8 Graceful degradation and sequential restart
+## 6. Execution Model
 
-A rejected plan immediately runs the existing sequential path without logging a user-visible warning. With profiling enabled, append a profile event named `Parallel query skipped` with `parallel_reject_reason_t` and estimate fields.
+### 6.1 Coroutine and thread-pool mapping
 
-For a recoverable pre-output worker failure (`WORKER_TIMEOUT`, `CACHE_PRESSURE`, worker-local view construction failure, or worker interruption not caused by the client), the executor:
+RethinkDB uses cooperative coroutines rather than preemptive query threads.
+`parallel_executor_t` therefore creates runtime tasks in a `coro_pool_t`-style
+facility and associates each task with a runtime thread chosen through existing
+`thread_pool_t` facilities. A worker must yield at normal storage/RPC/output
+wait points; long CPU-only loops must include bounded batch processing and
+interruption checks so one fragment cannot starve the local event loop.
 
-1. cancels all workers and waits until their views are destroyed;
-2. discards all partial rows and terminal states;
-3. releases the pinned snapshot and admission slot;
-4. if `may_restart_sequentially` is true and `sequential_restart_timeout_ms` remains before the original request deadline, runs the normal sequential path from a fresh valid read snapshot; otherwise returns the original parallel error.
-
-The restart happens only before any shard response has been handed to cluster unsharding or a client cursor. It is not allowed after a result has become externally observable.
-
----
-
-## 5. Data
-
-### 5.1 Exact data structures
-
-All types in this section are new process-local C++17 types in `parallel_query.hpp` unless stated otherwise.
-
-```cpp
-enum class executor_state_t {
-    IDLE,
-    PLANNING,
-    DISPATCHING,
-    COLLECTING,
-    MERGING,
-    DONE,
-    FAILED,
-    CANCELLED
-};
-
-enum class worker_state_t {
-    WAITING,
-    SCANNING,
-    DONE,
-    FAILED,
-    CANCELLED
-};
-
-enum class parallel_terminal_kind_t {
-    STREAM,
-    COUNT,
-    SUM
-};
-
-enum class parallel_worker_error_t {
-    NONE,
-    INTERRUPTED,
-    TIMEOUT,
-    CACHE_PRESSURE,
-    SNAPSHOT_OPEN_FAILED,
-    SCAN_FAILED,
-    TRANSFORM_FAILED,
-    BUFFER_LIMIT,
-    INTERNAL
-};
-
-struct scan_range_t {
-    key_range_t key_range;
-    uint32_t ordinal;
-    uint64_t estimated_rows;
-    uint64_t estimated_bytes;
-    bool is_secondary_index;
-    bool reverse;
-};
-
-struct parallel_scan_task_t {
-    uint64_t query_id;
-    uint32_t worker_slot;
-    threadnum_t target_thread;
-    scan_range_t range;
-    rget_read_t rget;
-    parallel_terminal_kind_t terminal_kind;
-    uint64_t deadline_monotonic_ms;
-    uint64_t merge_buffer_bytes;
-    bool preserve_order;
-};
-
-struct parallel_read_snapshot_t {
-    uint64_t snapshot_id;
-    block_id_t primary_superblock_id;
-    repli_timestamp_t read_timestamp;
-    bool uses_snapshot;
-    optional<uuid_u> secondary_index_id;
-};
-
-struct parallel_terminal_partial_t {
-    parallel_terminal_kind_t kind;
-    uint64_t count_value;
-    ql::datum_t sum_value;
-    bool has_sum_value;
-};
-
-struct worker_statistics_t {
-    uint32_t worker_slot;
-    threadnum_t target_thread;
-    uint64_t rows_examined;
-    uint64_t rows_emitted;
-    uint64_t bytes_materialized;
-    uint64_t btree_pages_read;
-    uint64_t cache_hits;
-    uint64_t cache_misses;
-    uint64_t started_monotonic_ms;
-    uint64_t finished_monotonic_ms;
-    worker_state_t state;
-};
-
-struct worker_scan_result_t {
-    uint32_t ordinal;
-    scan_range_t range;
-    std::vector<ql::datum_t> rows;
-    parallel_terminal_partial_t terminal;
-    optional<ql::exc_t> query_error;
-    parallel_worker_error_t worker_error;
-    std::string worker_error_detail;
-    worker_statistics_t statistics;
-};
-
-struct merge_buffer_t {
-    std::mutex mutex;
-    std::condition_variable not_empty;
-    std::map<uint32_t, worker_scan_result_t> results_by_ordinal;
-    uint64_t buffered_bytes;
-    uint64_t maximum_buffer_bytes;
-    uint32_t expected_result_count;
-    uint32_t published_result_count;
-    bool cancelled;
-};
-```
-
-The exact `parallel_read_snapshot_t` fields are immutable after construction. `snapshot_id` is an in-process monotonically increasing ID for diagnostics, not a cluster-visible ID. `primary_superblock_id` and `read_timestamp` identify the pinned snapshot validation context. A worker must reject a view whose requested secondary index ID differs from `secondary_index_id`.
-
-### 5.2 Worker-local execution data
-
-A worker constructs these objects locally; none cross thread boundaries:
-
-```cpp
-struct parallel_worker_context_t {
-    const parallel_scan_task_t *task;
-    const parallel_read_snapshot_t *snapshot;
-    parallel_read_view_t *view;
-    signal_t *interruptor;
-    worker_statistics_t statistics;
-    std::atomic<uint64_t> *remaining_limit;
-};
-```
-
-`remaining_limit` is non-null only for the ordered `limit()` plan described in §4.6. It is decremented with compare-exchange before a row is materialized for publication. The counter protects output cardinality; it does not replace ordinal scheduling.
-
-### 5.3 Thread-safe result accumulator rules
-
-`merge_buffer_t` is protected by its `mutex` for exactly these operations: insert/erase a completed `worker_scan_result_t`, add/subtract `buffered_bytes`, set/read `cancelled`, and wait/notify on `not_empty`.
-
-The following are forbidden while holding `merge_buffer_t::mutex`: B-tree traversal, page/cache acquisition, user transform evaluation, profile logging, blocking RPC, waiting on a server `signal_t`, or invoking user/destructor code. A worker transfers ownership by move; destruction of a rejected result occurs after it releases the mutex.
-
-The owner converts `worker_scan_result_t::rows` into normal response batches only after it has removed the result from `results_by_ordinal` and released the mutex.
-
-### 5.4 Diagnostics and profiling
-
-When request profiling is enabled, append these owner-thread profile events:
-
-| Event | Fields |
-|---|---|
-| `Parallel query planned` | `query_id`, plan kind, estimated rows/bytes, requested workers, selected workers, sorting. |
-| `Parallel scan worker complete` | worker slot/thread, range bounds, rows examined/emitted, pages read, cache hits/misses, elapsed ms. |
-| `Parallel query merge complete` | merged rows, peak buffered bytes, elapsed ms. |
-| `Parallel query fallback` | reject/failure reason and whether sequential restart succeeded. |
-
-Per-worker statistics are returned to the owner only in `worker_scan_result_t`; workers do not mutate `perfmon_collection_t` objects owned by another thread. Add server-level atomics under a new `parallel_query` perfmon collection: `queries_started`, `queries_completed`, `queries_fallback`, `queries_failed`, `workers_started`, `worker_timeouts`, `peak_buffer_bytes`, and `admission_rejections`.
-
----
-
-## 6. States
-
-### 6.1 Executor state machine
-
-```mermaid
-stateDiagram-v2
-    [*] --> IDLE
-    IDLE --> PLANNING: execute(env, read)
-    PLANNING --> DONE: sequential plan delegated
-    PLANNING --> DISPATCHING: parallel plan admitted
-    PLANNING --> FAILED: validation/storage error
-    DISPATCHING --> COLLECTING: all tasks posted
-    DISPATCHING --> CANCELLED: interrupt/admission shutdown
-    COLLECTING --> MERGING: next required result available
-    MERGING --> COLLECTING: more ordered results remain
-    MERGING --> DONE: final stream/terminal finalized
-    COLLECTING --> CANCELLED: interrupt/timeout/worker error
-    MERGING --> CANCELLED: merge error/buffer limit
-    CANCELLED --> DONE: sequential restart succeeds
-    CANCELLED --> FAILED: restart unavailable or fails
-    FAILED --> [*]
-    DONE --> [*]
-```
-
-Allowed transitions and mandatory actions:
-
-| From → To | Guard | Required action |
-|---|---|---|
-| `IDLE → PLANNING` | `execute()` entered on home thread | Allocate `query_id_`; validate `rget_read_t`. |
-| `PLANNING → DONE` | sequential plan | Invoke existing sequential implementation; do not acquire admission. |
-| `PLANNING → DISPATCHING` | safe parallel plan and admission acquired | Pin snapshot; allocate collector; create immutable tasks. |
-| `DISPATCHING → COLLECTING` | all task posts accepted | Start worker timeout timer on owner thread. |
-| `COLLECTING → MERGING` | required ordinal available | Remove result; inspect error before response mutation. |
-| `MERGING → COLLECTING` | more output required | Update peak buffer metrics; dispatch throttled tasks if safe. |
-| `MERGING → DONE` | all expected results finalized | Destroy collector, release snapshot, release admission. |
-| any active → `CANCELLED` | client interrupt, deadline, shutdown, first worker error | Signal cancellation, stop new dispatch, wait for cleanup. |
-| `CANCELLED → DONE` | sequential fallback succeeds | Return only fresh sequential response. |
-| `CANCELLED → FAILED` | no safe fallback | Return one §7 error. |
-
-No transition may release the pinned snapshot before every worker view has completed destruction. `parallel_query_admission_t::release()` occurs exactly once on every path after a successful `try_acquire()`.
-
-### 6.2 Worker state machine
+The requested `max_workers` is a ceiling. Actual worker count is:
 
 ```text
-WAITING -> SCANNING -> DONE
-WAITING -> CANCELLED
-SCANNING -> DONE
-SCANNING -> FAILED
-SCANNING -> CANCELLED
+min(requested_max_workers,
+    planner_useful_fragments,
+    principal_parallel_worker_quota,
+    global_available_worker_permits,
+    eligible_local_runtime_threads)
 ```
 
-- `WAITING`: task has been posted but has not constructed a view.
-- `SCANNING`: worker owns `parallel_read_view_t`; it checks cancellation and deadline at each B-tree callback/batch boundary.
-- `DONE`: worker materialized and published exactly one success result, then destroyed its view.
-- `FAILED`: worker materialized and published exactly one error result, then destroyed its view.
-- `CANCELLED`: worker publishes no success rows. It may publish one cancellation acknowledgement/statistics record, then destroys its view.
+The coordinator itself stays on its originating/home thread. A fragment that
+requires a thread-affine `store_t`, transaction, or buffer-cache access runs on
+that object's home thread. Multi-core parallelism is allowed only through a
+storage/RPC boundary that already supports such placement; otherwise fragments
+may still interleave on one thread and profile as `cross_thread_workers: 0`.
 
-A worker may not transition from `DONE`, `FAILED`, or `CANCELLED` to another state. The owner treats duplicate publication for one ordinal as internal error and cancels the query.
+### 6.2 Worker lifecycle
 
-### 6.3 Error aggregation and precedence
+1. The coordinator receives a complete plan and reserves admission resources.
+2. It derives one child interruptor/deadline for each fragment.
+3. It launches workers in a bounded pool, initially up to admitted worker count.
+4. A worker creates its own fragment-local read request and scan/cursor state.
+5. The worker evaluates pushed-down transforms in bounded batches.
+6. It sends a batch, partial aggregation state, completion, or error to the
+   coordinator-owned merger channel.
+7. On completion, the executor may launch the next pending fragment if the plan
+   has more fragments than permits.
+8. The merger drains client-ready output subject to ordered/unordered rules.
+9. The coordinator joins every launched worker, releases admission, and returns
+   one normal response or error.
 
-The owner picks one error, not one per worker. It cancels immediately after the first observed fatal failure but still drains worker cleanup acknowledgements. Error precedence is deterministic:
+No worker may outlive the coordinator response. Destructor/assertion paths must
+join or cancel outstanding children before releasing context that they reference.
 
-1. client interrupt / server shutdown;
-2. user `ql::exc_t` from the lowest range ordinal that reported a user error;
-3. query deadline timeout;
-4. memory/cache pressure;
-5. snapshot/view construction failure;
-6. internal worker failure.
+### 6.3 Result ordering
 
-If user errors occur in multiple workers, choose the lowest ordinal to approximate sequential forward evaluation; for reverse scan choose the highest key-range ordinal. Attach the originating task's ReQL backtrace unchanged. Do not concatenate exception strings.
+| Query class | Required merger behavior |
+| --- | --- |
+| Unordered `filter` / unordered range scan | Forward any completed batch. Batch interleaving is legal if current serial API has no order guarantee. |
+| Primary-key ordered range | Drain fragment ordinal 0 fully before ordinal 1, etc.; each fragment itself scans ascending key order. |
+| Descending order | Only eligible if fragments and local scans can be built in descending non-overlapping key order with equivalent guarantees; otherwise serial. |
+| `orderBy` on arbitrary expression or sindex | Serial in Phase 3 unless a later external-sort merger is implemented. |
+| `count`, `sum`, `avg`, `min`, `max` | Do not emit intermediate partials; finalize exactly one terminal value after all successful workers complete. |
 
----
+Ordered merge applies backpressure to later fragments while an earlier fragment
+has not produced its next batch. The planner accounts for this reduced
+concurrency and avoids ordered plans whose expected head-of-line blocking makes
+them slower than serial.
 
-## 7. Errors
+### 6.4 Cancellation
 
-### 7.1 Exact error catalog
+Cancellation sources are combined, not polled independently:
 
-All errors below are returned as one `ql::exc_t` with the request's existing backtrace unless a pre-existing error type already owns the same message. The strings are exact acceptance criteria.
-
-| Code | Condition | Exact message | Handling |
-|---|---|---|---|
-| `PQ_CONFIG_WORKERS` | startup workers is zero/out of range | `--parallel-query-workers must be between 1 and the number of server threads.` | Reject startup configuration. |
-| `PQ_CONFIG_THRESHOLD` | threshold is zero | `--parallel-query-threshold-rows must be at least 1.` | Reject startup configuration. |
-| `PQ_FORCE_ONE_THREAD` | FORCE request with fewer than two server threads | `Parallel query execution requires at least two server worker threads.` | Return query resource error; do not run partial work. |
-| `PQ_ADMISSION_TIMEOUT` | FORCE waits beyond worker timeout for a server slot | `Parallel query execution could not acquire a server worker slot before the query deadline.` | Return resource error. AUTO falls back instead. |
-| `PQ_WORKER_TIMEOUT` | any worker misses deadline | `Parallel query execution timed out while scanning a table range.` | Cancel; restart sequential only if no output and budget remains, otherwise return error. |
-| `PQ_CACHE_PRESSURE` | cache pressure reaches configured limit while planning/scanning | `Parallel query execution was throttled because the buffer cache is under memory pressure.` | Cancel; AUTO restarts sequential if allowed; FORCE returns this error after cleanup. |
-| `PQ_MERGE_BUFFER` | buffered materialized rows exceed cap | `Parallel query execution exceeded its result merge buffer limit.` | Cancel; sequential restart if allowed. |
-| `PQ_SNAPSHOT_VIEW` | worker cannot open same-snapshot read view | `Parallel query execution could not open a consistent read snapshot on a worker.` | Cancel; sequential restart if allowed. |
-| `PQ_WORKER_ABORT` | worker exits without success/error publication | `Parallel query execution lost a worker before its scan completed; no partial result was returned.` | Cancel; sequential restart if allowed. |
-| `PQ_TERMINAL_OVERFLOW` | merging count/sum detects overflow | `Parallel query execution overflowed while merging partial aggregate results.` | Return query error; no restart, because sequential would overflow too. |
-| `PQ_DUPLICATE_RESULT` | two publications have same ordinal | `Parallel query execution received duplicate worker results.` | Internal error; cancel and return error. |
-| `PQ_UNSAFE_PLAN` | FORCE asks for semantically unsupported query | `This query cannot be executed in parallel because it requires sequential evaluation.` | Return logic/resource error; never force unsafe semantics. |
-
-### 7.2 Timeout handling
-
-The owner starts one `signal_timer_t` at `worker_timeout_ms` after dispatch. Cancellation is cooperative: the owner sets collector cancellation, triggers each worker's interrupt signal, and posts cancellation to workers that have not started. B-tree callbacks must check the interruptor at every callback and before materializing a batch.
-
-A “kill” means logical task cancellation and view destruction on the worker event loop. The implementation must not call `pthread_cancel`, terminate a server thread, abandon locks, or free a view from the owner thread.
-
-If all workers acknowledge cleanup before `sequential_restart_timeout_ms` expires and no externally visible output exists, AUTO retries sequentially. If cancellation cleanup itself exceeds the original request deadline, return `PQ_WORKER_TIMEOUT`; do not start a fresh sequential scan.
-
-### 7.3 Memory pressure
-
-`cache_pressure_percent` is sampled before planning and after each worker batch. It is `100 * used_cache_bytes / configured_cache_bytes`, rounded up. At or above `cache_pressure_threshold_percent`, the owner stops dispatching new tasks. Running workers receive a throttle signal and yield after their current B-tree callback. The owner drains in-order results before deciding:
-
-- if pressure falls below threshold and result buffering is below cap, resume dispatch;
-- if pressure remains at/above threshold for `worker_timeout_ms / 4`, cancel with `PQ_CACHE_PRESSURE`;
-- sequential fallback is permitted only after all views release their cache pins.
-
-The parallel executor must never evict pages directly, bypass cache accounting, or consume memory outside the configured merge buffer to “fix” pressure.
-
-### 7.4 Partial failure guarantee
-
-A worker crash/failure mid-scan makes all partial output invalid. The owner discards every `worker_scan_result_t`, does not finalize any stream/terminal response, and performs either one sequential retry or returns an error. It must not return a prefix, a subset of completed ranges, a partial `count`, or a cursor that later errors.
-
-A whole-server process crash is outside this executor; normal replica/cluster failure behavior applies. The feature never claims that local worker subdivision provides replication or availability.
-
----
-
-## 8. Testing
-
-### 8.1 Unit tests
-
-Create `src/unittest/parallel_query_test.cc` in `namespace unittest`. Use deterministic fake split keys, fake worker completion ordering, and mock worker-local view factories. Unit tests must not depend on timing sleeps.
-
-| Test name | Setup | Required assertion |
-|---|---|---|
-| `ParallelQuery.PlanBelowThresholdSequential` | 99,999 estimated rows; threshold 100,000 | plan is `SEQUENTIAL`, reason `BELOW_ROW_THRESHOLD`. |
-| `ParallelQuery.PlanOneLeafSequential` | high cardinality estimate but zero sample split keys | plan is `SEQUENTIAL`, reason `ONE_LEAF_RANGE`. |
-| `ParallelQuery.SplitTwoWorkersExactCoverage` | range `[0,100)`, split `50` | ranges `[0,50)`, `[50,100)`; no overlap/gap. |
-| `ParallelQuery.SplitFourWorkersExactCoverage` | splits 25/50/75 | four half-open ranges; sorted ordinals. |
-| `ParallelQuery.SplitEightWorkersExactCoverage` | seven canonical leaf split keys | eight ranges; no empty/duplicate range. |
-| `ParallelQuery.ReverseMergePreservesOrder` | worker completion order scrambled | final rows are descending key order. |
-| `ParallelQuery.ForwardMergeWaitsForLowestOrdinal` | ordinal 2 completes first | no ordinal-2 row reaches output before ordinals 0/1. |
-| `ParallelQuery.UnorderedMergeAcceptsCompletionOrder` | scrambled completion | multiset equals expected rows; no ordering assertion. |
-| `ParallelQuery.PrimaryRangeMatchesSequential` | deterministic row-local transform | full rows equal sequential reference. |
-| `ParallelQuery.SecondaryRangeMatchesSequential` | duplicate secondary keys at split boundary | equal rows/multiplicity; no duplicate or gap. |
-| `ParallelQuery.CountMergesPartials` | four partial counts | exact total. |
-| `ParallelQuery.SumMergesInRangeOrder` | numeric partials | exact sequential terminal result/type. |
-| `ParallelQuery.OrderedLimitDoesNotOverReturn` | `limit(17)` across four ranges | exactly first 17 ordered rows. |
-| `ParallelQuery.UnorderedLimitIsSequential` | unordered limit | reject reason is `UNSUPPORTED_TERMINAL` or explicit unordered-limit reason. |
-| `ParallelQuery.ChangefeedIsSequential` | `rget.stamp` set | no snapshot/task/admission allocation. |
-| `ParallelQuery.NonDeterministicTransformIsSequential` | nondeterministic transform marker | reason `NONDETERMINISTIC_TERM`. |
-| `ParallelQuery.WorkerUserErrorUsesLowestOrdinal` | two workers report ReQL errors | returned error/backtrace from logical first range. |
-| `ParallelQuery.WorkerTimeoutCancelsAndRestarts` | one task exceeds deadline before output | all tasks acknowledged; fresh sequential response equals reference. |
-| `ParallelQuery.MergeBufferCapCancels` | delayed ordinal 0 plus large later result | error/restart; peak buffer never exceeds cap plus one owned incoming result. |
-| `ParallelQuery.NoPartialResponseOnWorkerAbort` | worker terminates before publish | returned response contains no success stream/terminal partial. |
-| `ParallelQuery.AdmissionLimit` | max parallel queries 1 | second AUTO query is sequential; active count never exceeds 1. |
-| `ParallelQuery.WorkerViewThreadAffinity` | record creator/destructor thread IDs | view construction/destruction occur on target worker thread. |
-
-### 8.2 Required integration YAML
-
-Create `test/rql_test/src/parallel_query.yaml`. The test harness runs the server in two configurations: baseline sequential (`--parallel-query-mode off`) and forced eligible parallel execution (`--parallel-query-mode force --parallel-query-workers N --parallel-query-threshold-rows 1`). Assertions compare visible ReQL results; server test configuration additionally asserts that profiling includes `Parallel query planned` for forced supported cases.
-
-```yaml
-desc: Parallel query execution preserves RQL range-scan semantics
-table_variable_name: tbl
-tests:
-    - py: r.db('test').table_create('parallel_query_test')
-      ot: partial({'tables_created': 1})
-    - def: tbl = r.db('test').table('parallel_query_test')
-    - py: tbl.insert([{'id': i, 'bucket': i % 10, 'value': i * 2}
-                      for i in range(0, 10000)])
-      ot: partial({'inserted': 10000, 'errors': 0})
-
-    # Parallel primary table scan vs sequential reference: exact rows/order.
-    - py: tbl.order_by('id').map(lambda row: row['id']).coerce_to('array')
-      ot: list(range(0, 10000))
-
-    # Partitioned range scans are run by the harness with 2, 4, and 8 workers.
-    - py: tbl.between(1000, 9000).order_by('id').get_field('id').coerce_to('array')
-      ot: list(range(1000, 9000))
-
-    # Secondary-index parallel scan.
-    - py: tbl.index_create('bucket')
-      ot: partial({'created': 1})
-    - py: tbl.index_wait('bucket').nth(0)['ready']
-      ot: true
-    - py: tbl.between(3, 4, index='bucket').order_by(index='bucket').get_field('id').coerce_to('array')
-      ot: bag([i for i in range(0, 10000) if i % 10 == 3])
-
-    # Ordered limit must equal the sequential prefix, not an arbitrary worker subset.
-    - py: tbl.between(1000, 9000).order_by('id').limit(17).get_field('id').coerce_to('array')
-      ot: list(range(1000, 1017))
-
-    # Parallel count terminal.
-    - py: tbl.between(1000, 9000).count()
-      ot: 8000
-
-    # Data fitting in a single leaf/page follows sequential fallback and retains results.
-    - py: tbl.between(10, 12).order_by('id').get_field('id').coerce_to('array')
-      ot: [10, 11]
-
-    # Concurrent forced parallel queries are run by the scenario driver; every result is exact.
-    - py: tbl.between(2000, 3000).count()
-      ot: 1000
-
-    - py: r.db('test').table_drop('parallel_query_test')
-      ot: partial({'tables_dropped': 1})
+```mermaid
+flowchart LR
+    P[client / parent interruptor] --> O[OR interruptor]
+    D[aggregate deadline] --> O
+    F[first worker error] --> O
+    A[admission revocation / shutdown] --> O
+    O --> W0[worker 0]
+    O --> W1[worker 1]
+    O --> WN[worker N]
 ```
 
-The harness must execute the `between(1000, 9000)` case with `N = 2`, `4`, and `8`, each against a fixture large enough to yield at least N leaf-aligned ranges. It must run at least four simultaneous clients in the concurrent test, with server `--parallel-query-max-queries 2`, and assert that all query result values match the sequential reference while no query reports `PQ_*` errors.
+When a worker produces the first non-cancellation query error, the coordinator
+atomically latches it, signals the shared cancellation source, stops launching
+pending fragments, drains/discards queued data according to response state, and
+joins siblings. If no client-visible row has been emitted, the normal query
+error is returned. If the existing streaming response protocol cannot safely
+surface a later error after batches are emitted, Phase 3 must retain the current
+protocol's behavior and document it; it must not silently claim full success.
 
-### 8.3 Storage/runtime integration tests
+### 6.5 Timeout policy
 
-Add tests that run the actual server with `--parallel-query-mode force` and validate:
+The original query deadline remains authoritative. `parallel_timeout_ms`, when
+implemented, creates a stricter aggregate child deadline. Each worker receives
+that aggregate deadline and may receive a smaller per-worker watchdog deadline
+only when it does not cause a healthy but uneven fragment to fail a query that
+would have met the aggregate deadline.
 
-1. writes concurrent with a long parallel scan do not corrupt output and snapshot rows are internally consistent;
-2. cache pressure induced by a constrained cache causes throttle/fallback, not OOM or a partial response;
-3. a worker injected to fail after K rows produces either a complete sequential retry or `PQ_WORKER_ABORT`, never K rows;
-4. request cancellation during a scan destroys all worker views and returns the existing interruption error;
-5. server shutdown/drainer waits for outstanding parallel views;
-6. primary and secondary duplicate split-boundary keys are exact in forward and reverse order;
-7. profile event logs contain planned/worker/merge events only when profile mode is enabled.
+On expiry:
 
-### 8.4 Acceptance matrix
+- stop new launches;
+- interrupt every active worker and merger wait;
+- discard incomplete fragment output;
+- join workers before releasing stores/cursors;
+- return the normal query-timeout error.
 
-The feature is accepted only when sequential and parallel results are byte-for-byte equivalent after normal driver decoding for: table scan, primary `between`, secondary-index `between`, row-local `filter`, `count`, `sum`, forward order, reverse order, ordered `limit`, and a multi-shard cluster query. Run each data test with 2, 4, and 8 workers. The system must also prove the fallback paths: one page/one leaf, below threshold, admission full, cache pressure, timeout, cancellation, and worker failure.
+Phase 3 returns no successful partial query result on timeout. Returning partial
+rows would require an explicit, separately designed ReQL/API contract and is
+not compatible with ordinary sequence/terminal correctness.
 
----
+### 6.6 Memory and backpressure
 
-## 9. Security
+Each plan reserves an aggregate result-buffer budget. The executor partitions it
+into a coordinator reserve plus per-worker credits:
 
-### 9.1 Isolation and data ownership
+```text
+aggregate_buffer >= coordinator_reserve + workers * per_worker_credit
+```
 
-Parallel workers execute portions of the same authenticated request and same table/shard authorization context. They do not create another user/session, re-authorize differently, or access a range outside `scan_range_t::key_range` intersected with the local shard region.
+A worker owns no more than its credit plus one bounded in-progress batch. Before
+placing a batch in the merger queue, it charges serialized datum bytes against
+aggregate accounting. A full queue causes the worker to wait on a space signal
+with cancellation enabled. The coordinator refunds credit when it forwards or
+discards a batch.
 
-Each worker gets a fresh `ql::env_t` made solely from the request's already authorized `serializable_env_t`. It must not share mutable scopes, datum streams, function caches with mutable state, user-profile event buffers, auth objects that are not thread safe, or another worker's temporary values.
+A worker must produce batches no larger than the lesser of the current existing
+read batch limit and `per_worker_buffer_bytes`. It must not read 1M rows into a
+private vector merely because it was assigned a 1M-row fragment.
 
-All result data transferred to the collector must be owned materialized data. It must not retain page-backed memory from buffer-cache pages after the worker view is released. This prevents use-after-free and accidental exposure of adjacent page content.
+### 6.7 Snapshot and consistency
 
-### 9.2 Resource limits and denial-of-service protection
+All fragments of one parallel query must use the same consistency mode and
+logical snapshot semantics as the original serial `read_t`. The implementation
+must first establish that existing read/routing APIs can create compatible
+fragment-local read transactions. If snapshot identity cannot safely span local
+worker placement, multi-core execution is disabled for that request and the
+planner may use same-thread coroutines or serial execution.
 
-Enforce all limits on every server:
+It is invalid to execute fragments at independently chosen snapshots and merge
+them as though they represented one table state.
 
-- `max_parallel_queries` limits simultaneously admitted executors; default `1`.
-- `max_workers_per_query` limits task count; defaults to at most four and never exceeds server threads.
-- `merge_buffer_bytes` limits retained completed out-of-order worker results; default 64 MiB.
-- one request deadline governs planner, worker scan, cleanup, and possible sequential restart; workers cannot extend it independently.
-- worker task count is bounded by leaf splits and configured worker count, never estimated row count.
-- only the server thread pool is used; a client cannot cause OS-thread creation.
+## 7. Error Paths
 
-AUTO degrades to sequential when admission, cache pressure, lack of splits, or estimates make parallelism unsafe. FORCE does not override memory, snapshot, worker, or security limits.
+### 7.1 Error policy table
 
-### 9.3 Threat considerations
+| Condition | Coordinator action | Client result | Cleanup invariant |
+| --- | --- | --- | --- |
+| Worker query error | Latch first deterministic error, cancel siblings, stop launching. | Existing ReQL query error. | All launched workers joined; buffered batches released. |
+| Worker runtime exception/invariant failure | Convert through existing runtime/query error boundary, cancel siblings. | Server's normal query/internal failure response; never partial success. | No worker retains executor/store references. |
+| Aggregate timeout | Cancel all workers and merger waits. | Normal timeout error. | Timers/child interruptors removed after join. |
+| Client cancellation/disconnect | Propagate parent interruption immediately. | Existing cancellation/disconnect behavior. | Admission permits released even if response cannot be written. |
+| Per-worker timeout | Treat as aggregate query failure unless fragment may be safely retried before any output. | Timeout error, not partial result. | Failed worker's cursor and queued data released. |
+| Merger memory pressure | Stop accepting batches; backpressure workers. | No error if consumers drain; otherwise timeout/cancellation policy applies. | Accounted bytes never exceed hard aggregate cap. |
+| Hard allocation failure | Cancel workers; release safely allocated queues. | Existing resource-exhausted/internal error path. | Do not attempt an unbounded fallback merge. |
+| Coroutine pool exhausted before output | Select serial fallback. | Normal serial result. | No partial parallel state escapes. |
+| Coroutine pool exhausted after plan started | Continue with already launched workers only if plan semantics remain valid and admission says safe; otherwise cancel and return resource error. | Must not silently duplicate work. | Pending fragments are either exactly launched once or not launched. |
+| Storage routing failure | Treat as worker failure and cancel siblings. | Existing routing/shard query error. | Fragment-local request state discarded. |
+| Shutdown/authority revocation | Cancel immediately. | Existing interrupted query behavior. | No result emission after shutdown wins. |
 
-| Threat | Mitigation |
-|---|---|
-| One client monopolizes all cores | admission and per-query worker cap reserve capacity; no oversubscription. |
-| Result-buffer memory exhaustion through delayed early range | strict byte cap, dispatch throttling, cancellation/fallback. |
-| Cross-thread cache/page lifetime bug leaks data | worker-local views, owned datum transfer, snapshot/thread-affinity tests. |
-| Non-deterministic user code yields different results | planner rejects nondeterministic/non-row-safe transforms. |
-| Timing side channel reveals other queries | no new data surface; per-worker metrics are exposed only through existing authorized profile paths. |
-| Partial result makes application act on incomplete data | atomic success rule: discard all worker partials on any failure. |
+### 7.2 Worker failure
 
-No new network listener, authentication mode, storage format, on-disk metadata, or cross-cluster protocol is introduced.
+A fragment error is not an isolated warning: row-level evaluation errors,
+storage errors, routing errors, and runtime interruption have query-wide
+semantics. The first error chosen by the coordinator wins according to the
+existing serial error precedence where that is defined. Concurrent error races
+must be made deterministic enough for tests: latch the first error observed by
+the coordinator event loop, retain its fragment ordinal/profile context, then
+cancel siblings.
 
----
+A worker that notices cancellation stops emitting new rows, releases its local
+batch, and reports `CANCELED`; it does not overwrite the winning error.
 
-## 10. Performance
+### 7.3 Timeout during parallel execution
 
-### 10.1 Targets
+The executor treats timeout as cancellation plus a timeout cause. It does not
+return a prefix of a stream as a complete sequence, a partial aggregate, or a
+best-effort merge. This also prevents order-sensitive results from being
+mistaken for complete answers.
 
-The target on a CPU-bound or cache-resident scan-heavy workload with an eligible large table and sufficient independent B-tree leaf ranges is:
+A retry of an individual timed-out fragment is out of scope in Phase 3 because
+retry requires a stable snapshot, idempotent output accounting, and a deadline
+budget. Retries can be considered later only as a planner-level feature with
+those properties explicitly designed.
 
-- **2× median throughput improvement** with two workers;
-- **2×–4× median throughput improvement** with four workers;
-- no more than **10% throughput regression** for eligible queries that the AUTO cost model selects parallel for;
-- no measurable result/ordering difference relative to sequential;
-- no regression in p99 latency of concurrent point reads greater than 10% when the admission limit is at its default.
+### 7.4 Out-of-memory and merge pressure
 
-These are throughput targets, not a promise for disk-bound scans, a one-leaf range, a selective index, or a query dominated by user function execution. The planner is expected to select sequential for those cases.
+Normal pressure uses backpressure, not failure. If accounting predicts that the
+next minimal batch cannot fit under the hard budget, the worker must reduce its
+batch or wait. If an allocation nevertheless fails, the merger records a
+resource error, cancels workers, and frees all batches it owns.
 
-### 10.2 Benchmarks
+An ordered merge may accumulate later-fragment data behind an early fragment.
+The executor prevents unbounded head-of-line buildup by allocating later workers
+smaller credits and pausing them when ordered queues are full. It does not spill
+rows to an unreviewed temporary file in Phase 3.
 
-Add a benchmark workload with a table large enough to exceed RAM and another cache-resident table. For each, record p50/p95/p99 latency, rows/s, scanned pages, cache hit rate, CPU utilization, worker count, merge peak bytes, and point-read p99 under contention.
+### 7.5 Coroutine-pool exhaustion
 
-Required benchmark cases:
+Before execution starts, lack of `coro_pool_t` permits is a normal planner
+fallback reason. The coordinator chooses serial execution with the original
+read request. This is preferable to queueing an unbounded number of queries or
+failing an otherwise valid read.
 
-1. **Table scan latency:** `table.order_by('id').coerce_to('array')`, sequential vs 2/4/8 configured workers.
-2. **Parallel `count(*)`:** `table.count()` and large primary `between().count()`.
-3. **Parallel filter:** `table.filter(row['bucket'] >= 3).count()` with a deterministic row-local predicate.
-4. **Secondary index range:** `between()` through a populated secondary index with low, medium, and high selectivity.
-5. **Ordered limit:** large ordered range with a small `limit`, proving the planner's reduced parallelism is not slower than sequential by more than 10%.
-6. **Concurrent workload:** four scan clients plus a point-read/write workload; record foreground p99s and admission fallback count.
-7. **Single-page fallback:** threshold-bypassing FORCE and AUTO modes; validate no artificial task fanout and report sequential plan reason.
+The executor must reserve worker capacity before it starts client-visible
+parallel work. It may not partially execute a query, discover no capacity for a
+required fragment, and restart serially; doing so risks duplicate output and
+inconsistent snapshots.
 
-Run each benchmark at 1/2/4/8 configured workers, but report effective worker count. Pin server threads using the existing `linux_thread_pool_t` affinity setting when available. Include hardware, dataset row size, cache size, storage type, RethinkDB build mode, and full command lines in benchmark reports.
+### 7.6 Correctness assertions
 
-### 10.3 Tuning rules
+Debug builds and focused unit tests must assert:
 
-- Start production rollout with `--parallel-query-mode auto --parallel-query-workers 2 --parallel-query-max-queries 1 --parallel-query-threshold-rows 100000`.
-- Increase workers only when profiler data shows scan CPU utilization below available cores, worker ranges are balanced, cache pressure is below threshold, and point-read p99 remains within target.
-- Raise `--parallel-query-threshold-rows` when small scans enter the parallel plan and benchmark slower due to setup/merge overhead.
-- Lower `--parallel-query-workers` or `--parallel-query-max-queries` when write latency, point-read p99, cache misses, or `PQ_CACHE_PRESSURE` increase.
-- Do not use FORCE in normal production routing. FORCE is for CI, benchmarks, and controlled diagnosis of an otherwise eligible plan.
+- every worker completion is received at most once;
+- fragment ordinals are unique and in plan range;
+- no batch is merged after terminal failure/cancellation wins;
+- accounted memory never becomes negative or exceeds hard cap;
+- an ordered merger does not advance past a fragment with an unresolved gap;
+- executor destruction has no live worker registrations;
+- a successful plan reports exactly all planned fragments complete.
 
-### 10.4 Rollout and observability gates
+## 8. Testing Requirements
 
-The default is `off` for v3.0. Enable AUTO only after the §2.2 snapshot/cache tests and §8 full matrix pass. A staged deployment must observe `queries_fallback`, `worker_timeouts`, cache pressure, merge peak, result-equivalence canary checks, point-read p99, and write latency. Any snapshot inconsistency, partial-result violation, page/cache safety failure, or p99 regression over the target is an immediate rollback to `--parallel-query-mode off`.
+### 8.1 Test placement and test philosophy
 
-### 10.5 Definition of done
+Add focused tests in `src/unittest/parallel_executor_test.cc`, plus narrowly
+placed regression tests alongside existing ReQL read/stream and B-tree tests
+when exercising public behavior needs the established harness. Tests must
+compare behavior with the existing serial execution path rather than only
+checking internal counters.
 
-The feature is complete only when:
+The feature is correct only if it produces serial-equivalent ReQL results under
+identical inputs and consistency conditions, including error/cancellation
+behavior. A speedup benchmark is not a correctness substitute.
 
-- every C++ interface and field in this spec is implemented with the stated ownership/thread rules;
-- the visitor integration uses the executor only for eligible `rget_read_t` reads and keeps every other existing read sequential;
-- worker-local snapshot views pass the cache/thread-affinity gate;
-- ordered, unordered, terminal, secondary-index, limit, cancellation, timeout, pressure, and failure tests pass;
-- the integration YAML scenarios in §8 are added and exercised with 2/4/8 workers;
-- profiling/perfmon values are emitted without cross-thread mutation; and
-- the benchmark report demonstrates the target 2×–4× improvement on at least one representative scan-heavy workload without violating point-read/write regression limits.
+### 8.2 Unit tests: decomposition and planning
+
+Test pure planning/boundary helpers without requiring a full server:
+
+1. Given an unbounded, closed, and open primary-key range, when split into 2–16
+   fragments, then fragments are sorted, non-overlapping, non-empty, and their
+   union equals the original range.
+2. Given keys equal to every candidate split point, when ranges are emitted,
+   then every key belongs to exactly one fragment.
+3. Given insufficient row estimates or only one useful key interval, when
+   `parallel: true`, then planner selects serial with the correct reason.
+4. Given 10,000+ estimated rows and enough independent ranges, when cost model
+   predicts a material benefit, then planner produces no more than the requested
+   or admitted worker limit.
+5. Given a duplicate-heavy secondary index, when no complete sindex boundary is
+   available, then planner declines unsafe index splitting.
+6. Given a deterministic filter/map and eligible range, when planned, then every
+   fragment contains the same pushed-down transform descriptor.
+7. Given a nondeterministic/global/order-dependent transform, when planned, then
+   the planner selects serial.
+8. Given `count`, `sum`, `avg`, `min`, and `max`, when eligible, then planner
+   selects the appropriate partial aggregate form; unsupported `reduce` is
+   serial.
+
+### 8.3 Unit tests: merger and aggregate semantics
+
+1. Given unordered batches completing in reverse ordinal order, when drained,
+   then all rows appear exactly once and output makes no ordering assertion.
+2. Given ordered batches with delayed fragment zero, when later batches arrive,
+   then merger waits and emits full ordinal order once the gap closes.
+3. Given fragment-local ascending keys, when ordered merge completes, then the
+   output is globally ascending and matches serial scan output.
+4. Given partial counts/sums/averages/min/max from arbitrary fragment order,
+   when finalized, then final values equal serial terminal evaluation.
+5. Given a worker error after a queued batch, when the error wins before output
+   drain, then queued post-failure data is not emitted.
+6. Given memory credits exhausted, when a worker attempts a batch, then it blocks
+   or reduces batch size and memory accounting stays within the cap.
+7. Given cancellation while a worker waits for merger credit, when interrupted,
+   then it exits promptly and releases local state.
+
+### 8.4 End-to-end correctness matrix
+
+Run every relevant query in serial and `parallel: true` modes over the same
+seeded table, then compare the appropriate semantic result:
+
+| Query | Required comparison |
+| --- | --- |
+| Primary `between` | Same row multiset and, where ordered, same ordered sequence. |
+| Secondary-index `between` | Same row multiset across duplicate index values and boundary values. |
+| `filter` | Same row multiset for selective and nonselective deterministic predicates. |
+| `map` | Same mapped row multiset, including nested JSON datums. |
+| `filter().count()` | Exact same terminal integer. |
+| Numeric `sum()` / `avg()` | Same ReQL numeric result and same invalid-input error behavior. |
+| `min()` / `max()` | Same datum under ReQL collation and same empty-sequence behavior. |
+| Primary-key `orderBy` compatible plan | Same ordered sequence. |
+| Ineligible `orderBy`/changefeed | Same serial result/feed and profile says not selected. |
+| Empty table/range | Empty output/terminal behavior identical to serial. |
+| One-row table/range | Exactly one result; no spurious worker failure. |
+| Duplicate boundaries | No missing or duplicated rows. |
+
+Use randomized/property-style fixtures for primary keys, duplicate secondary
+values, range endpoints, fragment counts, and filter selectivities. For every
+fixture, assert `parallel_result == serial_result` under the equivalence rule
+appropriate to ordering.
+
+### 8.5 Failure, cancellation, and resource tests
+
+- Inject one worker storage/read failure; assert sibling cancellation, one error
+  result, no leaked permits, and no leaked batches.
+- Inject a row-level transform error in each possible fragment; assert the
+  returned error is compatible with the serial error contract and workers join.
+- Inject aggregate timeout while workers scan, while a worker waits for buffer
+  space, and while ordered merger waits for an earlier fragment.
+- Saturate `coro_pool_t` before plan start; assert serial fallback and profile
+  reason rather than query failure.
+- Exercise shutdown/client cancellation during fragment start, scan, blocked
+  output, and final merge.
+- Set a tiny aggregate memory budget with large rows and slow response draining;
+  assert bounded memory/backpressure rather than unbounded process growth.
+- Run many concurrent parallel queries under quotas; assert no principal exceeds
+  its permits and serial queries continue to make progress.
+
+### 8.6 Changefeed regression
+
+Existing changefeed tests are a non-negotiable regression suite. Add a focused
+case that attaches `parallel: true` to an otherwise supported feed construction
+and verifies:
+
+- no worker fragments are selected;
+- initial values and subsequent changes retain current behavior/order;
+- cancellation/connection close cleans up exactly as in serial mode;
+- profile metadata records an ineligible serial choice if profiling is enabled.
+
+### 8.7 Performance benchmarks
+
+Benchmarks must run separately from correctness/unit tests and record hardware,
+thread count, table shape, row width, cache state, selected plan, scan rows,
+worker count, wall time, CPU time, and peak merger bytes. Required dataset
+sizes are 10K, 100K, and 1M rows.
+
+For each size, benchmark:
+
+1. full/table-range scan plus selective and nonselective filters;
+2. primary-key and secondary-index `between` with balanced and skewed ranges;
+3. `count`, `sum`, and `avg` over an eligible filtered scan;
+4. serial, `max_workers` 2, 4, and server-supported higher counts;
+5. one-core coroutine-only placement and multi-core placement where supported;
+6. cold and warm page-cache variants if the existing benchmark environment
+   supports controlling cache state.
+
+The expected target is 2–4x throughput/latency improvement on appropriately
+large, balanced analytical queries on a four-core machine, not a universal
+assertion for all dataset/query shapes. The benchmark report must include cases
+where parallelism loses and explain whether startup, skew, merge, I/O, or
+saturation caused it.
+
+### 8.8 Stress and regression gates
+
+Stress tests should run thousands of randomized range/filter queries alongside
+concurrent writers only insofar as existing read consistency tests permit. They
+must verify that results remain serial-equivalent for a chosen snapshot/consistency
+mode and that worker/admission counters return to baseline.
+
+Completion gates:
+
+- all new unit and integration tests pass;
+- existing query, B-tree, changefeed, and cancellation regression suites pass;
+- debug assertions detect no lifecycle/accounting violation under stress;
+- benchmark artifacts cover 10K, 100K, and 1M datasets;
+- profile output is exercised for selected, rejected, and fallback plans;
+- code review confirms no raw OS-thread creation, unsynchronized shared cursor,
+  or unbounded result queue was added.
+
+## 9. Security Considerations
+
+### 9.1 Resource isolation
+
+Parallel query execution turns a single authenticated query into a request for
+multiple execution slots and potentially substantial buffered data. Admission
+must therefore be tied to the existing authenticated principal/user context,
+not merely connection count.
+
+Server policy supplies at least these limits per principal and globally:
+
+| Limit | Purpose |
+| --- | --- |
+| `max_parallel_queries` | Limits number of simultaneously admitted parallel coordinators. |
+| `max_parallel_workers` | Limits total active fragment workers per principal. |
+| `max_parallel_buffer_bytes` | Caps all merger/worker result bytes attributed to one principal. |
+| `max_parallel_workers_per_query` | Caps amplification of a single query despite a high client hint. |
+| `max_parallel_queue_depth` | Prevents an admitted coordinator from holding arbitrary pending fragment metadata. |
+| global worker/buffer ceilings | Protects runtime/event-loop and process-wide memory availability. |
+
+`max_workers` is always clamped by these limits. It cannot be used to reserve
+all cores merely because the caller supplied a large integer.
+
+### 9.2 Denial-of-service resistance
+
+Potential abuse patterns include issuing many `parallel: true` full-table scans,
+requesting huge worker counts, choosing intentionally skewed ranges that pin
+workers, consuming ordered-merge buffers behind slow clients, and forcing
+planner estimation work on many tiny queries.
+
+Mitigations:
+
+- require opt-in but never treat opt-in as entitlement;
+- reserve permits atomically before work begins and release them in all
+  completion/cancellation/destructor paths;
+- use fair, quota-aware admission so one principal cannot monopolize all runtime
+  workers while other users' serial reads starve;
+- reject invalid numeric options and clamp valid values to hard maxima;
+- impose bounded planning/sampling work; planner statistics collection must not
+  scan an entire table merely to decide whether to parallelize it;
+- enforce aggregate memory credits and client-output backpressure;
+- retain normal query deadlines and server shutdown cancellation;
+- profile/log aggregate resource decisions without logging document contents or
+  credentials.
+
+### 9.3 Authorization consistency
+
+Every worker inherits the coordinator's already-authorized table/query context.
+The executor does not independently re-authorize fragments with a weaker
+context, and a fragment cannot be routed to a table/index not present in the
+validated original plan. If authorization/context invalidation is represented as
+an interruptor by existing infrastructure, it joins the shared cancellation
+source.
+
+Parallelization must not broaden data access. Splitting a range is semantically
+transparent: each fragment operates only on a subset of the original authorized
+read domain and uses the same database/table permission checks.
+
+### 9.4 Information leakage through observability
+
+Profiles may reveal worker count, approximate rows scanned, and timing. These
+are query-local diagnostics; they must remain subject to the same client/profile
+visibility rules as current query profiles. Do not expose raw key boundaries,
+page identifiers, other tenants' queue depth, per-thread identities, or values
+from rejected fragments in a user-visible profile.
+
+Server logs should use query/request IDs and resource counters, not serialized
+ReQL document data, when diagnosing admission denials or worker failures.
+
+### 9.5 Reliability as a security boundary
+
+Cancellation and bounded queues are security controls as well as performance
+features. A bug that leaves workers alive after a client disconnect, leaks
+admission tokens, or lets an ordered merger retain unlimited data is a service
+availability vulnerability. Lifecycle/resource stress tests in Section 8 are
+therefore release requirements, not optional optimization tests.
+
+## 10. Performance Model
+
+### 10.1 Expected benefit
+
+Parallel execution helps when a query contains enough independent scan/filter
+or associative aggregation work that worker startup, scheduling, and result
+merge are small compared with useful work. On a four-core server with balanced
+large analytical scans, the target is a 2–4x improvement in latency or
+throughput relative to the same serial query, depending on cache/I/O behavior
+and filter cost.
+
+This target applies most plausibly to 100K+ row scans with CPU-heavy row-local
+predicates or warm-cache B-tree traversal that can make progress on multiple
+runtime workers. It is not a promise for point lookups, small tables, one-shard
+single-thread storage affinity, high output cardinality ordered streams, or
+I/O-bound scans constrained by one disk/page-cache bottleneck.
+
+### 10.2 Time decomposition
+
+For `N` scanned rows, `W` useful workers, selectivity `p`, row scan cost `Cs`,
+row transform cost `Ct`, per-worker startup cost `L`, and merge/encoding cost
+`Cm`, a first-order model is:
+
+```text
+Tserial = N * (Cs + Ct) + N * p * Cm
+
+Tparallel = Tplan + W * L
+          + (N / Weffective) * (Cs + Ct)
+          + N * p * Cm_merge
+          + Thandoff + Tskew + Tbackpressure
+```
+
+`Weffective` is less than or equal to `W`; it is reduced by skew, thread affinity,
+I/O contention, ordered merge blocking, and the runtime's cooperative scheduling.
+`Cm_merge` may exceed serial encoding cost because batches cross worker/merger
+boundaries and ordered plans require coordination.
+
+The planner must use measured/profile-derived estimates where possible and
+choose serial execution when projected gain does not clear the configured
+benefit margin.
+
+### 10.3 Amdahl's-law bound
+
+Let `f` be the fraction of query time that remains necessarily serial: planning,
+routing, snapshot setup, network framing, client output, final merge, and any
+unsplittable transform. The ideal upper speedup for `W` workers is:
+
+```text
+speedup(W) <= 1 / (f + (1 - f) / W)
+```
+
+Illustrative bounds, before real-world scheduling/contestion overhead:
+
+| Serial fraction `f` | 2 workers | 4 workers | 8 workers |
+| --- | ---: | ---: | ---: |
+| 0.10 | 1.82x | 3.08x | 4.71x |
+| 0.20 | 1.67x | 2.50x | 3.33x |
+| 0.35 | 1.48x | 2.05x | 2.46x |
+| 0.50 | 1.33x | 1.60x | 1.78x |
+
+The practical result will be lower because fragments are not perfectly balanced
+and may contend for B-tree pages, buffer-cache locks, CPU cache, network paths,
+or a slow client. This is why the target is 2–4x on suitable four-core queries,
+not an 8x claim for eight workers.
+
+### 10.4 Overhead sources
+
+| Overhead | Effect | Mitigation |
+| --- | --- | --- |
+| Planning and key-boundary selection | Fixed latency; harmful to small queries. | 10K-row/100-ms thresholds, bounded estimates, serial fallback. |
+| Coroutine setup and cross-thread handoff | Increases with worker count. | Cap workers; batch handoffs; prefer same-thread interleaving when cross-thread placement is not beneficial. |
+| Range skew | Slowest fragment controls completion. | Quantile/range estimates, fragment oversubscription bounded by permits, profile skew counters. |
+| Page-cache / I/O contention | More workers can lower, not raise, throughput. | Cost model observes load; per-store placement constraints; global admission caps. |
+| Merge and result encoding | Dominates high-output queries and ordered streams. | Push filters down; unordered forwarding; decline expensive ordering. |
+| Memory/backpressure | Paused workers reduce effective parallelism. | Aggregate and per-worker credits; right-size batches; profile peak bytes and stalls. |
+| Snapshot/routing setup | Serial fraction limits speedup. | Reuse normal read machinery; do not add speculative per-worker routing. |
+
+### 10.5 Diminishing returns and worker selection
+
+The planner does not equate CPU count with ideal `max_workers`. More workers
+can worsen a query after useful fragment parallelism is exhausted. Initial
+selection should use a conservative step function:
+
+| Estimated scan work | Preferred upper target before quota clamp |
+| --- | --- |
+| `< 10K rows` and `< 100 ms` | serial |
+| `10K–100K rows` | 2 workers |
+| `100K–1M rows` | up to 4 workers |
+| `> 1M rows` | up to min(available cores, configured cap), subject to skew/memory estimates |
+
+The executor may create more fragments than simultaneous permits only when the
+fragment descriptors are cheap and a bounded worker pool consumes them. It must
+not create one coroutine per page or one task per row.
+
+### 10.6 Metrics for calibration
+
+The implementation should collect profile/aggregate metrics sufficient to tune
+the cost model without inspecting user data:
+
+- selected versus rejected parallel plans by reason;
+- requested/admitted/active worker count;
+- planning, launch, scan, transform, wait-for-buffer, merge, and total times;
+- estimated versus actual scanned rows and emitted rows;
+- per-fragment row/time distribution and skew ratio;
+- cross-thread versus same-thread worker counts;
+- peak and average merger bytes, backpressure wait time, and admission denials;
+- serial baseline samples for comparable query classes where available.
+
+A future auto-parallel mode may use these metrics to tune thresholds, but must
+retain conservative guardrails and a straightforward way to disable automatic
+selection operationally.
+
+### 10.7 Acceptance criteria
+
+The design is ready for implementation only when the following are upheld:
+
+1. Given an eligible, deterministic large read with `parallel: true`, when the
+   planner can reserve safe resources and estimate a benefit, then it executes
+   disjoint fragment workers and returns a result equivalent to serial execution.
+2. Given an order-required eligible range, when a fragment ordering proof exists,
+   then the merger returns the same order as serial execution; otherwise the
+   planner uses serial execution.
+3. Given `count`, `sum`, `avg`, `min`, or `max` over an eligible source, when
+   partial forms are valid, then the final terminal result equals serial
+   evaluation and errors cancel all fragments.
+4. Given worker failure, cancellation, timeout, memory pressure, or shutdown,
+   when any terminal condition wins, then siblings stop, buffers/permits are
+   released, and the client receives normal non-partial error semantics.
+5. Given exhausted coroutine or quota capacity before output, when a parallel
+   hint is present, then execution falls back to serial safely and profiles the
+   reason.
+6. Given an unsupported shape such as a changefeed, write, transaction, or
+   arbitrary `orderBy`, when `parallel: true` is present, then existing serial
+   semantics remain unchanged.
+7. Given benchmark tables of 10K, 100K, and 1M rows, when balanced analytical
+   queries are run on supported four-core hardware, then the benchmark records
+   the speedup/cost model evidence, including both wins and diminishing-return
+   cases, with a 2–4x target for suitable large queries.
+
+This phase establishes a bounded, opt-in, coroutine-native local parallelism
+foundation. It intentionally keeps distributed sharding, write execution,
+changefeeds, arbitrary sorting, and global operators on their established paths
+until each can be designed with equally explicit semantics and resource bounds.
