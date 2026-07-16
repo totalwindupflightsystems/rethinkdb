@@ -133,7 +133,7 @@
   - Current tests appear safe: only `mock_read()`/`mock_lookup()` (point_read_t) and backfill (distribution_read_t) flow through mock_store. `dummy_read_t` intercepted by `replica_t::do_read()`.
   - Latent risk: any future test or internal refactor sending unhandled read types will crash. See new FIX task below.
   - ClusteringRaft.Fuzzer crash: separate issue (raft config state guarantee, not mock_store)
-- [ ] **FIX — Add missing read type handlers to mock_store_t::read()** (mock_store.cc:148)
+- [x] **FIX — Add missing read type handlers to mock_store_t::read()** (commit `d54e289694`)
   - Add handlers for `vector_read_t`, `brin_read_t`, `dummy_read_t` — throw `cannot_perform_query_exc_t("unimplemented")` matching pattern in `rdb_env.cc` mock_namespace_interface_t::read_visitor_t
   - Files: `src/unittest/mock_store.cc` (lines 145-148), `src/unittest/mock_store.hpp`
   - Preventative: safe for current tests, blocks future test development
