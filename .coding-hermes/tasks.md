@@ -158,11 +158,11 @@
     - partition_entry_t, partition_config_t, partition_map_t (immutable compiled snapshot)
     - validate_or_throw(), route(), prune() with exact C++ signatures from spec §3.1
     - Serialization macros (INSTANTIATE_SERIALIZABLE) for all structs
-  - [ ] **PART-02: Metadata + Raft integration** — table_config_t extension, partition_catalog_t superblock
-    - Extend table_config_t with optional partition_config_t field
-    - Raft commit for partition map epoch changes
-    - partition_catalog_t: format_version, epoch, primary_key_directory_block, stores vector
-    - Backward-compat: tables with no partition config default to NONE
+  - [x] **PART-02: Metadata + Raft integration** — table_config_t extension, partition_catalog_t superblock (commit `a251e1522e`)
+    - [x] Extend table_config_t with optional partition_config_t field
+    - [x] Raft commit for partition map epoch changes
+    - [x] partition_catalog_t: format_version, epoch, primary_key_directory_block, stores vector
+    - [x] Backward-compat: tables with no partition config default to NONE
   - [ ] **PART-03: ReQL surface** — tableCreate {partitions} optarg, partitionInfo, partitionConfig
     - tableCreate gains `partitions` optarg (type, key_field, partitions array)
     - New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
