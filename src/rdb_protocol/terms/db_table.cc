@@ -13,7 +13,9 @@
 #include "rdb_protocol/datum_stream.hpp"
 #include "rdb_protocol/datum_string.hpp"
 #include "rdb_protocol/op.hpp"
+#include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
+#include "rdb_protocol/terms/partitioning.hpp"
 #include "rdb_protocol/terms/writes.hpp"
 
 namespace ql {
@@ -165,7 +167,7 @@ public:
         : meta_op_term_t(env, term, argspec_t(1, 2),
             optargspec_t({"primary_key", "shards", "replicas",
                           "nonvoting_replica_tags", "primary_replica_tag",
-                          "durability"})) { }
+                          "durability", "partitions"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -197,6 +199,13 @@ private:
                 DURABILITY_REQUIREMENT_SOFT ?
                     write_durability_t::SOFT : write_durability_t::HARD;
 
+        optional<partition_config_t> partition_config;
+        if (scoped_ptr_t<val_t> partitions_val = args->optarg(env, "partitions")) {
+            partition_config = make_optional(
+                parse_partition_config_from_datum(
+                    partitions_val->as_datum(), partitions_val.get()));
+        }
+
         counted_t<const db_t> db;
         name_string_t tbl_name;
         if (args->num_args() == 1) {
@@ -222,7 +231,8 @@ private:
                     durability,
                     env->env->interruptor,
                     &result,
-                    &error)) {
+                    &error,
+                    std::move(partition_config))) {
                 REQL_RETHROW(error);
             }
         } catch (auth::permission_error_t const &permission_error) {

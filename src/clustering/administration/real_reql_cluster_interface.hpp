@@ -88,7 +88,8 @@ public:
             write_durability_t durability,
             signal_t *interruptor,
             ql::datum_t *result_out,
-            admin_err_t *error_out);
+            admin_err_t *error_out,
+            optional<partition_config_t> partition_config = r_nullopt);
     bool table_drop(
             auth::user_context_t const &user_context,
             const name_string_t &name,
@@ -128,6 +129,23 @@ public:
             ql::backtrace_id_t bt,
             ql::env_t *env,
             scoped_ptr_t<ql::val_t> *selection_out,
+            admin_err_t *error_out);
+
+    bool table_partition_info(
+            counted_t<const ql::db_t> db,
+            const name_string_t &name,
+            signal_t *interruptor,
+            ql::datum_t *result_out,
+            admin_err_t *error_out);
+    bool table_repartition(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &name,
+            const partition_config_t &partition_config,
+            bool dry_run,
+            bool wait,
+            signal_t *interruptor,
+            ql::datum_t *result_out,
             admin_err_t *error_out);
 
     bool table_wait(

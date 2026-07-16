@@ -446,3 +446,87 @@ std::vector<partition_route_t> partition_map_t::routes_for(
     }
     return out;
 }
+
+/* ── public ReQL conversion ──────────────────────────────────────────────── */
+
+static const char *partition_type_to_string(partition_type_t type) {
+    switch (type) {
+    case partition_type_t::NONE:  return "none";
+    case partition_type_t::RANGE: return "range";
+    case partition_type_t::HASH:  return "hash";
+    case partition_type_t::LIST:  return "list";
+    default: unreachable();
+    }
+}
+
+static const char *partition_state_to_string(partition_state_t state) {
+    switch (state) {
+    case partition_state_t::CREATING:    return "creating";
+    case partition_state_t::CATCHING_UP: return "catching_up";
+    case partition_state_t::ACTIVE:      return "active";
+    case partition_state_t::DRAINING:    return "draining";
+    case partition_state_t::FAILED:      return "failed";
+    default: unreachable();
+    }
+}
+
+ql::datum_t partition_config_to_datum(const partition_config_t &config) {
+    if (!config.is_partitioned()) {
+        ql::datum_object_builder_t builder;
+        builder.overwrite("partitioned", ql::datum_t::boolean(false));
+        return std::move(builder).to_datum();
+    }
+
+    ql::datum_array_builder_t parts(ql::configured_limits_t::unlimited);
+    bool all_active = true;
+    for (size_t i = 0; i < config.partitions.size(); ++i) {
+        const partition_entry_t &p = config.partitions[i];
+        if (p.state != partition_state_t::ACTIVE) {
+            all_active = false;
+        }
+        ql::datum_object_builder_t entry;
+        entry.overwrite("name", ql::datum_t(datum_string_t(p.name.str())));
+        entry.overwrite("id", ql::datum_t(datum_string_t(uuid_to_str(p.id))));
+        entry.overwrite("state",
+            ql::datum_t(datum_string_t(partition_state_to_string(p.state))));
+        if (config.type == partition_type_t::RANGE
+                && config.range_boundaries.size() == config.partitions.size() + 1) {
+            entry.overwrite("from", config.range_boundaries[i]);
+            entry.overwrite("to", config.range_boundaries[i + 1]);
+        }
+        if (config.type == partition_type_t::HASH) {
+            ql::datum_array_builder_t buckets(ql::configured_limits_t::unlimited);
+            for (uint32_t b : p.hash_buckets) {
+                buckets.add(ql::datum_t(static_cast<double>(b)));
+            }
+            entry.overwrite("buckets", std::move(buckets).to_datum());
+        }
+        if (config.type == partition_type_t::LIST) {
+            if (!p.list_values.empty()) {
+                ql::datum_array_builder_t values(ql::configured_limits_t::unlimited);
+                for (const ql::datum_t &v : p.list_values) {
+                    values.add(v);
+                }
+                entry.overwrite("values", std::move(values).to_datum());
+            }
+            if (p.list_default) {
+                entry.overwrite("default", ql::datum_t::boolean(true));
+            }
+        }
+        parts.add(std::move(entry).to_datum());
+    }
+
+    ql::datum_object_builder_t builder;
+    builder.overwrite("type",
+        ql::datum_t(datum_string_t(partition_type_to_string(config.type))));
+    builder.overwrite("by", ql::datum_t(datum_string_t(config.key_field)));
+    builder.overwrite("epoch", ql::datum_t(static_cast<double>(config.epoch)));
+    builder.overwrite("state",
+        ql::datum_t(datum_string_t(all_active ? "ready" : "transitioning")));
+    builder.overwrite("partitions", std::move(parts).to_datum());
+    if (config.type == partition_type_t::HASH) {
+        builder.overwrite("modulus",
+            ql::datum_t(static_cast<double>(config.hash_modulus)));
+    }
+    return std::move(builder).to_datum();
+}

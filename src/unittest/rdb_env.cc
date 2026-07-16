@@ -431,7 +431,8 @@ bool test_rdb_env_t::instance_t::table_create(
         UNUSED write_durability_t durability,
         UNUSED signal_t *local_interruptor,
         UNUSED ql::datum_t *result_out,
-        admin_err_t *error_out) {
+        admin_err_t *error_out,
+        UNUSED optional<partition_config_t> partition_config) {
     *error_out = admin_err_t{
         "test_rdb_env_t::instance_t doesn't support mutation",
         query_state_t::FAILED};
@@ -536,6 +537,34 @@ bool test_rdb_env_t::instance_t::table_status(
         admin_err_t *error_out) {
     *error_out = admin_err_t{
         "test_rdb_env_t::instance_t doesn't support table_status()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::table_partition_info(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &name,
+        UNUSED signal_t *interruptor,
+        UNUSED ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support table_partition_info()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::table_repartition(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &name,
+        UNUSED const partition_config_t &partition_config,
+        UNUSED bool dry_run,
+        UNUSED bool wait,
+        UNUSED signal_t *interruptor,
+        UNUSED ql::datum_t *result_out,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support table_repartition()",
         query_state_t::FAILED};
     return false;
 }

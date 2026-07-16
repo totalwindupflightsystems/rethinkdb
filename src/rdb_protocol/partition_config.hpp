@@ -137,4 +137,8 @@ uint32_t partition_hash_bucket(const ql::datum_t &key, uint32_t modulus);
  * rejected. */
 bool is_legal_partition_key_datum(const ql::datum_t &d);
 
+/* Convert a stored partition_config_t into the public partitionInfo() ReQL
+ * object shape. Unpartitioned (type=NONE) returns {partitioned: false}. */
+ql::datum_t partition_config_to_datum(const partition_config_t &config);
+
 #endif  // RDB_PROTOCOL_PARTITION_CONFIG_HPP_

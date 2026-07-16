@@ -22,6 +22,7 @@
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/geo/distances.hpp"
 #include "rdb_protocol/geo/lon_lat_types.hpp"
+#include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/wire_func.hpp"
 
@@ -316,7 +317,8 @@ public:
             scoped_ptr_t<ql::val_t> *selection_out,
             admin_err_t *error_out) = 0;
 
-    /* `table_create()` won't return until the table is ready for writing */
+    /* `table_create()` won't return until the table is ready for writing.
+    Optional `partition_config` attaches a declarative partition layout (Phase 3). */
     virtual bool table_create(
             auth::user_context_t const &user_context,
             const name_string_t &name,
@@ -326,7 +328,8 @@ public:
             write_durability_t durability,
             signal_t *interruptor,
             ql::datum_t *result_out,
-            admin_err_t *error_out) = 0;
+            admin_err_t *error_out,
+            optional<partition_config_t> partition_config = r_nullopt) = 0;
     virtual bool table_drop(
             auth::user_context_t const &user_context,
             const name_string_t &name,
@@ -362,6 +365,28 @@ public:
             ql::backtrace_id_t bt,
             ql::env_t *env,
             scoped_ptr_t<ql::val_t> *selection_out,
+            admin_err_t *error_out) = 0;
+
+    /* Returns the current declarative partition layout for the table, or
+    `{partitioned: false}` when the table has no partition config. */
+    virtual bool table_partition_info(
+            counted_t<const ql::db_t> db,
+            const name_string_t &name,
+            signal_t *interruptor,
+            ql::datum_t *result_out,
+            admin_err_t *error_out) = 0;
+
+    /* Apply a new declarative partition layout (online repartition). With
+    `dry_run` true, only compute the resulting config without committing. */
+    virtual bool table_repartition(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &name,
+            const partition_config_t &partition_config,
+            bool dry_run,
+            bool wait,
+            signal_t *interruptor,
+            ql::datum_t *result_out,
             admin_err_t *error_out) = 0;
 
     virtual bool table_wait(
