@@ -145,6 +145,15 @@ void mock_store_t::read(
         const distribution_read_t *distribution_read =
             boost::get<distribution_read_t>(&_read.read);
         const point_read_t *point_read = boost::get<point_read_t>(&_read.read);
+
+        if (distribution_read == nullptr && point_read == nullptr) {
+            if (boost::get<vector_read_t>(&_read.read) != nullptr ||
+                boost::get<brin_read_t>(&_read.read) != nullptr ||
+                boost::get<dummy_read_t>(&_read.read) != nullptr) {
+                throw cannot_perform_query_exc_t(
+                    "unimplemented", query_state_t::FAILED);
+            }
+        }
         guarantee(!(distribution_read == nullptr && point_read == nullptr));
 
         if (distribution_read != nullptr) {
