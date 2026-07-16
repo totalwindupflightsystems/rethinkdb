@@ -163,11 +163,11 @@
     - [x] Raft commit for partition map epoch changes
     - [x] partition_catalog_t: format_version, epoch, primary_key_directory_block, stores vector
     - [x] Backward-compat: tables with no partition config default to NONE
-  - [ ] **PART-03: ReQL surface** — tableCreate {partitions} optarg, partitionInfo, partitionConfig
-    - tableCreate gains `partitions` optarg (type, key_field, partitions array)
-    - New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
-    - New ReQL admin term: `r.table('t').partitionConfig({type: 'range', ...})` for repartition
-    - Validation at term level before touching storage
+  - [x] **PART-03: ReQL surface** — tableCreate {partitions} optarg, partitionInfo, partitionConfig (commit `9b1d050d35`)
+    - [x] tableCreate gains `partitions` optarg (type, key_field, partitions array)
+    - [x] New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
+    - [x] New ReQL admin term: `r.table('t').partitionConfig({type: 'range', ...})` for repartition
+    - [x] Validation at term level before touching storage
   - [ ] **PART-04: Query planner pruning** — partition_predicate_t, between/getAll optimization
     - Extract partition key from query predicates (equality, between, getAll)
     - range layouts: between selects overlapping intervals
