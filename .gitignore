@@ -18,3 +18,7 @@ agent-sdlc-interaction-map.json
 
 # GitReins local artifacts
 .gitreins/history/
+
+# CI download artifacts
+build-artifacts/
+rethinkdb-artifact-*/

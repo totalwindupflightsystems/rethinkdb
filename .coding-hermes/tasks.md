@@ -127,6 +127,25 @@
   - [x] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait` (commit `9dba0afaae`)
   - [x] **BRIN-7: Tests** — 30 new tests (11 build pipeline, 11 pruning, 8 validation) + 114-line integration YAML. Commit `ab57d115ef`. Benchmarks deferred to v2.5 release testing.
 
+## Discovery Sweep Findings (2026-07-16)
+- [ ] **TEST — Pre-existing clustering test crashes (mock_store.cc:148)**
+  - `ClusteringBackfill.BackfillTest`: guarantee failure `[!(distribution_read == nullptr && point_read == nullptr)]`
+  - `ClusteringRaft.Fuzzer`: guarantee failure in raft config state
+  - `ClusteringContractExecutor.SimpleTests`: same mock_store crash
+  - Files using mock_store: `clustering_backfill.cc`, `clustering_contract_executor.cc`, `clustering_query.cc`, `clustering_branch.cc`
+  - Pre-existing since ~2015 — mock_store.cc untouched in years
+  - Impact: ~20-30 clustering tests can't run; full `make unit` aborts
+- [x] **CHORE — Clean untracked CI artifact files**
+  - Deleted `build-artifacts/` (582MB), `rethinkdb-artifact-*/` (~42MB download artifacts)
+  - Added `.gitignore` entries: `build-artifacts/`, `rethinkdb-artifact-*/`
+- [ ] **CI — Zero workflow runs despite active workflow (INVESTIGATED)**
+  - Workflow "Build" (ID 308050651) exists and is `active` since 2026-07-06
+  - API: `total_count: 0, workflow_runs: []` — nothing ever ran
+  - Actions: `enabled: true`, `allowed_actions: all` — repo-level settings correct
+  - Local action `.github/actions/tests/action.yml` exists and is valid
+  - Likely: GH Actions billing exhaustion for personal account, or workflow parser rejection
+  - SUGGESTION: Add `workflow_dispatch` trigger to enable manual test; check billing at https://github.com/settings/billing
+
 ## Phase 3: v3.0 (Future)
 - [ ] Declarative table partitioning
 - [ ] Parallel query execution
