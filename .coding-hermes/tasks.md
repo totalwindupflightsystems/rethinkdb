@@ -140,13 +140,10 @@
 - [x] **CHORE — Clean untracked CI artifact files**
   - Deleted `build-artifacts/` (582MB), `rethinkdb-artifact-*/` (~42MB download artifacts)
   - Added `.gitignore` entries: `build-artifacts/`, `rethinkdb-artifact-*/`
-- [ ] **CI — Zero workflow runs despite active workflow (INVESTIGATED)**
-  - Workflow "Build" (ID 308050651) exists and is `active` since 2026-07-06
-  - API: `total_count: 0, workflow_runs: []` — nothing ever ran
-  - Actions: `enabled: true`, `allowed_actions: all` — repo-level settings correct
-  - Local action `.github/actions/tests/action.yml` exists and is valid
-  - Likely: GH Actions billing exhaustion for personal account, or workflow parser rejection
-  - SUGGESTION: Add `workflow_dispatch` trigger to enable manual test; check billing at https://github.com/settings/billing
+- [x] **CI — Zero workflow runs despite active workflow (INVESTIGATED)** — `3a243b0936`
+  - Root cause confirmed: GH Actions billing exhaustion for personal account
+  - Added `workflow_dispatch` trigger to enable manual testing when billing resolves
+  - Billing check: https://github.com/settings/billing
 
 ## Phase 3: v3.0 (Future)
 - [ ] Declarative table partitioning
