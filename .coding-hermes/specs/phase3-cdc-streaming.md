@@ -1,923 +1,779 @@
-# Phase 3 — Logical Replication / CDC Streaming (v3.0)
-
-**Status:** implementation specification  
-**Target:** RethinkDB v3.0, C++17  
-**Scope:** durable, logical, table/database CDC with resumable named replication slots  
-**Primary source paths:** `src/rdb_protocol/`, `src/serializer/`, `src/client_protocol/`, `src/clustering/administration/`, `test/rql_test/src/`
-
-## Problem statement and acceptance criteria
-
-RethinkDB changefeeds are query-local live views: a client evaluates a query, the server maintains that query's result, and updates are delivered while that client remains attached. This feature adds a durable, consumer-agnostic logical replication stream. A consumer selects a table set, receives committed logical mutations in replayable order, persists a checkpoint, disconnects, and resumes without losing committed events while the slot remains inside retention.
-
-The implementation is complete only when all of the following are true:
-
-1. Given a named slot and a committed insert, when a subscriber reads the slot, then it receives exactly one `insert` event containing the post-image and a durable checkpoint.
-2. Given an acknowledged checkpoint and a disconnect, when the subscriber reconnects with that checkpoint, then it receives every later retained event in the same ordering domain and no event before the checkpoint.
-3. Given a slot spanning multiple tables, when writes commit on either table, then the slot receives events for both tables and no event from an unselected table.
-4. Given a requested table backfill, when the snapshot fence is established, then the subscriber receives all snapshot rows before every live event whose commit position is greater than that fence.
-5. Given a slot that falls behind the retention floor, when it subscribes or acknowledges a stale position, then it receives the exact `CDC_CHECKPOINT_EXPIRED` failure and must re-backfill.
-6. Given DDL on a selected database/table, when `include_ddl` is enabled, then the slot receives a typed DDL event at a checkpoint after the metadata commit.
-7. Given a principal without the required permissions, when it creates, inspects, drops, or subscribes to a slot, then the request fails before any data or checkpoint is disclosed.
-
-## Non-goals
-
-- This feature does not make raw serializer pages a supported external format.
-- It does not promise a single total order across independent table shards. It supplies a strict per-table order and an explicit causal/vector checkpoint across tables.
-- It does not provide exactly-once delivery. Delivery is at-least-once; consumer sink idempotence is keyed by `(cluster_id, table_id, shard_id, lsn)`.
-- It does not implement outbound Kafka, Debezium, or database-specific connectors in the server. It supplies an authenticated HTTP/WebSocket protocol suitable for those adapters.
-- It does not support arbitrary ReQL predicates in durable slots. Filters are declarative and serializable only.
-- It does not retain WAL forever or allow a lagging slot to inhibit disk reclamation without a configured hard limit.
-
----
-
-# 1. Overview
-
-## 1.1 CDC versus changefeeds
-
-| Property | Existing changefeed | v3.0 CDC stream |
-| --- | --- | --- |
-| Subscription unit | A ReQL query and its maintained result set | Named slot, table(s), or a database |
-| Source | In-memory mutation/report and query-maintenance machinery | Durable logical WAL records produced with the write transaction |
-| Lifetime | Client/query lifetime | Slot lifetime; survives client and server restart |
-| Resume | No durable position | Checkpoint/LSN resume within retention |
-| Ordering | Query/result-dependent; no recovery contract | Strict commit order per table shard; vector/causal order across tables |
-| Consumer model | ReQL driver only | ReQL cursor plus HTTP/WebSocket protocol |
-| Backfill | Changefeed `include_initial` semantics | Snapshot fence plus row events, then WAL catch-up |
-| Retention | Bounded changefeed queue | Time/size retention constrained by confirmed slot checkpoints |
-
-`ql::changefeed::server_t` and `rdb_modification_report_t` are useful sources of mutation images and ordering hooks, but are not the CDC persistence mechanism. The existing `store_t` owns region-specific changefeed servers (`src/rdb_protocol/store.hpp:407-426`), and `rdb_modification_report_cb_t::on_mod_report` turns old/new values into transient messages (`src/rdb_protocol/btree.cc:1573-1633`). CDC must run at the same logical mutation boundary but write an independently durable record before the transaction is exposed as committed.
-
-## 1.2 Design decision: logical WAL, not reverse-decoding physical pages
-
-The serializer is log structured and commits atomic `index_write` and block writes (`src/serializer/serializer.hpp:101-115`), but physical page/block records do not reliably encode document operation type, primary key, old datum, new datum, table identity, or DDL intent. Therefore **CDC must not attempt to reconstruct row changes by parsing historical serializer page deltas**.
-
-Instead, the write path creates a canonical `cdc_event_t` from the already available logical mutation report immediately after `rdb_replace_and_return_superblock` obtains the old and new row images (`src/rdb_protocol/btree.cc:414-426`, `511-534`). `logical_wal_t` serializes those records into serializer-managed auxiliary blocks in the same durability boundary as the user write. The serializer log is the durable substrate and crash-consistency boundary; `logical_wal_t` is the logical decoding layer and stable reader API.
-
-No CDC event is externally visible until the enclosing store transaction commits. On crash, recovery exposes either both the data mutation and its committed CDC record or neither.
-
-## 1.3 Terms
-
-- **LSN:** a monotonically increasing `uint64_t` local to `(table_id, shard_id, branch_id)` and assigned at commit serialization time.
-- **stream position:** `cdc_checkpoint_t`, a cluster ID plus sorted per-shard LSNs. It is the only resume token accepted by public APIs.
-- **slot:** a durable named consumer registration/configuration and its confirmed checkpoint.
-- **retention floor:** oldest readable LSN for a shard. A checkpoint below it has expired.
-- **snapshot fence:** an immutable checkpoint captured before a backfill scan. It divides snapshot and live WAL events.
-- **event ID:** `(cluster_id, table_id, shard_id, lsn)`, stable across retries.
-
-## 1.4 Architecture
-
+# Phase 3 Design: Logical Replication and CDC Streaming
+Status: Design specification — RethinkDB v3.0
+Scope: durable logical replication and CDC for committed row changes.
+This specification adds persistent publications, remote RethinkDB subscriptions, and external CDC sinks. It defines the data contract, storage invariants, ReQL surface, integration seams, failure behavior, testing, and security. It is a design artifact only; it makes no implementation changes
+outside this file.
+## Contents
+1. Overview
+2. API Design / ReQL Surface
+3. Data Structures
+4. WAL / Change Capture
+5. Protocol / Wire Format
+6. Integration Points
+7. Conflict Resolution
+8. Error Paths
+9. Testing Requirements
+10. Security Considerations
+## 1. Overview
+### 1.1 Problem statement
+RethinkDB changefeeds push realtime updates to connected query clients, but they are per-query and ephemeral. They do not maintain a durable consumer cursor, retain history for a disconnected receiver, or define delivery guarantees. Applications can build an ad hoc relay on changefeeds, but a relay
+cannot prove whether an update was delivered before a disconnect and has no server-owned replay point.
+RethinkDB v3.0 shall provide a durable logical-change layer with two uses:
+1. Logical replication streams row-level changes from a source RethinkDB table publication to a target RethinkDB table subscription.
+2. CDC streaming sends the same logical events to external systems such as Kafka-compatible brokers, HTTPS webhooks, and file/S3-compatible archives.
+A publication is durable source metadata. Each subscription or CDC sink has a durable replication slot. The slot stores what it has safely processed and pins source change history until it advances, is dropped, or is explicitly evicted.
+### 1.2 Definitions
+| Term | Definition |
+| --- | --- |
+| LSN | Monotonically increasing log sequence number for a committed row mutation in one shard. |
+| Publication | Durable source-table configuration that selects and formats logical changes. |
+| Subscription | Durable target-cluster configuration that consumes a publication into a target table. |
+| CDC sink | Durable source configuration that delivers publication events to an external system. |
+| Replication slot | Durable cursor and retention pin owned by one subscription or sink. |
+| Snapshot barrier | Per-shard LSN separating the initial snapshot from subsequent live changes. |
+| Change record | Versioned before/after row mutation event stored in the logical journal. |
+### 1.3 What this is and is not
+| Capability | Existing changefeed | Phase 3 logical CDC | Physical replication |
+| --- | --- | --- | --- |
+| Unit | Query-result delta | Row-level table mutation | Storage bytes/pages |
+| Lifetime | Connected query | Durable metadata and slot | Storage replication lifecycle |
+| Resume point | None | Confirmed LSN per shard | Internal storage position |
+| Delivery | Connection-dependent | At least once | Internal durability |
+| External contract | ReQL result shape | Versioned change envelope | No public contract |
+| Cross-cluster | Client-built | Native subscription | Not supported as an API |
+CDC must not expose serializer bytes as an API. Serializer layout, page reuse, compression, and compaction are internal implementation details. The logical journal decodes committed mutations into a stable, versioned row-change record.
+### 1.4 Goals
+- Capture every eligible committed source mutation exactly once in the durable source journal, before the write is reported successful.
+- Deliver records in increasing LSN order for each `(source cluster, table, shard)` stream.
+- Let consumers reconnect from a durable confirmed LSN.
+- Provide snapshot-plus-stream bootstrap without a silent gap.
+- Use at-least-once delivery with stable event IDs and idempotent target apply.
+- Retain log history until every valid slot has confirmed consumption.
+- Keep slow external consumers from blocking foreground table writes.
+- Route configuration through existing Raft metadata and data through existing shard routing, mailbox RPC, and serializer durability infrastructure.
+- Expose lag, retained bytes, state, retry count, and recovery action to operators.
+### 1.5 Non-goals
+Phase 3 does not provide byte-for-byte physical replication, a public WAL reader, exactly-once delivery to arbitrary external systems, multi-primary replication, or cross-table atomic CDC transactions. It does not replicate DDL, users, permissions, or server configuration. It does not run arbitrary
+ReQL functions in source publication filters. It does not wait for a remote sink during a normal source-table write commit.
+Global order across shards is also out of scope. A multi-shard write may produce several ordered shard streams with the same transaction identifier; consumers requiring a total merge order must define their own deterministic policy.
+### 1.6 Delivery contract
+The source appends a logical record in the same successful serializer transaction as the primary-table mutation. The sender reads only committed records. If a process dies after commit but before dispatch, recovery scans the journal from the slot cursor. Therefore a committed source row cannot be
+silently missing from a healthy retained stream.
+Delivery is at least once. A record may be sent again if a transport or process failure occurs after delivery but before a durable acknowledgement. Consumers must deduplicate using an immutable `event_id`; a target RethinkDB subscription persists that ID in its apply ledger before acknowledging the
+record.
+### 1.7 Topology
 ```mermaid
 flowchart LR
-  W[ReQL / protocol write] --> R[btree mutation\nold/new datum]
-  R --> MR[rdb_modification_report_t]
-  MR --> H[cdc_write_hook_t\nclassify + validate]
-  H --> LW[logical_wal_t\nserializer aux-block segments]
-  LW --> C[store txn commit]
-  C --> D[cdc_decoder_t]
-  D --> F[slot filter + projection]
-  F --> B[per-slot bounded buffer]
-  B --> Q[ReQL CDC cursor]
-  B --> X[HTTP / WebSocket CDC endpoint]
-  Q --> A[checkpoint acknowledgement]
-  X --> A
-  A --> S[durable slot state]
-  S --> G[retention / garbage collection]
+    Client[Source clients] --> ReQL[ReQL write path]
+    ReQL --> Shards[(Source table shards)]
+    Shards --> Journal[Serializer-backed logical journal]
+    Journal --> Dispatcher[Publication dispatcher]
+    Raft[Raft metadata] -. publications / slots / sinks .-> Dispatcher
+
+    Dispatcher --> SlotA[Subscription slot]
+    SlotA --> TLS[TLS replication RPC]
+    TLS --> Apply[Target subscription applier]
+    Apply --> Target[(Target table)]
+
+    Dispatcher --> SlotB[Kafka sink slot]
+    SlotB --> Kafka[Kafka driver]
+    Kafka --> Topic[(Kafka topic)]
+
+    Dispatcher --> SlotC[Webhook sink slot]
+    SlotC --> Hook[HTTPS webhook driver]
 ```
-
----
-
-# 2. Dependencies
-
-## 2.1 Existing write and storage path
-
-CDC hooks are installed in `store_t`/`btree_store_t`, not in a driver or query term. `store_t::write` acquires a write transaction, invokes `protocol_write`, releases the superblock, and commits (`src/rdb_protocol/btree_store.cc:205-240`). `rdb_batched_replace` funnels row replacements through `do_a_replace_from_batched_replace`, which produces `rdb_modification_report_t` before changefeed and secondary-index work (`src/rdb_protocol/btree.cc:392-426`). The CDC hook belongs in that critical write operation, after old/new values are known and before transaction commit.
-
-Required additions:
-
-- `src/rdb_protocol/cdc.hpp` / `cdc.cc`: public CDC value types, slot manager, decoder, stream session, filtering, and serialization definitions.
-- `src/rdb_protocol/cdc_wal.hpp` / `cdc_wal.cc`: append/read/trim logical WAL segments against a `serializer_t` and the table's superblock metadata.
-- `src/rdb_protocol/store.hpp` / `store.cc`: one `cdc_table_state_t` per `store_t`, initialized before writes are accepted and drained before store destruction.
-- `src/rdb_protocol/btree.cc`: invoke `cdc_write_hook_t::append_row_change` in the same FIFO and commit ordering as `rdb_modification_report_cb_t`.
-- `src/rdb_protocol/btree_store.cc`: register the write transaction's CDC commit finalizer; it makes pending records visible only after data commit succeeds.
-
-The existing `expected_change_count = 2 + _write.expected_document_changes()` (`btree_store.cc:220-223`) must include CDC segment/header changes. The exact added count is returned by `cdc_write_hook_t::expected_block_writes(_write)`; it is `0` when CDC is globally disabled and otherwise reserves one segment/header update plus one durable index update per group of records committed in that transaction. Reservation must be conservative; under-reserving is forbidden.
-
-## 2.2 Changefeed infrastructure reuse
-
-Reuse:
-
-- `rdb_modification_report_t`: canonical primary key plus optional old/new `ql::datum_t` images.
-- `rdb_modification_report_cb_t` FIFO and cfeed stamp ordering: CDC appends are sequenced after mutation and before existing post-mutation notifications.
-- `auto_drainer_t`, `rwlock_t`, `cond_t`, bounded queues, mailbox patterns, and the state-change conventions exposed by existing changefeeds.
-- `ql::datum_t` encoding, `store_key_t`, `namespace_id_t`, and `region_t` identity rules.
-
-Do not reuse:
-
-- `ql::changefeed::server_t` as slot storage: it is keyed by transient region/query subscribers and has no durable offsets.
-- Changefeed queue overflow behavior: CDC cannot silently skip an event. A full slot buffer pauses network sending; durable WAL remains authoritative until retention expires.
-- Query transforms/secondary-index maintenance as the CDC filter language.
-
-## 2.3 Cluster/network dependencies
-
-`replica_t::do_write` applies replicated writes in timestamp order and `timestamp_enforcer_t` tracks completed writes (`src/clustering/immediate_consistency/replica.hpp:39-68`). The primary assigns the committed LSN; replicas receive the corresponding CDC WAL record through the same replication/backfill path and never independently allocate a replacement LSN. A promoted replica resumes from the persisted shard WAL head.
-
-The endpoint uses existing client listener and TLS/authentication infrastructure:
-
-- Driver socket server: `src/client_protocol/server.hpp:98-143` and `server.cc` authentication.
-- TCP listener: `tcp_listener_t` / `linux_tcp_listener_t` in `src/arch/io/network.hpp`.
-- HTTP dispatcher: `query_server_t::handle` (`client_protocol/server.hpp:128-140`).
-
-Create a `cdc_http_server_t` owned by the client protocol server rather than adding unauthenticated routes to the administrative web UI. It binds only to the configured driver addresses, inherits the configured TLS context, and is disabled unless `--cdc-http-port` is nonzero.
-
-## 2.4 ReQL/protobuf dependencies
-
-`ql2.proto` already carries ReQL terms, cursor responses, error categories, and changefeed notes. Add three non-conflicting term IDs after current value 201:
-
-- `CDC_STREAM = 202`
-- `CDC_CREATE_SLOT = 203`
-- `CDC_DROP_SLOT = 204`
-- `CDC_LIST_SLOTS = 205`
-
-Add `CDC_FEED = 6` to `Response.ResponseNote`. Preserve every existing integer. Generated protocol bindings and all maintained drivers must expose the same term IDs and optarg validation.
-
-## 2.5 Metadata, serializer, and disk compatibility
-
-CDC introduces a new on-disk cluster/storage version, `cluster_version_t::v3_0`. A v3.0 node must refuse to join a cluster containing older nodes when CDC is enabled. Older nodes deserialize a table without CDC only if its `cdc_wal_root_block == NULL_BLOCK_ID`; otherwise cluster upgrade gating rejects the metadata before an unsafe reader starts.
-
-The table-local superblock gains durable references to:
-
-- `cdc_wal_root_block`: auxiliary-block chain root;
-- `cdc_wal_tail_block`: current append segment;
-- `cdc_wal_head_lsn`, `cdc_wal_tail_lsn` (inclusive readable range);
-- `cdc_wal_format_version`.
-
-Cluster metadata gains a serializable `cdc_slot_catalog_t` stored in the system metadata region, not in individual user table files. Slot catalog mutations use the existing configuration/metadata consensus path; WAL payloads remain table/shard local.
-
----
-
-# 3. Interface (ReQL + C++ API)
-
-## 3.1 ReQL surface
-
-### CDC stream
-
+### 1.8 Key invariants
+1. A journal record exists iff its table mutation committed.
+2. An LSN is never reused after crash recovery, compaction, or failover.
+3. The source never advances a slot from a received-but-unconfirmed position.
+4. Journal retention is not released below an active slot's confirmed LSN.
+5. A WAL gap produces `RESYNC_REQUIRED`, never a best-effort later start.
+6. A duplicate event cannot duplicate a target subscription's row mutation.
+7. Publication filters determine eligibility before output redaction.
+8. No credential value is stored in Raft metadata or emitted in status/logs.
+9. A slow consumer consumes retained disk budget, not unbounded source memory.
+10. Dropping a publication is visible and terminal to attached consumers.
+## 2. API Design / ReQL Surface
+### 2.1 Create a publication
 ```javascript
-r.table("t").cdcStream({
-  slot: "orders_sink",                 // optional; ephemeral when omitted
-  from: checkpoint,                     // optional; required for stateless resume
-  include_initial: false,               // slot config default if omitted
-  include_ddl: false,                   // slot config default if omitted
-  operations: ["insert", "update", "delete", "ddl"],
-  columns: ["id", "status", "total"],
-  heartbeat_ms: 10000,
-  max_batch_bytes: 1048576
-})
+r.table("events").createPublication(
+  "events_publication",
+  {
+    filter: {
+      fields: ["tenant_id", "event_type", "status"],
+      operations: ["insert", "update", "delete"],
+      predicate: {tenant_id: "acme", event_type: {in: ["created", "cancelled"]}}
+    },
+    format: "json",
+    includeBefore: true,
+    includeAfter: true,
+    snapshot: "initial",
+    maxSlotLagBytes: 10737418240
+  }
+)
 ```
-
-`TABLE.cdcStream` returns an infinite cursor. A table stream may only use a slot whose exact normalized table selector is that table. `from` is a checkpoint datum returned by this API, never a caller-manufactured numeric LSN. `include_initial` is valid only for a new/initializing slot and is rejected once a slot has a confirmed checkpoint.
-
-Each normal event is a ReQL object:
-
+The publication belongs to the table UUID, not just its current name. A table rename preserves the publication relationship. A table drop terminates its publication. Creation returns `{created: 1, publication: "...", state: "creating"}` and becomes `ready` after Raft metadata installation and local
+capture registration complete.
+### 2.2 Publication options
+| Option | Default | Validation and meaning |
+| --- | --- | --- |
+| `filter` | no filter | Declarative operation/field/predicate restriction. |
+| `format` | `json` | `json` or `internal_rdb_v1`. External sinks may use only JSON. |
+| `includeBefore` | `true` | Emit before image when operation has one. |
+| `includeAfter` | `true` | Emit after image when operation has one. |
+| `snapshot` | `initial` | Default mode for attached consumers: `initial` or `none`. |
+| `maxSlotLagBytes` | cluster default | Hard retained-byte policy for attached slots. |
+At least one of `includeBefore` and `includeAfter` must be true. The server may retain both images internally even when one is not emitted, because source-side filter matching and future subscription correctness need them.
+### 2.3 Filter grammar
+A filter is deterministic declarative JSON, never an arbitrary ReQL lambda.
 ```javascript
 {
-  type: "insert",                      // insert | update | delete | ddl | snapshot | heartbeat
-  event_id: {cluster_id: "...", table_id: "...", shard_id: "...", lsn: 42},
-  checkpoint: {version: 1, cluster_id: "...", positions: [{table_id: "...", shard_id: "...", lsn: 42}]},
-  commit_ts: "2026-07-16T12:34:56.789Z",
-  database: "app",
-  table: "orders",
-  key: "o-42",
-  old_val: null,
-  new_val: {id: "o-42", status: "paid", total: 19.99},
-  changed_fields: ["id", "status", "total"]
-}
-```
-
-`ack` is issued on the same live cursor connection using the existing `CONTINUE` query control with optarg `cdc_ack: <checkpoint>`. Drivers must expose `cursor.cdcAck(checkpoint)`; it validates monotonically and persists before responding success. Merely fetching an event does not acknowledge it.
-
-### Slot commands
-
-```javascript
-r.cdcCreateSlot("slot_name", {
-  database: "app",                     // mutually exclusive with fully qualified tables
-  tables: ["orders", "customers"],     // one or more, canonical sorted table IDs on creation
-  include_initial: true,
-  include_ddl: true,
-  operations: ["insert", "update", "delete", "ddl"],
-  columns: ["id", "status"],
-  retention_seconds: 86400,
-  retention_bytes: 10737418240
-})
-
-r.cdcListSlots({include_dropped: false})
-r.cdcDropSlot("slot_name", {force: false})
-```
-
-`CDC_CREATE_SLOT` takes a literal string name and one literal object. It returns:
-
-```javascript
-{created: 1, slot: "slot_name", state: "initializing", checkpoint: {...}}
-```
-
-Slot names must match `[A-Za-z_][A-Za-z0-9_.-]{0,62}`. The normalized selector cannot be empty, duplicated, or refer to a nonexistent table. `retention_seconds` must be in `[60, 604800]`; `retention_bytes` must be in `[67108864, 1099511627776]`. `cdcDropSlot` is idempotent only with `force:true`; without it, a nonexistent slot returns `CDC_SLOT_NOT_FOUND`.
-
-A database-scoped slot resolves its table selector at create time and additionally stores `database_id`; tables created later in that database are included only if `follow_database_ddl: true` is explicitly set. The default is false, eliminating accidental data disclosure from future tables.
-
-## 3.2 C++ API
-
-Create these exact declarations in `src/rdb_protocol/cdc.hpp` (namespaces and project containers match existing RethinkDB conventions):
-
-```cpp
-namespace rdb_protocol {
-namespace cdc {
-
-enum class event_type_t : uint8_t {
-    INSERT = 1,
-    UPDATE = 2,
-    DELETE = 3,
-    DDL = 4,
-    SNAPSHOT = 5,
-    HEARTBEAT = 6
-};
-
-enum class ddl_type_t : uint8_t {
-    TABLE_CREATE = 1,
-    TABLE_DROP = 2,
-    TABLE_RENAME = 3,
-    SINDEX_CREATE = 4,
-    SINDEX_DROP = 5,
-    SINDEX_RENAME = 6
-};
-
-struct cdc_lsn_t {
-    uuid_u shard_id;
-    uint64_t value;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_lsn_t);
-};
-
-struct cdc_position_t {
-    namespace_id_t table_id;
-    cdc_lsn_t lsn;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_position_t);
-};
-
-struct cdc_checkpoint_t {
-    uint32_t format_version;
-    uuid_u cluster_id;
-    std::vector<cdc_position_t> positions;  // sorted (table_id, shard_id), no duplicates
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_checkpoint_t);
-};
-
-struct row_payload_t {
-    store_key_t primary_key;
-    optional<ql::datum_t> old_val;
-    optional<ql::datum_t> new_val;
-    std::vector<std::string> changed_fields;  // sorted UTF-8 top-level field names
-    RDB_DECLARE_ME_SERIALIZABLE(row_payload_t);
-};
-
-struct ddl_payload_t {
-    ddl_type_t ddl_type;
-    uuid_u database_id;
-    namespace_id_t table_id;
-    std::string database_name;
-    std::string table_name;
-    optional<std::string> old_name;
-    optional<std::string> index_name;
-    optional<ql::datum_t> definition;
-    RDB_DECLARE_ME_SERIALIZABLE(ddl_payload_t);
-};
-
-struct cdc_event_t {
-    uint32_t format_version;
-    event_type_t type;
-    uuid_u cluster_id;
-    uuid_u transaction_id;
-    namespace_id_t table_id;
-    uuid_u shard_id;
-    uint64_t lsn;
-    int64_t commit_unix_millis;
-    boost::variant<row_payload_t, ddl_payload_t> payload;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_event_t);
-};
-
-enum class slot_state_t : uint8_t {
-    CREATED = 1, INITIALIZING = 2, BACKFILLING = 3,
-    STREAMING = 4, PAUSED = 5, DROPPED = 6, INVALID = 7
-};
-
-struct cdc_filter_t {
-    std::vector<namespace_id_t> table_ids;  // sorted, nonempty
-    std::vector<std::string> columns;       // sorted; empty means all columns
-    uint32_t operation_mask;                // bit(event_type_t), SNAPSHOT implied by include_initial
-    bool include_ddl;
-    bool follow_database_ddl;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_filter_t);
-};
-
-struct cdc_slot_config_t {
-    uint32_t format_version;
-    std::string name;
-    uuid_u owner_user_id;
-    optional<uuid_u> database_id;
-    cdc_filter_t filter;
-    bool include_initial;
-    uint64_t retention_seconds;
-    uint64_t retention_bytes;
-    uint64_t max_buffered_events;
-    uint64_t max_buffered_bytes;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_slot_config_t);
-};
-
-struct cdc_slot_state_t {
-    cdc_slot_config_t config;
-    slot_state_t state;
-    cdc_checkpoint_t confirmed_checkpoint;
-    cdc_checkpoint_t snapshot_fence;
-    cdc_checkpoint_t retention_floor;
-    int64_t created_unix_millis;
-    int64_t updated_unix_millis;
-    std::string invalid_reason;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_slot_state_t);
-};
-
-class logical_wal_t;
-class cdc_slot_manager_t;
-
-class cdc_write_hook_t {
-public:
-    cdc_write_hook_t(logical_wal_t *wal, uuid_u cluster_id, namespace_id_t table_id,
-                     uuid_u shard_id, uuid_u transaction_id);
-    void append_row_change(const rdb_modification_report_t &report,
-                           event_type_t type, int64_t commit_unix_millis);
-    void append_ddl_change(const ddl_payload_t &payload, int64_t commit_unix_millis);
-    void commit(txn_t *txn, write_durability_t durability);
-    void abort();
-private:
-    // Owns uncommitted events. No record is readable until commit succeeds.
-};
-
-class cdc_slot_manager_t : public home_thread_mixin_t {
-public:
-    cdc_slot_state_t create_slot(const cdc_slot_config_t &config,
-                                 auth::user_context_t const &user_context,
-                                 signal_t *interruptor);
-    cdc_slot_state_t get_slot(const std::string &name,
-                              auth::user_context_t const &user_context) const;
-    std::vector<cdc_slot_state_t> list_slots(auth::user_context_t const &user_context) const;
-    void drop_slot(const std::string &name, bool force,
-                   auth::user_context_t const &user_context, signal_t *interruptor);
-    void acknowledge(const std::string &name, const cdc_checkpoint_t &checkpoint,
-                     auth::user_context_t const &user_context, signal_t *interruptor);
-    void validate_subscribe(const cdc_slot_state_t &slot, const cdc_checkpoint_t &from,
-                            auth::user_context_t const &user_context) const;
-};
-
-}  // namespace cdc
-}  // namespace rdb_protocol
-```
-
-`event_type_t` and `ddl_type_t` are manually serialized as validated `uint8_t`; never deserialize them with a blind `static_cast`. Reject an unknown value with `archive_result_t::SOCKET_ERROR`/the project’s malformed archive result and invalidate the affected slot instead of treating it as a row event.
-
-Serialization implementation requirements:
-
-```cpp
-RDB_IMPL_SERIALIZABLE_2_SINCE_v3_0(cdc_lsn_t, shard_id, value);
-RDB_IMPL_SERIALIZABLE_3_SINCE_v3_0(cdc_position_t, table_id, lsn);
-RDB_IMPL_SERIALIZABLE_3_SINCE_v3_0(cdc_checkpoint_t, format_version, cluster_id, positions);
-RDB_IMPL_SERIALIZABLE_4_SINCE_v3_0(row_payload_t, primary_key, old_val, new_val, changed_fields);
-RDB_IMPL_SERIALIZABLE_7_SINCE_v3_0(ddl_payload_t, ddl_type, database_id, table_id,
-                                   database_name, table_name, old_name, index_name, definition);
-RDB_IMPL_SERIALIZABLE_9_SINCE_v3_0(cdc_event_t, format_version, type, cluster_id,
-                                   transaction_id, table_id, shard_id, lsn,
-                                   commit_unix_millis, payload);
-```
-
-Because scoped enum classes are not automatically archive-serializable, `ddl_payload_t` and `cdc_event_t` use manual templates for their enum fields and validate them before setting the object. `boost::variant<row_payload_t, ddl_payload_t>` uses existing Boost variant archive support only after the enclosing event type/payload pairing is validated: row types require `row_payload_t`; DDL requires `ddl_payload_t`; all other types require a row payload with absent images as specified below.
-
-## 3.3 Wire protocol additions in `ql2.proto`
-
-ReQL events continue to travel as `Response` Datum objects for compatibility. The following protobuf messages define the HTTP/WebSocket binary protocol and are added after `Datum` in `ql2.proto`; field numbers are fixed forever:
-
-```proto
-message CdcCheckpoint {
-  optional uint32 format_version = 1;
-  optional string cluster_id = 2;  // canonical UUID
-  message Position {
-    optional string table_id = 1;
-    optional string shard_id = 2;
-    optional uint64 lsn = 3;
+  fields: ["tenant_id", "event_type"],
+  operations: ["insert", "update", "delete"],
+  predicate: {
+    tenant_id: "acme",
+    event_type: {in: ["created", "cancelled"]}
   }
-  repeated Position positions = 3; // canonical sorted order
-}
-
-message CdcEvent {
-  enum EventType { INSERT = 1; UPDATE = 2; DELETE = 3; DDL = 4; SNAPSHOT = 5; HEARTBEAT = 6; }
-  optional uint32 format_version = 1;
-  optional EventType type = 2;
-  optional string cluster_id = 3;
-  optional string transaction_id = 4;
-  optional string table_id = 5;
-  optional string shard_id = 6;
-  optional uint64 lsn = 7;
-  optional sint64 commit_unix_millis = 8;
-  optional string database = 9;
-  optional string table = 10;
-  optional Datum primary_key = 11;
-  optional Datum old_val = 12;
-  optional Datum new_val = 13;
-  repeated string changed_fields = 14;
-  optional Datum ddl = 15;
-  optional CdcCheckpoint checkpoint = 16;
-}
-
-message CdcFrame {
-  enum FrameType { SUBSCRIBE = 1; EVENT = 2; ACK = 3; ERROR = 4; HEARTBEAT = 5; CLOSE = 6; }
-  optional FrameType type = 1;
-  optional string request_id = 2;
-  optional string slot = 3;
-  optional CdcCheckpoint checkpoint = 4;
-  optional CdcEvent event = 5;
-  optional string code = 6;
-  optional string message = 7;
 }
 ```
-
-## 3.4 HTTP/WebSocket consumer protocol
-
-- `GET /api/v1/cdc/slots`: authenticated JSON list; requires CDC administration permission.
-- `POST /api/v1/cdc/slots`: authenticated JSON slot creation; same validation as `cdcCreateSlot`.
-- `DELETE /api/v1/cdc/slots/{slot}?force=false`: slot drop.
-- `GET /api/v1/cdc/stream?slot=<name>&from=<base64url-checkpoint>`: WebSocket upgrade only. Plain HTTP returns `426 Upgrade Required` with `CDC_WEBSOCKET_REQUIRED`.
-
-The endpoint authenticates with the same SCRAM/client credentials before the upgrade and obtains an `auth::user_context_t`; credentials in URL query parameters are rejected. After upgrade, every frame is a length-delimited protobuf `CdcFrame` with a maximum uncompressed size of 1 MiB. Client sends `SUBSCRIBE` first within 10 seconds, server returns `EVENT`/`HEARTBEAT`, client sends monotonic `ACK`, and either side sends `CLOSE`. No server frame is compressed by default.
-
-A `SUBSCRIBE` frame has slot name and optional checkpoint. A provided checkpoint takes precedence over the stored checkpoint only for replay start; it may not be older than the stored confirmed checkpoint unless the caller holds slot-owner/admin authority and explicitly sets `allow_replay_before_confirmed: true` at creation time. The v3.0 default is false.
-
----
-
-# 4. Behavior
-
-## 4.1 Logical WAL append and read
-
-1. `rdb_replace_and_return_superblock` calculates old/new images. Classify: absent old + present new = `INSERT`; present old + present new = `UPDATE`; present old + absent new = `DELETE`; both absent creates no event.
-2. `cdc_write_hook_t` canonicalizes the images, primary key, changed top-level fields, table ID, shard ID, transaction ID, and commit wall-clock candidate. It allocates no public LSN yet.
-3. At the transaction’s serialization point, `logical_wal_t` allocates consecutive LSNs, writes a segment record with CRC32C, then updates the segment/header tail in the same serializer transaction. A multi-row ReQL write gets consecutive LSNs in the existing `fifo_enforcer_t` order used by `rdb_batched_replace`; it must not use coroutine completion order.
-4. After `txn_t::commit()` returns, `logical_wal_t` advances the in-memory committed tail and pulses subscribers. If the process fails before commit, recovery ignores the uncommitted segment tail. If it fails after commit but before notification, startup rebuilds the tail from superblock metadata and readers replay it.
-5. The decoder reads immutable committed segments only, validates magic/version/length/CRC/monotonic LSN, and returns canonical `cdc_event_t` objects. It never reads raw serializer log pages outside the CDC segment chain.
-
-Segment record layout, in this exact byte order:
-
-```text
-uint32 magic = 0x52434443              // "RCDC"
-uint16 format_version = 1
-uint16 header_bytes = 64
-uuid cluster_id
-uuid transaction_id
-uuid table_id
-uuid shard_id
-uint64 first_lsn
-uint32 event_count
-uint32 payload_bytes
-uint32 payload_crc32c
-uint32 header_crc32c
-payload: concatenated length-prefixed serialized cdc_event_t records
+Rules:
+- `operations` defaults to insert, update, replace, and delete.
+- `fields` is an output allowlist; `primary_key`, operation, LSN, and metadata remain in the event envelope.
+- `predicate` is a conjunction of top-level scalar equality or finite `in`.
+- Nested paths, regexes, functions, nondeterministic values, and table reads are rejected at publication creation.
+- Insert evaluates `new_val`; delete evaluates `old_val`.
+- Update/replace evaluates both images; publish if either matches so a target can remove a row that has moved outside the filter.
+- A missing predicate field does not match.
+- Projection happens after eligibility evaluation, so predicate-only fields are not accidentally exported.
+### 2.4 Create a subscription
+```javascript
+r.db("target").createSubscription(
+  "events_from_primary",
+  {
+    source: "rethinkdbs://source.example:29100/production.events.events_publication",
+    targetTable: "events",
+    conflict: "last_write_wins",
+    snapshot: "initial",
+    auth: {tokenRef: "secret://replication/source-primary"},
+    tls: {verifyServer: true, serverName: "source.example"},
+    applyBatchSize: 1000
+  }
+)
 ```
-
-Records in one committed user transaction share `transaction_id`; the segment may contain several transactions but record boundaries and event CRCs must be preserved. A segment is sealed at 4 MiB or when the transaction would exceed it. An oversize single row is rejected before mutation with `CDC_EVENT_TOO_LARGE`; CDC never truncates a row silently.
-
-## 4.2 Ordering guarantees
-
-- **Within a table shard:** events are strictly increasing by LSN in committed write order. The subscriber must observe LSN `N` before `N+1`.
-- **Within a table:** each shard has a strict sequence. The coordinator performs a deterministic k-way merge by `(commit_unix_millis, shard_id bytes, lsn)`, but this is a presentation order, not a claim of cross-shard serializability. Each event carries its shard LSN.
-- **Across tables:** no fabricated global scalar LSN. `cdc_checkpoint_t.positions` is the causal vector. A multi-table consumer acknowledges the vector after durably applying all events at or below its positions.
-- **Transactional visibility:** events from a single table-shard transaction are emitted contiguously. Cross-shard ReQL operations may produce multiple transaction groups and have only the vector/checkpoint causal relation.
-- **Failover:** no event may be emitted with an LSN that differs from the persisted primary record. A new primary starts at `tail_lsn + 1` after verifying the durable tail.
-
-## 4.3 Slot creation, checkpoint, and acknowledgement
-
-Creation persists configuration and a `CREATED` state atomically in metadata. It captures a per-selected-shard WAL tail as `snapshot_fence`. If `include_initial` is false, it stores that fence as the initial confirmed checkpoint and transitions directly to `STREAMING`. If true, it transitions to `INITIALIZING`, then `BACKFILLING` after all selected table shards acknowledge the fence.
-
-An acknowledgement is accepted only if all conditions hold:
-
-1. `format_version == 1`, `cluster_id` equals this cluster, and positions exactly cover the slot’s selected shards.
-2. Each acknowledged LSN is `>=` stored confirmed LSN and `<=` currently delivered high-water LSN for that session.
-3. Each LSN is at or above the current retention floor.
-4. The authenticated principal can subscribe to every selected table and owns the slot or has CDC administration permission.
-
-On success, persist the normalized checkpoint before sending an ACK success response. Duplicate ACKs are success/no-op. A partial/non-monotonic/future ACK returns the exact error listed in Section 7 and does not mutate state.
-
-```mermaid
-sequenceDiagram
-  participant C as Consumer
-  participant S as CDC stream session
-  participant M as Slot manager
-  participant W as Logical WAL
-  C->>S: SUBSCRIBE(slot, from checkpoint)
-  S->>M: validate slot, auth, retention floor
-  M->>W: read from normalized position
-  W-->>S: events E(n..m) + high-water vector
-  S-->>C: EVENT(E(n..m), checkpoint)
-  C->>S: ACK(checkpoint m)
-  S->>M: validate monotonic delivered checkpoint
-  M->>M: durably persist confirmed_checkpoint
-  M-->>S: persisted
-  S-->>C: ACK success / next EVENT
+A subscription commits local target metadata first, then transitions through `connecting`, `snapshotting`, `catching_up`, and `streaming`. The target table must already exist. The source locator is verified on handshake and persisted as source cluster/table/publication UUIDs; reconnecting to a
+different object with the same name is rejected.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `targetTable` | subscription name | Existing target table name. |
+| `conflict` | `last_write_wins` | `last_write_wins`, `primary_key_merge`, or `custom`. |
+| `conflictHandler` | absent | Required deterministic restricted ReQL function for `custom`. |
+| `snapshot` | `initial` | `initial` gives bootstrap parity; `none` starts at a safe current position. |
+| `auth` | required | Source credential reference, not a literal secret. |
+| `tls` | required | Source TLS verification configuration. |
+| `applyBatchSize` | 1000 | Maximum target apply batch size. |
+### 2.5 Create a CDC sink
+```javascript
+r.table("events").createCDCSink(
+  "events_kafka",
+  {
+    publication: "events_publication",
+    type: "kafka",
+    brokers: ["kafka-1.example:9093", "kafka-2.example:9093"],
+    topic: "rethinkdb.production.events",
+    credentialsRef: "secret://kafka/events-writer",
+    batchSize: 500,
+    flushIntervalMs: 100,
+    maxInFlightBatches: 4,
+    deadLetter: {type: "kafka", topic: "rethinkdb.production.events.dlq"}
+  }
+)
 ```
+```javascript
+r.table("events").createCDCSink(
+  "events_webhook",
+  {
+    publication: "events_publication",
+    type: "webhook",
+    url: "https://receiver.example/v1/rethinkdb/events",
+    credentialsRef: "secret://webhook/events",
+    batchSize: 100,
+    flushIntervalMs: 250
+  }
+)
+```
+```javascript
+r.table("events").createCDCSink(
+  "events_archive",
+  {
+    publication: "events_publication",
+    type: "s3",
+    bucket: "analytics-archive",
+    prefix: "rethinkdb/events/",
+    credentialsRef: "secret://s3/analytics-archive",
+    batchSize: 10000,
+    flushIntervalMs: 5000
+  }
+)
+```
+A sink creates its own slot. A fast sink cannot hide a slow sink's retention lag. Only sink drivers compiled and configured by the server are accepted; RethinkDB does not infer arbitrary protocols from a URL.
+### 2.6 Management API
+```javascript
+r.publicationList()
+r.publicationStatus("events_publication")
+r.publicationDrop("events_publication")
 
-## 4.4 Slot operations and inspection
-
-`cdcListSlots` returns slot config/state, owner name, confirmed checkpoint, snapshot fence, retention floor, `lag_events`, `lag_bytes`, oldest unacked age, and `invalid_reason`. Lag is a sum over selected shard `tail_lsn - confirmed_lsn`; bytes use segment accounting and are approximate but must be labelled `lag_bytes_estimate`.
-
-Drop behavior:
-
-- Normal drop requires no active subscriber. It transitions `PAUSED -> DROPPED`, removes catalog metadata after active session drain, and schedules retention recalculation.
-- `force:true` interrupts active sessions with `CDC_SLOT_DROPPED`, drains their buffers, transitions immediately to `DROPPED`, and deletes state after the metadata commit.
-- Slots are name-reserved until deletion commits; concurrent create/drop serialization occurs in the catalog metadata transaction.
-
-## 4.5 Backfill
-
-A slot with `include_initial:true` follows this exact protocol:
-
-1. Capture and persist `snapshot_fence` per selected shard while holding the same snapshot/read barrier used by store reads.
-2. Read every selected table shard from a snapshot at that fence, in primary-key ascending order. Emit `SNAPSHOT` events containing `new_val`, `primary_key`, and the fence checkpoint. Snapshot events have no WAL LSN of their own; `event_id` has `lsn: 0` and `snapshot: true` in the public object.
-3. Persist an internal per-shard scan cursor after each 10,000 rows or 10 MiB, whichever comes first, so backfill resumes after restart without re-emitting completed chunks. Consumer-level at-least-once still permits a final chunk replay.
-4. After every selected shard has emitted its snapshot at the same persisted fence, switch to WAL reading at `fence_lsn + 1` for each shard, transition to `STREAMING`, and emit `caught_up` state once all live tails are reached.
-5. A table drop during backfill produces DDL if enabled and finishes that table’s scan; a slot remains valid for remaining tables. A database drop invalidates the slot with `CDC_SOURCE_DROPPED`.
-
-## 4.6 Filtering and projection
-
-Filtering happens after decode and authorization but before per-slot buffer accounting:
-
-- Table filter is exact `namespace_id_t` membership; names are never used after creation.
-- Operation mask applies to `INSERT`, `UPDATE`, `DELETE`, and `DDL`; `SNAPSHOT` is governed only by `include_initial`.
-- Column filtering projects `old_val` and `new_val` to the configured top-level fields plus primary key. If the primary key is not named `id`, include the table’s configured primary key field. `changed_fields` is intersected with requested columns.
-- DDL payloads are never field-projected.
-- Events that fail a filter still advance the source read position; their position is included in the next delivered event checkpoint and heartbeat. This prevents permanent replay loops.
-
-No function, expression, JavaScript, or secondary-index predicate is accepted for `cdc_filter_t`; these are non-deterministic or not durable across versions.
-
-## 4.7 DDL capture
-
-DDL operations are appended through `cdc_write_hook_t::append_ddl_change` only after the catalog metadata operation succeeds and before its metadata transaction commits. Capture: table create/drop/rename and secondary-index create/drop/rename. Payload `definition` is the existing ReQL/canonical catalog datum for table/index configuration, redacted of credentials. DDL records use the affected table ID and its metadata shard ID. Table creation does not automatically add the table to a named table-list slot; database slots with `follow_database_ddl:true` atomically expand their table ID list at the create checkpoint.
-
----
-
-# 5. Data
-
-## 5.1 Persistent logical WAL metadata and slot files
-
-`cdc_table_metadata_t` is embedded in the table’s durable superblock tail and version-gated at v3.0:
-
+r.table("events").subscriptionList()
+r.table("events").cdcSinkList()
+r.table("events").cdcSinkStatus("events_kafka")
+r.table("events").cdcSinkDrop("events_kafka")
+```
+`publicationStatus` returns publication state, source table identity, format, retention floor, and consumer summaries. A consumer summary contains name, kind, state, confirmed LSN per shard, lag bytes, lag time, retry count, and redacted last error. It never returns bearer tokens, passwords, private
+keys, or resolved credential data.
+```javascript
+{
+  name: "events_publication",
+  state: "ready",
+  table: {db: "production", table: "events", table_id: "..."},
+  format: "json",
+  consumers: [{
+    name: "events_from_primary",
+    kind: "subscription",
+    state: "streaming",
+    lag_bytes: 16384,
+    lag_ms: 42,
+    last_error: null
+  }]
+}
+```
+Dropping a publication first commits `dropping` through Raft, rejects new connections, sends a terminal control frame to consumers, releases their pins once terminal state is durable, and removes metadata. It never drops target tables or deletes already delivered external data.
+### 2.7 Term types and compatibility
+Add these stable `TermType` entries in `src/rdb_protocol/ql2.proto`:
+```protobuf
+PUBLICATION_CREATE = <allocated>;
+PUBLICATION_LIST = <allocated>;
+PUBLICATION_STATUS = <allocated>;
+PUBLICATION_DROP = <allocated>;
+SUBSCRIPTION_CREATE = <allocated>;
+SUBSCRIPTION_LIST = <allocated>;
+SUBSCRIPTION_STATUS = <allocated>;
+SUBSCRIPTION_DROP = <allocated>;
+CDC_SINK_CREATE = <allocated>;
+CDC_SINK_LIST = <allocated>;
+CDC_SINK_STATUS = <allocated>;
+CDC_SINK_DROP = <allocated>;
+```
+Numeric IDs must be allocated only after inspecting existing proto values; this design intentionally does not guess them. The change regenerates supported driver bindings. CDC DDL is cluster-version-gated and rejected until all members can deserialize and enforce the new metadata.
+### 2.8 Authorization
+- Publication creation/drop requires source-table administration permission.
+- Subscription creation/drop requires target database/table administration and permission to use the named credential reference.
+- Sink creation/drop requires source-table administration and credential access.
+- Connection-time authorization verifies both publication access and permission to operate the specific slot.
+- Detailed filters/status are visible only to owners and administrators.
+- System tables, incomplete tables, and tables being dropped reject publication creation.
+## 3. Data Structures
+### 3.1 Identity and position types
 ```cpp
-struct cdc_table_metadata_t {
-    uint32_t format_version;             // 1
-    block_id_t wal_root_block;
-    block_id_t wal_tail_block;
-    uint64_t wal_head_lsn;               // 0 when empty
-    uint64_t wal_tail_lsn;               // 0 when empty
-    uint64_t retained_bytes;
-    RDB_DECLARE_ME_SERIALIZABLE(cdc_table_metadata_t);
+struct log_sequence_number_t {
+    uint64_t value;
+    bool operator<(const log_sequence_number_t &other) const;
+    bool operator==(const log_sequence_number_t &other) const;
+};
+
+struct shard_lsn_t {
+    uuid_u shard_id;
+    log_sequence_number_t lsn;
+};
+
+struct change_event_id_t {
+    uuid_u source_cluster_id;
+    uuid_u table_id;
+    uuid_u shard_id;
+    log_sequence_number_t lsn;
 };
 ```
+An LSN is shard-local, durable, and never reused. `change_event_id_t` is the idempotence key. A timestamp is not an idempotence key because clocks can skew or share insufficient resolution.
+### 3.2 Publication configuration
+```cpp
+enum class publication_format_t { JSON_V1, INTERNAL_RDB_V1 };
+enum class publication_state_t { CREATING, READY, DROPPING, DROPPED, ERROR };
 
-`wal_head_lsn == wal_tail_lsn == 0` is the only empty state. Otherwise `wal_head_lsn <= wal_tail_lsn`; all referenced blocks must be non-null. Any violation is corruption, never an empty WAL.
+struct publication_filter_t {
+    std::set<std::string> projected_fields;
+    std::set<change_operation_t> operations;
+    std::map<std::string, filter_predicate_t> predicates;
+};
 
-`cdc_slot_catalog_t` is one serializer-backed metadata blob containing a lexicographically sorted map from slot name to `cdc_slot_state_t`. Slot data is not a separate host filesystem file: placement under the cluster metadata serializer ensures replication, atomic update, and backup behavior match other metadata. Its durable layout is versioned and begins with `uint32_t format_version = 1`; appending optional fields requires an explicit v3.x version and safe defaults.
+struct publication_config_t {
+    uuid_u publication_id;
+    name_string_t name;
+    uuid_u database_id;
+    uuid_u table_id;
+    publication_filter_t filter;
+    publication_format_t format;
+    bool include_before_image;
+    bool include_after_image;
+    snapshot_mode_t default_snapshot_mode;
+    uint64_t max_slot_lag_bytes;
+    publication_state_t state;
+    uuid_u created_by_user_id;
+    microtime_t created_at;
+};
+```
+This is Raft-managed metadata. It references stable database/table UUIDs and uses names only for display/lookup. Its serialized format is additive and cluster-version-gated.
+### 3.3 Subscription configuration
+```cpp
+enum class conflict_resolution_t {
+    LAST_WRITE_WINS,
+    PRIMARY_KEY_MERGE,
+    CUSTOM_REQL
+};
 
-## 5.2 Canonical checkpoint JSON
+enum class subscription_state_t {
+    CREATING, CONNECTING, SNAPSHOTTING, CATCHING_UP, STREAMING,
+    PAUSED, RESYNC_REQUIRED, ERROR, DROPPING, DROPPED
+};
 
-The public checkpoint datum is canonical JSON:
+struct subscription_config_t {
+    uuid_u subscription_id;
+    name_string_t name;
+    source_publication_locator_t source;
+    uuid_u target_database_id;
+    uuid_u target_table_id;
+    conflict_resolution_t conflict_resolution;
+    optional<serialized_reql_function_t> conflict_handler;
+    snapshot_mode_t snapshot_mode;
+    secret_reference_t source_auth;
+    tls_client_config_t tls;
+    uint32_t apply_batch_size;
+    subscription_state_t state;
+};
+```
+The verified source identity includes source cluster, table, and publication UUIDs. The target rejects a same-name but different source identity during a later reconnect.
+### 3.4 CDC sink configuration
+```cpp
+enum class cdc_sink_type_t { KAFKA, WEBHOOK, FILE, S3 };
+enum class cdc_sink_state_t {
+    CREATING, CONNECTING, STREAMING, RETRYING, PAUSED,
+    DEAD_LETTERING, ERROR, DROPPING, DROPPED
+};
 
+struct cdc_batching_config_t {
+    uint32_t max_records;
+    uint32_t max_in_flight_batches;
+    uint64_t flush_interval_ms;
+    uint64_t max_buffer_bytes;
+};
+
+struct cdc_sink_config_t {
+    uuid_u sink_id;
+    name_string_t name;
+    uuid_u publication_id;
+    cdc_sink_type_t type;
+    datum_t connection_parameters;
+    secret_reference_t credentials;
+    cdc_batching_config_t batching;
+    optional<dead_letter_config_t> dead_letter;
+    cdc_sink_state_t state;
+};
+```
+`connection_parameters` holds validated non-secret addresses/topics/buckets. Credentials are secret-provider references and never literal durable fields.
+### 3.5 Change record
+```cpp
+enum class change_operation_t { INSERT, UPDATE, REPLACE, DELETE };
+
+struct change_record_t {
+    change_event_id_t event_id;
+    microtime_t commit_timestamp;
+    change_operation_t operation;
+    uuid_u database_id;
+    uuid_u table_id;
+    store_key_t primary_key;
+    optional<ql::datum_t> old_value;
+    optional<ql::datum_t> new_value;
+    uuid_u write_transaction_id;
+    uint32_t schema_version;
+};
+```
+Insert has only `new_value`; delete has only `old_value`; update/replace have both. A no-op update emits no record. The durable journal retains full images in Phase 3; publication projection is an output concern.
+### 3.6 Replication slot
+```cpp
+enum class replication_slot_state_t {
+    INITIALIZING, SNAPSHOTTING, ACTIVE, PAUSED, RETRYING,
+    RESYNC_REQUIRED, EVICTED, ERROR, DROPPING
+};
+
+struct replication_slot_t {
+    uuid_u slot_id;
+    uuid_u publication_id;
+    consumer_identity_t consumer;
+    replication_slot_state_t state;
+    std::map<uuid_u, log_sequence_number_t> confirmed_lsn_by_shard;
+    std::map<uuid_u, log_sequence_number_t> flush_lsn_by_shard;
+    std::map<uuid_u, log_sequence_number_t> snapshot_barrier_lsn_by_shard;
+    microtime_t last_ack_at;
+    uint64_t retained_bytes;
+    optional<replication_error_t> last_error;
+};
+```
+`flush_lsn` means received and is diagnostic only. `confirmed_lsn` means consumer-durable and is the sole retention-release cursor. It is monotonic and must acknowledge contiguous LSNs only.
+### 3.7 Target apply ledger
+```cpp
+struct applied_change_t {
+    change_event_id_t event_id;
+    microtime_t applied_at;
+    uuid_u subscription_id;
+};
+
+class subscription_applier_t : public home_thread_mixin_t {
+public:
+    void apply_batch(const std::vector<change_record_t> &records,
+                     signal_t *interruptor);
+    bool already_applied(const change_event_id_t &event_id,
+                         signal_t *interruptor) const;
+};
+```
+The applier writes target changes and ledger entries in one target transaction where supported. A crash after apply but before network ACK causes replay; the ledger suppresses duplicate row mutation. Ledger entries are retained for the subscription lifetime in Phase 3 unless a proven-safe compaction
+rule exists.
+### 3.8 Metadata ownership
+Raft owns publication/subscription/sink definitions and durable lifecycle state. The replication coordinator batches high-frequency progress checkpointing rather than proposing to Raft per event. A process crash can replay a small confirmed suffix, which is acceptable because delivery is at least
+once. Table config continues to own table/shard layout; CDC metadata refers to stable table IDs.
+## 4. WAL / Change Capture
+### 4.1 Capture invariants
+The serializer/log-structured engine is the durability base. Phase 3 adds a logical journal layered on committed write transactions. It does not reinterpret raw serializer entries on demand as the public CDC format.
+Required properties:
+1. Each committed primary-row mutation receives one committed logical record.
+2. Aborted writes emit no record.
+3. Row mutation, LSN assignment, and logical record commit atomically.
+4. Logical records remain decodable after physical serializer compaction.
+5. Recovery restores the durable high-water LSN before dispatch resumes.
+6. Extent reclamation consults active replication slot retention pins.
+### 4.2 Write capture seam
+Capture starts in `store_t::write()` after mutation logic has produced normalized before/after images and before the surrounding serializer transaction commits. `btree_store_t` must preserve enough mutation-report information to identify operation type, primary key, old image, and resulting image
+for every changed row. The capture code stages `change_record_t` entries in that transaction.
+A post-commit notification wakes the dispatcher. It is not correctness-critical: if the notification is lost, the dispatcher reads from the durable journal using its slot cursor.
+### 4.3 Mutation normalization
+| Mutation | Event | Old image | New image |
+| --- | --- | --- | --- |
+| Insert absent key | `insert` | absent | inserted document |
+| Replace existing key | `replace` | previous document | replacement document |
+| Update existing key | `update` | previous document | resulting document |
+| Delete existing key | `delete` | removed document | absent |
+| No-op update | none | n/a | n/a |
+The source captures `ql::datum_t` values with existing durable datum serialization. It does not serialize values via lossy string formatting.
+### 4.4 Journal layout
+The logical journal is an append-only serializer-managed extent stream per table shard. It uses a versioned record independent of physical page layout:
+```text
+logical_record_header
+  format_version, table_id, shard_id, lsn
+  transaction_id, commit_timestamp, operation
+  primary_key length + durable datum/key encoding
+  old-value present marker + payload
+  new-value present marker + payload
+  checksum
+```
+A journal index maps LSN ranges to extents and is checkpointed with durable shard metadata. Recovery loads a checkpoint, validates the tail, and discards only uncommitted/incomplete tail records. It must never reorder, manufacture, or reuse LSNs.
+### 4.5 LSN allocation
+LSNs are assigned by the shard-local durable journal owner. The current high-water value advances in the same transaction as its record. A multi-row write on one shard produces increasing LSNs in mutation commit order. A write spanning shards creates one ordered sequence per shard and may share its
+`write_transaction_id` across records.
+### 4.6 Snapshot plus stream
+For `snapshot: "initial"`:
+1. Create the source slot and persist a snapshot barrier LSN for every shard.
+2. Read a consistent source-table image at those barriers through normal table routing and shard read facilities.
+3. Send rows as `snapshot: true` frames, partitioned by source shard/key range.
+4. Send journal events strictly after each shard's barrier when that snapshot partition is durable at the consumer.
+5. Mark the slot active only after all snapshot partitions complete.
+Snapshot rows are not synthetic insert events. They carry an explicit snapshot flag, allowing target appliers and external systems to bootstrap deliberately.
+### 4.7 Retention and extent GC
+For a table shard, the retention floor is the minimum confirmed LSN across its active slots, subject to configured extra retention. A journal extent is reclaimable only when all covered records are below this floor.
+`src/serializer/log/lba/extent_manager.hpp` gains retention consultation with behavior equivalent to:
+```cpp
+class logical_log_retention_t {
+public:
+    void pin_through(const uuid_u &table_id, const uuid_u &shard_id,
+                     log_sequence_number_t required_lsn);
+    void advance_slot(const uuid_u &slot_id, const shard_lsn_t &confirmed);
+    log_sequence_number_t retention_floor(const uuid_u &table_id,
+                                          const uuid_u &shard_id) const;
+};
+```
+The final API must follow existing extent-manager ownership and coroutine style. The non-negotiable rule is that GC cannot infer safety from an in-memory ACK or an open TCP connection.
+### 4.8 Stalled consumers and capacity policy
+| Control | Behavior |
+| --- | --- |
+| `max_slot_lag_bytes` | Warn at 80%; enforce explicit pause/eviction policy at the configured hard limit. |
+| `max_slot_lag_age` | Alert when a slot is stale; durable subscriptions are not silently discarded. |
+| Slot lease timeout | May evict explicitly ephemeral consumers only. |
+| Disk watermarks | Identify pinning slots and refuse unsafe new workload before integrity is threatened. |
+An evicted slot records `EVICTED`, its last confirmed LSN, and the retention floor at eviction. Reconnect compares required LSN with retained history. If history is gone, it enters `RESYNC_REQUIRED`; it never silently resumes later.
+### 4.9 Backpressure
+Per-slot dispatch uses bounded in-memory queues. It stops reading beyond `maxInFlightBatches` or `maxBufferBytes`, lets the retained journal buffer changes, and reports slot lag. Source foreground writes are never blocked solely because Kafka, a webhook, or a target cluster is slow.
+## 5. Protocol / Wire Format
+### 5.1 Transport
+Cluster-to-cluster replication uses a dedicated TLS-authenticated long-lived stream on the existing mailbox/RPC infrastructure. It is separate from legacy changefeed cursors. Framed messages support bounded chunked transfer; a large document cannot require an unbounded receiver allocation.
+A WebSocket developer gateway may be designed later, but it is not the trusted cross-cluster protocol for this phase.
+### 5.2 Handshake
+1. Consumer opens TLS and validates source certificate/server name.
+2. Consumer authenticates with a publication-scoped credential.
+3. Consumer sends publication identity, consumer ID, supported schemas, requested snapshot mode, and durable confirmed positions.
+4. Source authorizes identity, verifies publication state, and binds/creates slot.
+5. Source returns source cluster/table/publication UUIDs, retention floors, and snapshot barriers or live start positions.
+6. Both peers reject an unsupported mandatory protocol version before data flow.
+A slot is bound to authenticated consumer identity. Guessing a slot ID cannot advance its cursor or release retained data.
+### 5.3 Frames
+```cpp
+enum class replication_frame_type_t : uint8_t {
+    HELLO, START_REPLICATION, STARTED,
+    SNAPSHOT_BEGIN, SNAPSHOT_ROW, SNAPSHOT_END,
+    CHANGE_BATCH, ACK, HEARTBEAT,
+    PAUSE, RESUME, ERROR, PUBLICATION_DROPPED,
+    RESYNC_REQUIRED, CLOSE
+};
+```
+All frames include protocol version, slot/stream ID, bounded payload length, and frame type. TLS provides transport integrity. Receivers enforce maximum frame, record, and batch sizes before allocating payload buffers.
+### 5.4 JSON envelope
 ```json
 {
-  "version": 1,
-  "cluster_id": "550e8400-e29b-41d4-a716-446655440000",
-  "positions": [
-    {"table_id": "...", "shard_id": "...", "lsn": 991}
-  ]
+  "schema_version": 1,
+  "event_id": "cluster/table/shard/0000000000004a2f",
+  "lsn": "0000000000004a2f",
+  "source_cluster_id": "d4b0...",
+  "shard_id": "40f6...",
+  "timestamp": "2026-07-16T12:34:56.789Z",
+  "op": "update",
+  "db": "production",
+  "table": "events",
+  "primary_key": "evt_42",
+  "old_val": {"id": "evt_42", "status": "pending"},
+  "new_val": {"id": "evt_42", "status": "published"},
+  "snapshot": false,
+  "transaction_id": "..."
 }
 ```
-
-UUIDs are lowercase RFC 4122 strings. `positions` is sorted by raw table UUID then raw shard UUID. Parsers reject unknown top-level keys, duplicate positions, missing selected shards, `lsn < 0`, numeric non-integers, and a cluster ID mismatch. Checkpoints are opaque compatibility values: consumers must persist and replay the complete object, not edit individual LSNs.
-
-## 5.3 Event payload rules
-
-| Event type | `old_val` | `new_val` | `changed_fields` | `ddl` |
-| --- | --- | --- | --- | --- |
-| insert | absent / JSON null | required | all top-level keys of new value | absent |
-| update | required | required | sorted union-difference of top-level fields | absent |
-| delete | required | absent / JSON null | all top-level keys of old value | absent |
-| snapshot | absent | required | all top-level keys of new value | absent |
-| ddl | absent | absent | empty | required |
-| heartbeat | absent | absent | empty | absent |
-
-`old_val`/`new_val` in the C++ representation are `optional<datum_t>` so absence differs from a row whose datum has JSON `null` (rows themselves must be objects, but retain the distinction). Wire rendering uses JSON null for absence and includes no row object for heartbeat/DDL.
-
-## 5.4 Configuration
-
-Server configuration keys and defaults:
-
-| Key | Type/default | Validation/effect |
+Delete omits `new_val`; insert omits `old_val`. Projected values may have fields removed, but operation, primary key, LSN, and event identity stay present. RethinkDB JSON pseudotype behavior is used for values requiring it.
+`internal_rdb_v1` is a versioned binary envelope containing the same logical fields and durable datum serialization. It is allowed only for RethinkDB target subscriptions, not generic external sinks.
+### 5.5 Batches and acknowledgements
+A batch contains consecutive records from one source shard. The sender flushes on record count, elapsed latency, or flow-control pressure.
+| Setting | Default | Bounds |
 | --- | --- | --- |
-| `--cdc-enabled` | bool, `false` | Enables durable WAL creation after cluster v3.0 check. Existing data writes remain supported when false. |
-| `--cdc-http-port` | int, `0` | `0` disables HTTP/WebSocket endpoint; otherwise valid non-privileged TCP port. |
-| `--cdc-retention-seconds` | uint64, `86400` | `[60, 604800]`; global maximum for slot requests. |
-| `--cdc-retention-bytes` | uint64, `10737418240` | `[64 MiB, 1 TiB]`; global maximum per table. |
-| `--cdc-max-slots` | uint32, `128` | `[1, 4096]` per cluster. |
-| `--cdc-max-buffered-events` | uint64, `100000` | `[100, 10000000]` per active session. |
-| `--cdc-max-buffered-bytes` | uint64, `67108864` | `[1 MiB, 1 GiB]` per active session. |
-| `--cdc-heartbeat-ms` | uint32, `10000` | `[1000, 60000]`; only heartbeat cadence, not ACK timeout. |
-| `--cdc-consumer-timeout-ms` | uint32, `30000` | `[5000, 300000]`; no frame/ack activity closes session. |
-
-Slot values may lower global retention/buffer limits but may never raise them.
-
----
-
-# 6. States
-
-## 6.1 Slot state machine
-
-```mermaid
-stateDiagram-v2
-  [*] --> CREATED: catalog create committed
-  CREATED --> INITIALIZING: include_initial=true
-  CREATED --> STREAMING: include_initial=false; fence checkpoint persisted
-  INITIALIZING --> BACKFILLING: all snapshot fences captured
-  BACKFILLING --> STREAMING: all shard scans done; WAL catch-up begins
-  STREAMING --> PAUSED: no active consumer / admin pause / buffer limit
-  PAUSED --> STREAMING: valid subscribe
-  CREATED --> DROPPED: drop before stream
-  INITIALIZING --> DROPPED: drop
-  BACKFILLING --> DROPPED: drop
-  STREAMING --> DROPPED: drop
-  PAUSED --> DROPPED: drop
-  INITIALIZING --> INVALID: source/metadata/WAL failure
-  BACKFILLING --> INVALID: source dropped or WAL corruption
-  STREAMING --> INVALID: retention expired or WAL corruption
-  PAUSED --> INVALID: retention expired or WAL corruption
-  INVALID --> DROPPED: force drop
-  DROPPED --> [*]
-```
-
-Allowed state transition guards:
-
-- `CREATED -> STREAMING` only after a valid fence checkpoint is persisted.
-- `BACKFILLING -> STREAMING` only when every selected shard has a completed snapshot cursor and source read position equals fence plus one.
-- `PAUSED -> STREAMING` only after authentication, authorization, a nonexpired checkpoint, and buffer allocation.
-- `INVALID` is terminal except forced drop/recreate; resuming an invalid slot is never permitted.
-- Dropped slot names may be reused only after old catalog deletion commits.
-
-## 6.2 Consumer states
-
-| State | Entry condition | Required behavior | Exit |
-| --- | --- | --- | --- |
-| connecting | TCP/WebSocket accepted | TLS + authentication; no event data | subscribed or disconnected |
-| subscribed | valid `SUBSCRIBE` | normalize checkpoint; start reader | caught_up, lagging, disconnected |
-| caught_up | reader reaches current tail | emit heartbeat at configured cadence | new event, lagging, disconnected |
-| lagging | source has records beyond send buffer/window | stop reading after bounded buffer; do not drop WAL event | caught_up, disconnected, slot invalid |
-| disconnected | socket closed/timeout | release session resources; retain slot and confirmed checkpoint | terminal |
-
-A consumer has an in-memory `delivered_high_water` checkpoint distinct from the slot's durable `confirmed_checkpoint`. On reconnect, unacknowledged events can be replayed. The session must not advance durable state based on TCP delivery or WebSocket write completion.
-
-## 6.3 Event lifecycle
-
-```text
-written_to_wal -> decoded -> filtered -> buffered -> sent -> acknowledged
-```
-
-- `written_to_wal`: record is inside a transaction but not readable.
-- `decoded`: transaction committed, CRC/version/event invariants validated.
-- `buffered`: event passed filter and occupies bounded slot session capacity.
-- `sent`: fully written to the transport; remains replayable and unacknowledged.
-- `acknowledged`: a valid checkpoint containing the event is durably persisted in the slot.
-
-Terminal alternate paths: `decoded -> retained_without_subscriber`, `buffered -> session_disconnected`, and `any durable state -> retention_pruned` only when every relevant slot's confirmed position is above the segment and its time/size policy allows removal.
-
----
-
-# 7. Errors
-
-All ReQL failures use `Response.RUNTIME_ERROR` with the specified `error_type`; HTTP errors use the listed status and a `CdcFrame.ERROR` with identical `code` and `message`. Error text is an API contract.
-
-| Code | ReQL error type / HTTP | Exact message | Condition / recovery |
-| --- | --- | --- | --- |
-| `CDC_SLOT_EXISTS` | `OP_FAILED` / 409 | `CDC slot '<name>' already exists.` | Create with existing name. Use list/inspect or choose a new name. |
-| `CDC_SLOT_NOT_FOUND` | `NON_EXISTENCE` / 404 | `CDC slot '<name>' does not exist.` | Unknown slot, non-force drop. |
-| `CDC_INVALID_SLOT_NAME` | `QUERY_LOGIC` / 400 | `CDC slot name must match [A-Za-z_][A-Za-z0-9_.-]{0,62}.` | Invalid name. |
-| `CDC_INVALID_CONFIG` | `QUERY_LOGIC` / 400 | `Invalid CDC slot configuration: <reason>.` | Invalid selector, retention, filter, duplicate table, or incompatible optargs. |
-| `CDC_PERMISSION_DENIED` | `PERMISSION_ERROR` / 403 | `User is not authorized to <action> CDC slot '<name>'.` | Missing connect/read/config/CDC permission. Do not disclose selector details. |
-| `CDC_CHECKPOINT_INVALID` | `QUERY_LOGIC` / 400 | `CDC checkpoint is invalid: <reason>.` | Malformed, foreign-cluster, missing/duplicate positions. |
-| `CDC_CHECKPOINT_NON_MONOTONIC` | `OP_FAILED` / 409 | `CDC checkpoint does not advance slot '<name>'.` | ACK is lower than confirmed or contains a lower shard LSN. |
-| `CDC_CHECKPOINT_NOT_DELIVERED` | `OP_FAILED` / 409 | `CDC checkpoint has not been delivered to this consumer.` | ACK exceeds session high-water. |
-| `CDC_CHECKPOINT_EXPIRED` | `OP_FAILED` / 410 | `CDC checkpoint for slot '<name>' is older than the retained WAL; create a new backfill.` | Requested/confirmed checkpoint below any selected shard retention floor. Slot becomes `INVALID`. |
-| `CDC_SLOT_INVALID` | `OP_FAILED` / 409 | `CDC slot '<name>' is invalid: <reason>.` | Subscribe an invalid slot. Drop/recreate required. |
-| `CDC_SOURCE_DROPPED` | `NON_EXISTENCE` / 410 | `CDC source for slot '<name>' was dropped.` | Database drop or no selected source remains. |
-| `CDC_WAL_CORRUPTION` | `INTERNAL` / 500 | `CDC WAL corruption detected for table '<table>'; slot '<name>' was invalidated.` | Magic/version/CRC/LSN chain failure. Halt affected decoder, mark affected slots invalid, require operator repair/new backfill. |
-| `CDC_EVENT_TOO_LARGE` | `RESOURCE_LIMIT` / 413 | `CDC event exceeds the configured maximum event size.` | Before mutation is committed; the entire write fails. |
-| `CDC_BUFFER_LIMIT` | `RESOURCE_LIMIT` / 429 | `CDC consumer for slot '<name>' exceeded its buffered event limit.` | Session is closed; slot pauses and remains resumable. No event is discarded from WAL. |
-| `CDC_CONSUMER_TIMEOUT` | `OP_FAILED` / 408 | `CDC consumer for slot '<name>' timed out waiting for acknowledgement.` | Close session; slot pauses. |
-| `CDC_SLOT_DROPPED` | `OP_FAILED` / 410 | `CDC slot '<name>' was dropped.` | Forced drop terminates active client. |
-| `CDC_WEBSOCKET_REQUIRED` | `OP_FAILED` / 426 | `CDC streaming endpoint requires a WebSocket upgrade.` | HTTP stream endpoint without upgrade. |
-| `CDC_PROTOCOL_VIOLATION` | `QUERY_LOGIC` / 400 | `Invalid CDC protocol frame: <reason>.` | Frame order, size, unsupported type, missing subscribe. Close socket. |
-| `CDC_CROSS_DC_TIMEOUT` | `OP_INDETERMINATE` / 504 | `CDC replica acknowledgement timed out; retry from the last confirmed checkpoint.` | Remote replica/consumer timeout during network path; no confirmation is implied. |
-
-Cross-data-center behavior: transport failures, TCP resets, and inter-cluster replication timeouts always leave the durable slot checkpoint unchanged. The client retries with the last confirmed checkpoint using exponential backoff (initial 250 ms, multiplier 2, cap 30 s, jitter ±20%). The server must never report an ACK success until the slot metadata write commits. Duplicate event delivery after an indeterminate timeout is expected and documented.
-
----
-
-# 8. Testing
-
-## 8.1 Unit tests
-
-Create `src/unittest/cdc_test.cc` in `namespace unittest` using `unittest/gtest.hpp`.
-
-Required exact cases:
-
-1. `CdcCheckpointSerializationRoundTrip`: serialize/deserialize a sorted multi-shard checkpoint using `cluster_version_t::v3_0`; assert equality.
-2. `CdcCheckpointRejectsDuplicateOrUnsortedPositions`: malformed checkpoint is rejected, not normalized silently at disk boundary.
-3. `CdcEventSerializationRoundTripEveryVariant`: insert/update/delete/DDL/snapshot/heartbeat variants retain payload and validate legal type/payload pairings.
-4. `CdcWalCommitVisibility`: append under an uncommitted transaction; reader sees nothing; commit; reader sees exactly consecutive LSNs.
-5. `CdcWalCrashTailRecovery`: construct a partial/CRC-invalid tail; recovery stops at last valid sealed record and marks any slot requiring the damaged range invalid.
-6. `CdcPerShardOrdering`: concurrent/batched replacements produce strictly increasing LSNs in FIFO write order, not coroutine completion order.
-7. `CdcSlotAckMonotonicity`: same checkpoint is idempotent, lower/future checkpoint fails with exact codes, valid advance is persisted.
-8. `CdcRetentionFloor`: simulate segment trimming; checkpoint below floor produces `CDC_CHECKPOINT_EXPIRED` and changes state to `INVALID`.
-9. `CdcFilterProjection`: selected operation/table/columns project images correctly and always retain primary-key field.
-10. `CdcBackfillFence`: rows existing at fence appear once as snapshots; writes after fence appear as WAL events; no gap and no live event precedes snapshot completion.
-11. `CdcDdlPayload`: create/drop/rename/index DDL records carry canonical IDs/names and never expose auth secrets.
-12. `CdcAuthorization`: read-only table permission permits subscribe but not slot creation/drop; missing table read permission denies stream before first event.
-13. `CdcBufferBackpressure`: full session buffer pauses/terminates session with `CDC_BUFFER_LIMIT` while durable WAL remains readable.
-
-## 8.2 ReQL integration scenarios
-
-Add `test/rql_test/src/cdc/slots.yaml`, `stream.yaml`, `backfill.yaml`, `ddl.yaml`, `retention.yaml`, and `permissions.yaml`. Scenarios use existing YAML conventions from `test/rql_test/src/changefeeds/table.yaml`; they do not alter existing changefeed expected behavior.
-
-`slots.yaml` minimum:
-
-```yaml
-desc: CDC slot lifecycle
-table_variable_name: tbl
-tests:
-  - cd: r.cdcCreateSlot('cdc_slots_basic', {tables:['test']})
-    ot: partial({'created':1, 'slot':'cdc_slots_basic', 'state':'streaming'})
-  - cd: r.cdcListSlots().filter({'name':'cdc_slots_basic'}).count()
-    ot: 1
-  - cd: r.cdcDropSlot('cdc_slots_basic')
-    ot: partial({'dropped':1})
-  - cd: r.cdcListSlots().filter({'name':'cdc_slots_basic'}).count()
-    ot: 0
-```
-
-`stream.yaml` minimum:
-
-```yaml
-desc: CDC table stream resumes from a checkpoint
-table_variable_name: tbl
-tests:
-  - cd: r.cdcCreateSlot('cdc_stream_basic', {tables:['test']})
-    ot: partial({'created':1})
-  - cd: c = tbl.cdcStream({slot:'cdc_stream_basic'})
-  - cd: tbl.insert({'id':1, 'v':'a'})
-    ot: partial({'inserted':1})
-  - cd: e = fetch(c, 1)[0]
-  - cd: e('type')
-    ot: 'insert'
-  - cd: e('new_val')
-    ot: {'id':1, 'v':'a'}
-  - cd: c.cdcAck(e('checkpoint'))
-    ot: partial({'acknowledged':1})
-  - cd: tbl.insert({'id':2, 'v':'b'})
-    ot: partial({'inserted':1})
-  - cd: c2 = tbl.cdcStream({slot:'cdc_stream_basic', from:e('checkpoint')})
-  - cd: fetch(c2, 1)[0]('new_val')
-    ot: {'id':2, 'v':'b'}
-```
-
-Additional required integration scenarios:
-
-- Insert then receive event; update has old/new values; delete has old value and null new value.
-- Checkpoint then resume; verify the acknowledged insert is not replayed and subsequent mutation is.
-- Multi-table slot receives both `orders` and `customers`, with event table identifiers; unrelated table excluded.
-- DDL capture with `include_ddl:true` for `table_create`, `index_create`, `index_drop`, and table drop; same operations absent when false.
-- Retention lag: configure short test retention/forced trim, acknowledge old position, assert `CDC_CHECKPOINT_EXPIRED` exactly and invalid slot state.
-- Drop cleanup: force-drop active cursor, observe `CDC_SLOT_DROPPED`, assert metadata removed and WAL eligibility advances.
-- Backfill: prepopulate table, create `include_initial:true` slot, assert snapshot events then post-fence insert in live stream; restart consumer mid-backfill and verify no lost key.
-- Permission matrix: denied principal cannot create/inspect/drop; a principal lacking one selected table receives no partial stream or table names.
-- Server restart/failover fixture: acknowledgements survive restart and replay resumes from persisted checkpoint.
-- WebSocket fixture: invalid first frame, oversized frame, failed authentication, monotonic ACK, heartbeat, and reconnect at last confirmed checkpoint.
-
-## 8.3 Test mapping and quality gates
-
-| Acceptance criterion | Unit test | Integration scenario |
+| `batchSize` | 500 | 1–10,000 events |
+| `flushIntervalMs` | 100 ms | 1–60,000 ms |
+| `maxInFlightBatches` | 4 | 1–64 |
+| `maxBufferBytes` | 16 MiB | 1 MiB–1 GiB |
+| heartbeat | 5 s | 1–60 s |
+An ACK names the highest contiguous durably processed LSN for a shard. Sparse or out-of-order ACKs are rejected and do not release retention.
+### 5.6 Sink ACK mapping
+| Consumer | ACK boundary | Idempotence key |
 | --- | --- | --- |
-| Create/subscribe/insert | `CdcWalCommitVisibility` | `stream.yaml` |
-| Ack/resume | `CdcSlotAckMonotonicity` | `stream.yaml` |
-| Multi-table | `CdcFilterProjection` | `slots.yaml` multi-table case |
-| DDL | `CdcDdlPayload` | `ddl.yaml` |
-| Retention | `CdcRetentionFloor` | `retention.yaml` |
-| Backfill | `CdcBackfillFence` | `backfill.yaml` |
-| Cleanup | `CdcBufferBackpressure` | `slots.yaml` forced drop case |
-| Security | `CdcAuthorization` | `permissions.yaml` |
-
-Performance tests use a repeatable workload that writes 1 KiB documents in batches and records event commit-to-send latency. Test 10K events/s per slot on one shard and 100K events/s aggregate over ten slots; assert no ordering/checkpoint violation and p99 commit-to-buffer latency under 500 ms under the stated hardware baseline. Do not treat a throughput number as passed without recording workload, hardware, document size, slot count, retention setting, and p50/p95/p99 latency.
-
----
-
-# 9. Security
-
-## 9.1 Authentication and authorization
-
-The WebSocket endpoint uses the existing client protocol authentication path, including SCRAM-SHA-256 where configured (`src/client_protocol/server.cc`), TLS context, and `auth::user_context_t`. There is no anonymous CDC endpoint, query-string password, bearer-token fallback, or separate CDC credential store in v3.0.
-
-Authorization decisions are evaluated at create, list/get, subscribe, ACK, and drop; an open connection rechecks authorization on permission metadata change before delivering the next batch.
-
-Required permissions:
-
-| Operation | Required permission |
+| RethinkDB subscription | Target row and apply-ledger transaction commits | apply ledger event ID |
+| Kafka | Broker acknowledges configured durable producer write | key/header event ID |
+| Webhook | Receiver returns configured durable-acceptance 2xx | `Idempotency-Key` event ID |
+| File/S3 | Final object/file and manifest commit | event range manifest |
+Webhook 2xx proves receiver acceptance, not the receiver's own database commit. The source still treats this integration as at least once.
+### 5.7 Retry protocol
+Error frames include code, retryability, affected shard/LSN, and redacted action. Retryable transport failures use full-jitter exponential backoff: 250 ms initial, multiplier 2, 30 s cap, reset after successful handshake. Authentication, unsupported schema, malformed event, and permanent 4xx
+configuration failures enter `ERROR` rather than busy-looping.
+## 6. Integration Points
+### 6.1 New CDC modules
+| File | Responsibility |
 | --- | --- |
-| Subscribe to a selected table | `connect` globally and `read` on every selected table/database |
-| Create slot | `connect`, `read` on all selected tables, and `config` on all selected tables/database |
-| List/inspect own slot | owner plus `read` on all selected tables |
-| List/inspect any slot | global `config` plus `read` on all selected tables |
-| Acknowledge | active authenticated owner/subscriber with selected table read rights |
-| Drop own slot | owner plus `config` on selector |
-| Drop any slot | global `config` |
-
-Existing permission fields (`read`, `write`, `config`, `connect`) are retained; v3.0 does not add a coarse `cdc` boolean. The implementation may add a future explicit CDC privilege only through an additive permissions schema/version, not as an undocumented bypass.
-
-## 9.2 Isolation and leakage prevention
-
-- Slots persist table IDs and owner identity; never re-resolve names without permission checks.
-- A session has one slot and one authenticated identity. It cannot change slot or selector after subscribe.
-- Buffer objects, decoder cursors, and checkpoint references are private per session; no shared user-visible event cache is keyed only by table.
-- Unauthorized list/get requests return `CDC_PERMISSION_DENIED`, not `CDC_SLOT_NOT_FOUND`, for existing inaccessible slots; messages do not include selected table names.
-- Column projection happens before transport serialization and buffer accounting. An unprojected datum must not remain attached to a queued event object.
-- DDL payloads exclude passwords, auth keys, TLS material, write-hook source, and any internal metadata fields classified secret.
-- Checkpoints contain UUIDs/LSNs only; they are not credentials. They still require slot authorization because positions reveal throughput and table topology.
-- Rate limit HTTP/WebSocket upgrades to 20 failed auth attempts/minute/IP and 100 successful concurrent CDC sockets/user. Exceeding limits returns `429` without allocating a reader.
-
-## 9.3 Transport and input security
-
-TLS is mandatory when the configured client listener requires TLS; a CDC WebSocket inherits the same policy and cannot downgrade it. Limit HTTP headers to 16 KiB, one `SUBSCRIBE` frame per connection, protobuf frame size to 1 MiB, checkpoint positions to configured selected-shard count, event batch bytes to `max_batch_bytes`, and strings to existing ReQL identifier limits. Reject invalid UTF-8 slot/table names at API ingress. Treat WAL CRC failure as storage corruption, not client input.
-
----
-
-# 10. Performance and operations
-
-## 10.1 Service objectives
-
-| Metric | Target | Measurement boundary |
+| `src/rdb_protocol/publication.hpp` | Publication types, validation, filter compilation, metadata lookup, status interface. |
+| `src/rdb_protocol/publication.cc` | Publication lifecycle, eligibility, projection, dispatch coordination. |
+| `src/rdb_protocol/subscription.hpp` | Target state machine, RPC client, applier and conflict-policy interfaces. |
+| `src/rdb_protocol/subscription.cc` | Snapshot/stream orchestration, durable apply ledger, reconnect/resync. |
+| `src/rdb_protocol/cdc_sink.hpp` | Sink-driver, batching, retry, and dead-letter interfaces. |
+| `src/rdb_protocol/cdc_sink.cc` | Kafka/webhook/file/S3 driver registration and shared dispatch implementation. |
+| `src/clustering/replication_coordinator.hpp` | Slot ownership, cursor checkpoints, retention-floor and metadata interface. |
+| `src/clustering/replication_coordinator.cc` | Slot lifecycle, lag accounting, Raft and shard-routing integration. |
+### 6.2 Storage and capture changes
+| Area | File/path | Required change |
 | --- | --- | --- |
-| Commit to durable CDC availability | p99 < 500 ms | successful transaction commit to decoder-visible event |
-| Commit to connected consumer delivery | p99 < 1 s | successful transaction commit to WebSocket/ReQL event write under healthy network |
-| Per-slot sustained throughput | 10K events/s | 1 KiB average payload, one table shard, filters disabled |
-| Aggregate sustained throughput | 100K events/s | 10 active slots across shards, 1 KiB average payload |
-| Ordering | zero violations | increasing LSN per table shard |
-| Event loss in retention window | zero | crash/restart/failover test suite |
-
-These are acceptance targets, not guarantees for an overloaded cluster or arbitrarily large row documents.
-
-## 10.2 Retention and GC
-
-Retention has both time and size limits. A WAL segment is eligible for reclamation only when:
-
-1. its maximum LSN is below every non-dropped slot's confirmed position for that table/shard; and
-2. it is older than the effective time policy or retention bytes exceed the effective size policy.
-
-The effective policy is the minimum of cluster limits and the most demanding live slot request, bounded by `--cdc-retention-*`. A slot may not demand a policy above global maximum. When available WAL exceeds a hard per-table disk safety cap of `2 * --cdc-retention-bytes`, the server identifies slots pinning the oldest segments, invalidates them with `CDC_CHECKPOINT_EXPIRED`, updates the retention floor, and reclaims space. It must emit structured logs/metrics naming slot IDs (not credentials) and require operator attention; it must not block user writes indefinitely.
-
-GC runs every 60 seconds and after slot drop/ACK. It takes a catalog read snapshot, computes a safe head per shard, writes the new head atomically, then releases detached serializer blocks. It may leave extra segments after crash; it must never advance the head beyond a still-valid slot checkpoint.
-
-## 10.3 Resource limits and backpressure
-
-- Max slots: default 128 cluster-wide, hard maximum 4096.
-- Max active subscribers: 1 per named slot by default. A second subscriber receives `CDC_SLOT_BUSY` (`OP_FAILED`, HTTP 409: `CDC slot '<name>' already has an active consumer.`). A future fan-out mode requires a distinct per-consumer checkpoint model and is out of scope.
-- Max buffered events: 100,000/session default; max buffered bytes: 64 MiB/session default.
-- Max one event: 16 MiB after logical serialization, independent of transport frame batching. Writes exceeding it fail with `CDC_EVENT_TOO_LARGE` only when CDC is enabled for that table/slot selector.
-- Max in-flight unacknowledged range: min(buffer limits, 60 seconds at measured send rate). Reader pauses at the limit; if no ACK occurs by consumer timeout, close the session and preserve WAL.
-
-Filters execute in O(number of requested top-level fields) per row and must not deserialize fields that are not needed when datum representation permits projection. `changed_fields` computation is O(number of top-level fields); nested diffing is explicitly not implemented.
-
-## 10.4 Observability and runbook signals
-
-Expose per table/shard and per slot:
-
-- `cdc_wal_head_lsn`, `cdc_wal_tail_lsn`, `cdc_wal_bytes`, `cdc_retention_floor_lsn`;
-- `cdc_slot_confirmed_lag_events`, `cdc_slot_confirmed_lag_bytes_estimate`, `cdc_slot_oldest_unacked_seconds`;
-- `cdc_events_written_total`, `cdc_events_delivered_total`, `cdc_events_acknowledged_total`, `cdc_events_filtered_total`;
-- `cdc_decode_crc_failures_total`, `cdc_slot_invalidations_total`, `cdc_consumer_disconnects_total`, `cdc_buffer_pauses_total`;
-- histograms for commit-to-WAL, WAL-to-send, and ACK persistence latency.
-
-Log at warning on buffer pause, retention pressure above 80%, consumer timeout, and any slot invalidation. Log at error on WAL corruption, metadata serialization failure, or forced retention invalidation. Metrics labels use table/slot UUIDs; expose human names only in authenticated admin inspection to avoid catalog disclosure.
-
-## 10.5 Implementation sequencing
-
-1. Add v3.0 storage/cluster version gates and CDC data/serialization types with unit round-trips.
-2. Implement serializer-backed `logical_wal_t` and transaction-atomic append/recovery before any public API.
-3. Wire mutation and DDL hooks; prove commit visibility, ordering, crash recovery, and replication/failover preservation.
-4. Implement durable catalog/slot manager, retention GC, state machine, and authorization checks.
-5. Add ReQL terms/driver bindings and cursor ACK control.
-6. Add HTTP/WebSocket endpoint after the slot engine passes ReQL tests; it is a second transport, not a second CDC implementation.
-7. Add performance harness, metrics, operational documentation, and upgrade/downgrade guards.
-
-No phase may expose CDC to users before the prior phase’s persistence, error, and test obligations pass. In particular, a memory-only stream, a raw serializer-page parser, or an auto-acknowledging cursor is not an acceptable intermediate implementation.
+| Write seam | `src/rdb_protocol/store.hpp`, `store.cc` | Stage change records from `store_t::write()` in the enclosing committed transaction. |
+| B-tree writes | `src/rdb_protocol/btree_store.hpp`, `btree_store.cc` | Expose normalized before/after mutation reports without changing ordinary write semantics. |
+| Logical journal | `src/serializer/` | Add versioned append/read/checkpoint journal support tied atomically to serializer transactions. |
+| Retention | `src/serializer/log/lba/extent_manager.hpp` | Prevent reclaim below slot retention floors and expose pinned-byte pressure. |
+| Recovery | serializer recovery paths | Restore LSN high-water and journal tail before slot dispatch. |
+| Query protocol | `src/rdb_protocol/ql2.proto` | Add CDC term definitions and regenerate bindings. |
+| ReQL terms | `src/rdb_protocol/terms/` | Implement DDL/status terms and optarg/permission validation. |
+Exact serializer implementation files must be chosen after tracing current transaction and extent ownership. This specification does not invent unverified storage APIs; it requires atomic row+journal commit and retention-safe GC.
+### 6.3 Metadata and Raft
+`table_config_t` remains authoritative for table UUID, shard layout, replica assignment, and lifecycle. CDC configuration uses table IDs and follows table movement/reconfiguration. Raft carries durable publication, subscription, sink, and slot lifecycle metadata, not per-row event payloads or
+per-event ACKs.
+`replication_coordinator_t` must react to shard leadership/routing change by reconnecting or handing off source streams without changing a slot's durable confirmed position. It must distinguish a stale shard incarnation from a current shard before accepting a cursor acknowledgement.
+### 6.4 RPC and runtime
+The coordinator registers a dedicated replication mailbox/RPC service. It needs version negotiation, TLS-authenticated identity, bounded flow-control, normal coroutine cancellation, and terminal cancellation on table/publication/slot drop. It must use existing shard routing rather than making one
+server proxy unbounded journal traffic for every remote consumer.
+### 6.5 Sink driver interface
+```cpp
+class cdc_sink_driver_t : public home_thread_mixin_t {
+public:
+    virtual ~cdc_sink_driver_t() = default;
+    virtual void connect(const cdc_sink_config_t &config,
+                         signal_t *interruptor) = 0;
+    virtual sink_delivery_result_t deliver(
+        const publication_config_t &publication,
+        const uuid_u &slot_id,
+        const std::vector<change_record_t> &batch,
+        signal_t *interruptor) = 0;
+    virtual void close(signal_t *interruptor) = 0;
+};
+```
+`deliver()` returns a contiguous durable acknowledgement or a typed retryable / permanent failure. It must not log a failure and return success. Any third-party client dependency needs build, licensing, timeout, and test-double review; logical journal and slot primitives do not depend on a Kafka
+library existing.
+### 6.6 Observability
+Expose low-cardinality metrics keyed by IDs or controlled names:
+- `cdc_records_captured_total`
+- `cdc_records_delivered_total`
+- `cdc_delivery_latency_ms`
+- `cdc_slot_lag_bytes`
+- `cdc_slot_lag_lsn`
+- `cdc_retained_journal_bytes`
+- `cdc_sink_retries_total`
+- `cdc_sink_dead_letter_total`
+- `cdc_resync_required_total`
+Status and metrics must not use document values, token values, URLs with secrets, or arbitrary user field data as labels.
+## 7. Conflict Resolution
+### 7.1 Scope
+Conflict policy applies only to RethinkDB-to-RethinkDB subscriptions. External sinks deliver immutable events and do not mutate a target table. Target rows store replication metadata outside ordinary user JSON fields so user documents cannot forge source version state.
+### 7.2 Last-write-wins
+LWW compares the deterministic tuple:
+```text
+(source commit timestamp, source cluster UUID, shard UUID, LSN)
+```
+The target applies an incoming insert/update/replace only if this tuple is newer than its recorded source version. A delete creates a tombstone version rather than immediately discarding history, preventing an old replayed write from resurrecting data. Phase 3 retains tombstones for subscription
+lifetime unless a proven-safe compaction condition is implemented.
+LWW is deterministic conflict handling, not support for arbitrary bidirectional multi-primary topology.
+### 7.3 Primary-key merge
+`primary_key_merge` is an upsert-oriented policy:
+- Missing target PK plus source insert/update/replace inserts `new_val`.
+- Existing target PK plus source insert/update/replace shallow-merges source top-level fields while preserving target primary key.
+- Source delete removes only when target metadata is not newer; otherwise it creates a conflict record.
+- PK type/value mismatch is a permanent identity conflict.
+Arrays, recursive object merge, CRDT sets, and custom merge algebra are not implied. The incoming version is stored even when a merge produces no visible user-field difference.
+### 7.4 Custom handler
+```javascript
+function(sourceEvent, targetDocument, targetMetadata) {
+  return {action: "apply" | "skip" | "replace" | "merge" | "conflict", value: ...};
+}
+```
+A custom handler is a serialized deterministic restricted ReQL function. It may not read/write tables, access network, use random/time nondeterminism, recurse into queries, or exceed CPU/output limits. Invalid return values, exceptions, or resource limits create an unresolved conflict; they never
+silently default to apply.
+### 7.5 Conflict log
+Unresolved conflicts are durably recorded with subscription ID, event ID, redacted source envelope, target version metadata, policy, reason, retry count, and timestamps. An authorized operator can inspect and explicitly retry, skip, or resolve a conflict. The slot may not ACK past a blocked record
+unless an explicit durable skip/dead-letter policy records resulting divergence.
+## 8. Error Paths
+### 8.1 Error model
+Errors are classified as transient, permanent configuration/authentication, data compatibility/conflict, history loss, or terminal lifecycle error. Status always includes code, last confirmed LSN, timestamp, safe diagnostic, and operator action. A log message alone is not a recovery interface.
+### 8.2 Required behavior matrix
+| Condition | Required state and behavior | Recovery |
+| --- | --- | --- |
+| Dropped publication | Subscription gets `PUBLICATION_DROPPED` and enters terminal error; source releases slot | Recreate publication and intentionally resync |
+| Dropped source table | Publication terminates attached streams | Recreate table/publication; target is not deleted |
+| Journal/WAL gap | `RESYNC_REQUIRED`; do not stream from arbitrary later LSN | New snapshot barrier and full resync |
+| Sink network failure | `RETRYING` with bounded jitter; retain journal data | Automatic reconnect after endpoint recovery |
+| Permanent sink reject | `ERROR` or `DEAD_LETTERING`; do not ACK original record prematurely | Fix credentials/config or explicit DLQ/skip action |
+| Target restart | Source retains slot; target reconnects from confirmed LSN | Automatic replay plus ledger dedupe |
+| Source shard movement | Stream handoff/reconnect; retain cursor | Automatic routing recovery |
+| Schema/protocol mismatch | Reject before partial apply | Upgrade peers or recreate compatible config |
+| Unsupported datum coercion | Durable `SCHEMA_MISMATCH`; pause or DLQ by policy | Transform data/config or resync |
+| Custom conflict failure | Durable conflict log and pause at contiguous point | Operator resolves/retries/skips |
+| Duplicate event | Target ledger suppresses row reapply and ACKs | No action |
+| Out-of-order ACK | Reject cursor advancement | Consumer sends valid contiguous ACK |
+| Filter mutation request | Reject in-place semantic filter alteration | Create new publication and migrate consumers |
+### 8.3 Schema compatibility
+RethinkDB-to-RethinkDB binary replication preserves supported `ql::datum_t` values exactly. JSON sinks use documented RethinkDB JSON pseudotypes. A JSON sink must reject an unrepresentable external value rather than stringify it silently. Primary key changes are never coerced. Numeric coercion is
+disabled by default and allowed only when explicitly declared lossless.
+### 8.4 Dead-letter policy
+A sink DLQ event includes original envelope, sink ID, code, redacted diagnostic, and timestamp. The slot advances only after the DLQ write is durable. If the DLQ is unavailable, the source retains and retries the original record.
+Target subscription apply errors do not dead-letter by default because doing so creates data divergence. If enabled explicitly, each skip creates a durable conflict-log record and status reports degraded parity.
+### 8.5 Pause, resume, eviction, resync
+Pause stops dispatch but retains the slot pin. Resume continues from confirmed LSN. Drop releases the pin after durable lifecycle state. Eviction is auditable and makes later history loss explicit. Resync creates new snapshot barriers, records old/new stream positions, and requires an
+operator-approved apply-ledger reset/rebuild policy.
+### 8.6 Alerts
+Alert on lag above 80%/100% quota, old acknowledgements, journal storage pressure, retry storms, any `RESYNC_REQUIRED`, `EVICTED`, `ERROR`, or `DEAD_LETTERING` state, and snapshots/catch-up that cannot converge. The alert/status path must identify the slot currently blocking extent reclamation.
+## 9. Testing Requirements
+### 9.1 General completion gate
+CDC is complete only when it demonstrates no silent loss, no false cursor advancement, no unbounded-memory slow-consumer path, and no credential exposure. Tests must use established repository unit/integration conventions and validate observable table/sink state, not just process logs.
+### 9.2 Unit tests
+| Area | Required cases |
+| --- | --- |
+| Change record codec | Every operation; absent images; large docs; corrupt/truncated/unknown version data. |
+| LSN allocator | Strict monotonicity; recovery high-water; no reuse after failed append; shard isolation. |
+| Publication validation | Valid/invalid filters, formats, images, names, permissions, predicates. |
+| Filter evaluation | Insert/delete/update transition into/out of predicates; projection after matching. |
+| Slot manager | Contiguous ACK, duplicate ACK, out-of-order rejection, floors across slots, state transitions. |
+| Retention accounting | Pin/release only on confirmed LSN; flush-only position never releases bytes. |
+| Batching | Size/latency triggers, one-shard batch ordering, queue/window bounds, heartbeats. |
+| Apply ledger | Atomic apply/ledger, duplicate suppression, restart/replay, safe retention. |
+| Conflict policies | LWW ties/tombstones, merge semantics, handler errors and return validation. |
+| Sink errors | Retry classification, jitter bounds with injected time/randomness, DLQ boundary. |
+| Protocol | Auth/version handshake, identity mismatch, bad frames, allocation limits. |
+### 9.3 Source-to-target integration tests
+1. Bootstrap source publication and target subscription, then insert/update/ replace/delete source rows; assert exact target parity.
+2. Write concurrently with initial snapshot; prove snapshot barrier has no gap and no duplicate logical application.
+3. Kill target after apply but before ACK; restart and prove replay is deduped.
+4. Restart source with slots present; prove cursor recovery and permitted suffix replay only.
+5. Use at least two source shards and force routing/leadership handoff; prove per-shard ordering and successful reconnect.
+6. Attach fast and slow subscriptions; prove fast progress is independent while slow slot correctly pins source retention.
+7. Drop a live publication; prove terminal consumer state and source slot release.
+8. Test `snapshot: "none"`; prove it starts only at documented safe current LSN.
+### 9.4 CDC sink tests
+Kafka tests must verify event IDs in key/header, event body, source-shard order, broker outage retry, no ACK before broker acknowledgement, and permanent error/ DLQ behavior. Use an isolated broker/test double with durable observation.
+Webhook tests use a controllable HTTPS receiver. Verify body, idempotency key, 2xx ACK, timeout/reset retry, 429/5xx behavior, non-retryable 4xx behavior, and batch payload limits.
+File/S3 tests verify finalized object/file plus manifest as the ACK boundary. Simulate interruption before finalization and prove no slot advancement. Verify restart cleanup/recovery of partial staging output.
+### 9.5 Failure and durability tests
+- Kill source after mutation staging but before commit; prove neither source row nor event becomes committed, or both recover together.
+- Kill source after commit but before wake-up; prove dispatcher finds journal record from slot cursor.
+- Partition source/target beyond heartbeat interval; prove bounded memory, lag, retry backoff, and correct resume.
+- Stall a slot under extent-GC pressure; prove no premature record deletion, clear operator diagnostics, and explicit eviction/resync behavior.
+- Request a LSN below retention floor; prove precise WAL-gap error and no later partial stream.
+- Corrupt journal/checkpoint in controlled test; prove recovery refuses unsafe delivery and requires repair/resync.
+- Race table/publication/subscription create/drop; prove no leaked pin or worker.
+### 9.6 Performance benchmarks
+Report cluster size, shards, storage medium, document distribution, filter, sink config, and durability configuration. Measure:
+| Metric | Definition |
+| --- | --- |
+| Capture throughput | Eligible committed changes per second. |
+| Delivery throughput | Durably ACKed changes per second per/aggregate consumer. |
+| End-to-end latency | Commit to durable consumer ACK; p50/p95/p99/max. |
+| Capture overhead | Write latency/throughput with no, idle, and active CDC. |
+| Journal amplification | Journal bytes per source mutation. |
+| Retention growth | Bytes/hour with stalled slots. |
+| Recovery time | Restart to safe stream convergence. |
+| Resync time | Snapshot plus catch-up duration. |
+Release thresholds must come from measured baselines, not invented values. The release gate requires bounded write latency and process memory under disconnected consumer workload.
+### 9.7 Compatibility and security tests
+Test old/new metadata defaults, mixed-version cluster rejection, regenerated protocol bindings, unauthorized DDL/connect/status denial, secret redaction from all diagnostics, TLS bad-cert/wrong-name failure, and plaintext downgrade rejection.
+## 10. Security Considerations
+### 10.1 Threat model
+CDC adds long-lived data-export paths, durable cursors, and external credential references. Risks include unauthorized reads, malicious ACK advancement, credential disclosure, source impersonation, endpoint abuse, retained-log disk exhaustion, event replay/tampering, and accidental export of
+sensitive fields.
+### 10.2 Authentication and authorization
+Each subscription authenticates with a publication-scoped credential. The source checks publication permission and slot-operation permission at DDL and connection time. A token for one publication cannot enumerate or consume another. Credential revocation disconnects/revalidates sessions through
+existing identity infrastructure. A claimed slot ID alone is never authority.
+### 10.3 Secret handling
+Kafka keys, webhook secrets, TLS private-key references, and S3 credentials live only in the configured secret provider. Durable CDC metadata contains opaque `secret_reference_t` values. Literal secrets must be rejected in ReQL options. Resolved values must not reach Raft logs, status, query
+history, profiles, metric labels, exceptions, or fixtures.
+Secret rotation triggers driver reconnect/reload without altering source history. Failure to resolve a secret is a permanent configuration error and must not produce a false acknowledgement.
+### 10.4 Transport protection
+Cross-cluster replication requires TLS with certificate/server-name validation. Insecure verification is rejected by default. Kafka uses TLS/SASL as configured; webhooks and S3 require HTTPS except isolated test-only loopback fixtures. Plaintext downgrade is never implicit.
+### 10.5 Event integrity and replay
+TLS protects the transport. Event ID, source/table/shard UUIDs, schema version, and LSN protect logical validation. Targets reject malformed identity, invalid batch sequence, unknown schema, or source identity drift. Webhooks include an idempotency key and may include HMAC body/timestamp signatures.
+Kafka messages include source identity and event ID headers.
+### 10.6 Data minimization
+A publication is a data-export boundary. Filters are evaluated before projection and predicate-only fields are not emitted. External sinks should default to no before image unless required. Creation/status audit output warns when full before/after documents are exported to a non-RethinkDB
+destination.
+### 10.7 Resource controls
+Enforce quotas for publications, slots, workers, snapshots, frame size, filter complexity, pending batches, retry rate, DLQ growth, slot age, and retained bytes. A consumer cannot consume unbounded process memory; its cost is visible retained storage subject to explicit configured eviction policy.
+### 10.8 Auditability
+Audit publication/subscription/sink create, pause, resume, drop, secret-reference change, slot eviction, resync, and authorization failure with actor, object IDs, timestamp, and redacted delta. Never audit raw document payloads or secret values.
+### 10.9 Security release checklist
+- [ ] TLS and authenticated identity are required on every production stream.
+- [ ] ACK authority is bound to authenticated slot owner.
+- [ ] Secrets are reference-only and redacted everywhere.
+- [ ] Filter/projection prevent unintended data export.
+- [ ] Target dedupe and external event IDs support safe replay handling.
+- [ ] Slow consumers have bounded memory impact and visible disk impact.
+- [ ] Eviction/resync are explicit, auditable, and never silent.
+- [ ] Mixed-version clusters cannot create or mishandle CDC state.
+This design builds a durable logical data plane on RethinkDB's established serializer, B-tree/store write path, Raft metadata, table routing, and mailbox RPC foundations. It keeps normal source writes independent of sink speed while making lag, retention, recovery, conflicts, and export boundaries
+explicit.

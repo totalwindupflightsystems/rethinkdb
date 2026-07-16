@@ -61,7 +61,7 @@ void run_with_namespace_interface(
     }
 
     io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
-    dummy_cache_balancer_t balancer(GIGABYTE);
+    dummy_cache_balancer_t balancer(MEGABYTE);
 
     scoped_array_t<scoped_ptr_t<serializer_t> > serializers(store_shards.size());
     for (size_t i = 0; i < store_shards.size(); ++i) {
