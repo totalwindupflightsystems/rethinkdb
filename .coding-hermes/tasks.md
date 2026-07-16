@@ -146,11 +146,71 @@
   - Billing check: https://github.com/settings/billing
 
 ## Phase 3: v3.0 (Future)
-- [ ] Declarative table partitioning
-- [ ] Parallel query execution
-- [ ] Logical replication / CDC streaming
-- [ ] Async I/O subsystem (PG18-style)
-- [ ] JSONB/JSONPath improvements
+- [ ] **SPEC — Phase 3 design documents (batch 2: 5 remaining features)**
+  - [ ] Write axiom-level design spec for "Generated/virtual columns"
+  - [ ] Write axiom-level design spec for "MERGE/UPSERT with complex conditions"
+  - [ ] Write axiom-level design spec for "Time-series optimizations"
+  - [ ] Write axiom-level design spec for "Foreign data wrapper support"
+  - [ ] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)"
+- [ ] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
+  - [ ] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc`
+    - partition_type_t (NONE/RANGE/HASH/LIST), partition_state_t (CREATING→FAILED)
+    - partition_entry_t, partition_config_t, partition_map_t (immutable compiled snapshot)
+    - validate_or_throw(), route(), prune() with exact C++ signatures from spec §3.1
+    - Serialization macros (INSTANTIATE_SERIALIZABLE) for all structs
+  - [ ] **PART-02: Metadata + Raft integration** — table_config_t extension, partition_catalog_t superblock
+    - Extend table_config_t with optional partition_config_t field
+    - Raft commit for partition map epoch changes
+    - partition_catalog_t: format_version, epoch, primary_key_directory_block, stores vector
+    - Backward-compat: tables with no partition config default to NONE
+  - [ ] **PART-03: ReQL surface** — tableCreate {partitions} optarg, partitionInfo, partitionConfig
+    - tableCreate gains `partitions` optarg (type, key_field, partitions array)
+    - New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
+    - New ReQL admin term: `r.table('t').partitionConfig({type: 'range', ...})` for repartition
+    - Validation at term level before touching storage
+  - [ ] **PART-04: Query planner pruning** — partition_predicate_t, between/getAll optimization
+    - Extract partition key from query predicates (equality, between, getAll)
+    - range layouts: between selects overlapping intervals
+    - hash/list: equality/getAll on partition field → one partition
+    - Safe fallback: opaque/OR/negation/unrelated sindex → all partitions
+    - partition_selection_t → partition_map_t::routes_for()
+  - [ ] **PART-05: Storage layout** — per-partition B-tree stores + superblock
+    - One primary B-tree + local sindex catalog per (table, partition, shard)
+    - partition_store_ref_t: partition_id, storage_id, shard_superblocks vector
+    - Extend reql_specific.hpp with partition catalog block reference
+    - Packed superblock sizing, block-reference accounting, drop cleanup
+  - [ ] **PART-06: Partition lifecycle operations** — create/attach/detach/drop
+    - CREATE: allocate invisible target stores, copy snapshot, replay, Raft cutover
+    - Per-table transition mutex (serializes repartition, NOT all writes)
+    - DETACH/DROP: drain readers, release stores, tombstone catalog entries
+    - State machine: CREATING → CATCHING_UP → ACTIVE → DRAINING → [*]
+  - [ ] **PART-07: Online repartitioning** — snapshot, replay, Raft cutover, drain
+    - Validated candidate map → transition lock → source epoch E recorded
+    - Durable transition modification queue for source mutations during copy
+    - Target replay idempotent by primary key + mutation stamp
+    - Cutover commits only after replay reaches high-water mark
+    - Failed repartition: source epoch stays authoritative, clean up unpublished
+  - [ ] **PART-08: Global primary-key directory** — duplicate-PK enforcement, atomic move
+    - B-tree mapping primary keys → partition UUIDs
+    - Duplicate-PK detection at insert across all partitions
+    - Atomic move protocol: source authoritative until target confirmed
+    - Failed move: source stays authoritative, target cleaned idempotently
+  - [ ] **PART-09: Error catalog** — 16 error codes from spec §7
+    - PARTITION_CONFIG_INVALID, PARTITION_RANGE_INVALID, PARTITION_HASH_INVALID
+    - PARTITION_LIST_INVALID, PARTITION_KEY_MISSING, PARTITION_KEY_INVALID
+    - PARTITION_KEY_UNROUTABLE, PARTITION_MOVE_FAILED, PARTITION_QUERY_LIMIT
+    - PARTITION_METADATA_CORRUPT, PARTITION_TRANSITION_BUSY
+    - PARTITION_BACKFILL_OVERFLOW, PARTITION_STORAGE_UNAVAILABLE
+    - PARTITION_RAFT_TIMEOUT, PARTITION_METADATA_INCOMPATIBLE
+  - [ ] **PART-10: Tests** — unit, integration, failure, acceptance (spec §8)
+    - Unit: serialization round trips, range/hash/list routing, PK directory, superblock
+    - Integration: ReQL workloads (create, partitionInfo, pruning, repartition)
+    - Failure: fault injection (Raft delay, source scan interrupt, target kill)
+    - Acceptance: profile output, concurrent writes, changefeed correctness
+- [ ] Parallel query execution — spec: `.coding-hermes/specs/phase3-parallel-query.md`
+- [ ] Logical replication / CDC streaming — spec: `.coding-hermes/specs/phase3-cdc-streaming.md`
+- [ ] Async I/O subsystem (PG18-style) — spec: `.coding-hermes/specs/phase3-async-io.md`
+- [ ] JSONB/JSONPath improvements — spec: `.coding-hermes/specs/phase3-jsonb-jsonpath.md`
 - [ ] Generated/virtual columns
 - [ ] MERGE/UPSERT with complex conditions
 - [ ] Time-series optimizations
