@@ -217,7 +217,18 @@
 - [ ] Foreign data wrapper support
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
 
-## Discovery Sweep Findings (2026-07-16 tick)
+## Discovery Sweep Findings (2026-07-16 tick 2)
+- [ ] **BUILD — rethinkdb server binary never built; ./configure first run this tick**
+  - `./configure` was never run prior to this tick — no `config.mk` existed
+  - `make` produces `build/release/rethinkdb` but linker failed on first attempt (directory issue)
+  - Build is running in background (proc_7bb54e17b176)
+  - Once complete: verify binary runs (`./build/release/rethinkdb --version`), add to discovery sweep
+- [ ] **DOC — AGENTS.md stale version reference: "since v2.3" should be "since v2.5"**
+  - Line 40: `- Includes user authentication and permissions system (since v2.3).`
+  - Project is at v2.5 after Phase 2 completion (C++17, FTS, vector indexes, BRIN indexes)
+  - Fix is a one-line mechanical change
+
+## Discovery Sweep Findings (2026-07-16 tick 1)
 - [x] **SPEC — Phase 3 design documents (v3.0 roadmap specs)** — all 5 complete (`fae6aec36c`)
   - [x] Write design spec for "Declarative table partitioning" — `phase3-table-partitioning.md` (926 lines, 18 serialization macros)
   - [x] Write design spec for "Parallel query execution" — `phase3-parallel-query.md` (1,054 lines, 10 sections)
