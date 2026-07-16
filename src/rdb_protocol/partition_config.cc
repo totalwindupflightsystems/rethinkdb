@@ -1,0 +1,448 @@
+// Copyright 2026 RethinkDB, all rights reserved.
+#include "rdb_protocol/partition_config.hpp"
+
+#include <algorithm>
+#include <set>
+#include <utility>
+
+#include "containers/archive/stl_types.hpp"
+#include "containers/archive/vector_stream.hpp"
+#include "containers/archive/versioned.hpp"
+#include "rdb_protocol/error.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
+
+/* ── helpers ─────────────────────────────────────────────────────────────── */
+
+/* Local copy of hash_region_hasher's byte-stream algorithm. The 2-arg form is
+ * not exported from hash_region.hpp; reimplementing keeps the partition hash
+ * stable and dependency-free. */
+uint64_t partition_byte_hash(const uint8_t *s, ssize_t len) {
+    rassert(len >= 0);
+    uint64_t h = 0x47a59e381fb2dc06ULL;
+    for (ssize_t i = 0; i < len; ++i) {
+        const uint8_t ch = s[i];
+        const uint64_t d =
+            (((ch * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL) << 23;
+        h += d;
+        h = h ^ (h >> 11) ^ (h << 21);
+    }
+    return h & 0x7fffffffffffffffULL;
+}
+
+bool is_legal_partition_key_datum(const ql::datum_t &d) {
+    if (!d.has()) {
+        return false;
+    }
+    switch (d.get_type()) {
+    case ql::datum_t::R_BOOL:
+    case ql::datum_t::R_NUM:
+    case ql::datum_t::R_STR:
+    case ql::datum_t::R_BINARY:
+        return true;
+    case ql::datum_t::R_OBJECT:
+        /* TIME is allowed (range/list keys often use timestamps). Geometry
+         * and other pseudo-types are not legal partition keys. */
+        return d.is_ptype(ql::pseudo::time_string);
+    case ql::datum_t::UNINITIALIZED:
+    case ql::datum_t::MINVAL:
+    case ql::datum_t::MAXVAL:
+    case ql::datum_t::R_ARRAY:
+    case ql::datum_t::R_NULL:
+    case ql::datum_t::R_VECTOR:
+        return false;
+    default:
+        return false;
+    }
+}
+
+uint32_t partition_hash_bucket(const ql::datum_t &key, uint32_t modulus) {
+    guarantee(modulus >= PARTITION_HASH_MODULUS_MIN);
+    write_message_t wm;
+    ql::datum_serialize(&wm, key, ql::check_datum_serialization_errors_t::NO);
+    vector_stream_t stream;
+    int res = send_write_message(&stream, &wm);
+    guarantee(res == 0);
+    const std::vector<char> &bytes = stream.vector();
+    const uint64_t h = partition_byte_hash(
+        reinterpret_cast<const uint8_t *>(bytes.data()),
+        static_cast<ssize_t>(bytes.size()));
+    return static_cast<uint32_t>(h % modulus);
+}
+
+/* ── equality ────────────────────────────────────────────────────────────── */
+
+RDB_IMPL_EQUALITY_COMPARABLE_8(
+    partition_entry_t,
+    id, name, storage_id, state, primary_key_range,
+    hash_buckets, list_values, list_default);
+
+RDB_IMPL_EQUALITY_COMPARABLE_6(
+    partition_config_t,
+    type, key_field, epoch, partitions, range_boundaries, hash_modulus);
+
+/* ── serialization ───────────────────────────────────────────────────────── */
+
+template <cluster_version_t W>
+void serialize(write_message_t *wm, const partition_entry_t &thing) {
+    serialize<W>(wm, thing.id);
+    serialize<W>(wm, thing.name);
+    serialize<W>(wm, thing.storage_id);
+    serialize<W>(wm, thing.state);
+    serialize<W>(wm, thing.primary_key_range);
+    serialize<W>(wm, thing.hash_buckets);
+    serialize<W>(wm, thing.list_values);
+    serialize<W>(wm, thing.list_default);
+}
+
+template <cluster_version_t W>
+archive_result_t deserialize(read_stream_t *s, partition_entry_t *thing) {
+    archive_result_t res = deserialize<W>(s, &thing->id);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->name);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->storage_id);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->state);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->primary_key_range);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->hash_buckets);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->list_values);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->list_default);
+    if (bad(res)) { return res; }
+    return res;
+}
+
+INSTANTIATE_SERIALIZABLE_SINCE_v2_4(partition_entry_t);
+
+template <cluster_version_t W>
+void serialize(write_message_t *wm, const partition_config_t &thing) {
+    serialize<W>(wm, thing.type);
+    serialize<W>(wm, thing.key_field);
+    serialize<W>(wm, thing.epoch);
+    serialize<W>(wm, thing.partitions);
+    serialize<W>(wm, thing.range_boundaries);
+    serialize<W>(wm, thing.hash_modulus);
+}
+
+template <cluster_version_t W>
+archive_result_t deserialize(read_stream_t *s, partition_config_t *thing) {
+    archive_result_t res = deserialize<W>(s, &thing->type);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->key_field);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->epoch);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->partitions);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->range_boundaries);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &thing->hash_modulus);
+    if (bad(res)) { return res; }
+    return res;
+}
+
+INSTANTIATE_SERIALIZABLE_SINCE_v2_4(partition_config_t);
+
+/* ── validation ──────────────────────────────────────────────────────────── */
+
+bool partition_config_t::is_partitioned() const {
+    return type != partition_type_t::NONE;
+}
+
+void partition_config_t::validate_or_throw() const {
+    if (type == partition_type_t::NONE) {
+        if (!partitions.empty()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Unpartitioned table config (type=NONE) must have an empty "
+                "partitions vector.");
+        }
+        if (!range_boundaries.empty()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Unpartitioned table config (type=NONE) must have empty "
+                "range_boundaries.");
+        }
+        if (hash_modulus != 0) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Unpartitioned table config (type=NONE) must have "
+                "hash_modulus=0.");
+        }
+        return;
+    }
+
+    if (key_field.empty()) {
+        rfail_datum(ql::base_exc_t::LOGIC,
+            "Partition key field (`by`) must be a non-empty string.");
+    }
+
+    if (partitions.empty()) {
+        rfail_datum(ql::base_exc_t::LOGIC,
+            "Partitioned table config must define at least one partition.");
+    }
+
+    if (partitions.size() > PARTITION_MAX_COUNT) {
+        rfail_datum(ql::base_exc_t::LOGIC,
+            "A table may have at most %zu partitions (got %zu).",
+            PARTITION_MAX_COUNT, partitions.size());
+    }
+
+    /* Unique names. */
+    {
+        std::set<std::string> seen_names;
+        for (const partition_entry_t &p : partitions) {
+            if (p.name.empty()) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Partition names must be non-empty.");
+            }
+            if (!seen_names.insert(p.name.str()).second) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Duplicate partition name `%s`.", p.name.c_str());
+            }
+        }
+    }
+
+    switch (type) {
+    case partition_type_t::NONE:
+        unreachable();
+
+    case partition_type_t::RANGE: {
+        /* N+1 boundaries define N partitions. */
+        if (range_boundaries.size() != partitions.size() + 1) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Range partitioning requires N+1 boundaries for N partitions "
+                "(got %zu boundaries for %zu partitions).",
+                range_boundaries.size(), partitions.size());
+        }
+        if (range_boundaries.front() != ql::datum_t::minval()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Range partition boundaries must start at r.minval.");
+        }
+        if (range_boundaries.back() != ql::datum_t::maxval()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Range partition boundaries must end at r.maxval.");
+        }
+        for (size_t i = 0; i + 1 < range_boundaries.size(); ++i) {
+            if (!range_boundaries[i].has() || !range_boundaries[i + 1].has()) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Range partition boundaries must be initialized datums.");
+            }
+            if (!(range_boundaries[i] < range_boundaries[i + 1])) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Range partition boundaries must be strictly sorted and "
+                    "define nonempty [from, to) intervals.");
+            }
+        }
+        if (hash_modulus != 0) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Range partitioning must have hash_modulus=0.");
+        }
+        for (const partition_entry_t &p : partitions) {
+            if (!p.hash_buckets.empty()) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Range partitions must not carry hash_buckets.");
+            }
+            if (!p.list_values.empty() || p.list_default) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Range partitions must not carry list values/default.");
+            }
+        }
+        break;
+    }
+
+    case partition_type_t::HASH: {
+        if (hash_modulus < PARTITION_HASH_MODULUS_MIN
+            || hash_modulus > PARTITION_HASH_MODULUS_MAX) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Hash partition modulus must be in [%u, %u] (got %u).",
+                PARTITION_HASH_MODULUS_MIN, PARTITION_HASH_MODULUS_MAX,
+                hash_modulus);
+        }
+        if (!range_boundaries.empty()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Hash partitioning must have empty range_boundaries.");
+        }
+        std::vector<bool> seen(hash_modulus, false);
+        size_t covered = 0;
+        for (const partition_entry_t &p : partitions) {
+            if (!p.list_values.empty() || p.list_default) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "Hash partitions must not carry list values/default.");
+            }
+            for (uint32_t bucket : p.hash_buckets) {
+                if (bucket >= hash_modulus) {
+                    rfail_datum(ql::base_exc_t::LOGIC,
+                        "Hash bucket %u is out of range for modulus %u.",
+                        bucket, hash_modulus);
+                }
+                if (seen[bucket]) {
+                    rfail_datum(ql::base_exc_t::LOGIC,
+                        "Hash bucket %u is assigned to more than one partition.",
+                        bucket);
+                }
+                seen[bucket] = true;
+                ++covered;
+            }
+        }
+        if (covered != static_cast<size_t>(hash_modulus)) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "Hash partitioning must assign every bucket in [0, %u) "
+                "exactly once (covered %zu of %u).",
+                hash_modulus, covered, hash_modulus);
+        }
+        break;
+    }
+
+    case partition_type_t::LIST: {
+        if (hash_modulus != 0) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "List partitioning must have hash_modulus=0.");
+        }
+        if (!range_boundaries.empty()) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "List partitioning must have empty range_boundaries.");
+        }
+        size_t default_count = 0;
+        /* Compare list values by datum equality; track via linear scan since
+         * datum_t is not hashable out of the box and P is <= 128. */
+        std::vector<ql::datum_t> all_values;
+        for (const partition_entry_t &p : partitions) {
+            if (!p.hash_buckets.empty()) {
+                rfail_datum(ql::base_exc_t::LOGIC,
+                    "List partitions must not carry hash_buckets.");
+            }
+            if (p.list_default) {
+                ++default_count;
+            }
+            for (const ql::datum_t &v : p.list_values) {
+                if (!is_legal_partition_key_datum(v)) {
+                    rfail_datum(ql::base_exc_t::LOGIC,
+                        "List partition values must be non-null scalars "
+                        "(or TIME); objects, arrays, geometry, null, minval, "
+                        "and maxval are not allowed.");
+                }
+                for (const ql::datum_t &prev : all_values) {
+                    if (prev == v) {
+                        rfail_datum(ql::base_exc_t::LOGIC,
+                            "List partition value %s appears in more than one "
+                            "partition.",
+                            v.trunc_print().c_str());
+                    }
+                }
+                all_values.push_back(v);
+            }
+        }
+        if (default_count != 1) {
+            rfail_datum(ql::base_exc_t::LOGIC,
+                "List partitioning requires exactly one default partition "
+                "(got %zu).",
+                default_count);
+        }
+        break;
+    }
+
+    default:
+        rfail_datum(ql::base_exc_t::LOGIC,
+            "Unknown partition type.");
+    }
+}
+
+/* ── routing ─────────────────────────────────────────────────────────────── */
+
+const partition_entry_t *partition_config_t::route(
+        const ql::datum_t &key) const {
+    switch (type) {
+    case partition_type_t::NONE:
+        return nullptr;
+
+    case partition_type_t::RANGE: {
+        /* N+1 boundaries define N partitions: entry i owns
+         * [boundaries[i], boundaries[i+1]). */
+        if (range_boundaries.size() < 2
+            || partitions.size() + 1 != range_boundaries.size()) {
+            return nullptr;
+        }
+        /* upper_bound returns the first boundary strictly greater than key;
+         * the containing interval starts one before that. */
+        auto it = std::upper_bound(
+            range_boundaries.begin(), range_boundaries.end(), key);
+        if (it == range_boundaries.begin()) {
+            return nullptr;
+        }
+        const size_t idx = static_cast<size_t>(
+            std::distance(range_boundaries.begin(), it)) - 1;
+        /* key == maxval (last boundary) yields idx == partitions.size(). */
+        if (idx >= partitions.size()) {
+            return nullptr;
+        }
+        /* Half-open: left closed, right open. */
+        if (key < range_boundaries[idx] || !(key < range_boundaries[idx + 1])) {
+            return nullptr;
+        }
+        return &partitions[idx];
+    }
+
+    case partition_type_t::HASH: {
+        if (hash_modulus < PARTITION_HASH_MODULUS_MIN) {
+            return nullptr;
+        }
+        const uint32_t bucket = partition_hash_bucket(key, hash_modulus);
+        for (const partition_entry_t &p : partitions) {
+            for (uint32_t b : p.hash_buckets) {
+                if (b == bucket) {
+                    return &p;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    case partition_type_t::LIST: {
+        const partition_entry_t *default_part = nullptr;
+        for (const partition_entry_t &p : partitions) {
+            if (p.list_default) {
+                default_part = &p;
+            }
+            for (const ql::datum_t &v : p.list_values) {
+                if (v == key) {
+                    return &p;
+                }
+            }
+        }
+        return default_part;
+    }
+
+    default:
+        return nullptr;
+    }
+}
+
+/* PART-01 stub: full predicate pruning lands in PART-04. Safe fallback is
+ * every ACTIVE partition (never false-negative by skipping a candidate). */
+std::vector<const partition_entry_t *> partition_config_t::prune(
+        const partition_predicate_t &) const {
+    std::vector<const partition_entry_t *> out;
+    out.reserve(partitions.size());
+    for (const partition_entry_t &p : partitions) {
+        if (p.state == partition_state_t::ACTIVE) {
+            out.push_back(&p);
+        }
+    }
+    return out;
+}
+
+/* ── partition_map_t ─────────────────────────────────────────────────────── */
+
+std::vector<partition_route_t> partition_map_t::routes_for(
+        const partition_selection_t &selection) const {
+    std::vector<partition_route_t> out;
+    out.reserve(selection.partition_ids.size());
+    for (const uuid_u &id : selection.partition_ids) {
+        auto it = stores.find(id);
+        if (it != stores.end()) {
+            out.emplace_back(id, it->second, epoch);
+        }
+    }
+    return out;
+}
