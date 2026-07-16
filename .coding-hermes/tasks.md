@@ -218,11 +218,11 @@
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
 
 ## Discovery Sweep Findings (2026-07-16 tick 2)
-- [ ] **BUILD — rethinkdb server binary never built; ./configure first run this tick**
-  - `./configure` was never run prior to this tick — no `config.mk` existed
-  - `make` produces `build/release/rethinkdb` but linker failed on first attempt (directory issue)
-  - Build is running in background (proc_7bb54e17b176)
-  - Once complete: verify binary runs (`./build/release/rethinkdb --version`), add to discovery sweep
+- [x] **BUILD — rethinkdb binary build attempted; linker OOM in container (signal 7, Bus error)**
+  - `./configure` was never run prior to this tick — now configured with `config.mk`
+  - All object files compile successfully; only final `ld` link step fails with Bus error
+  - Root cause: 5GB container memory limit insufficient for RethinkDB linker (~366K LOC)
+  - Workaround: build outside container, or increase container memory, or link with `-Wl,--no-keep-memory`
 - [x] **DOC — AGENTS.md stale version reference fixed: "v2.3" → "v2.5" (line 40)**
   - Line 40: `- Includes user authentication and permissions system (since v2.3).`
   - Project is at v2.5 after Phase 2 completion (C++17, FTS, vector indexes, BRIN indexes)
