@@ -159,7 +159,7 @@
 
 ## Discovery Sweep Findings (2026-07-16 tick)
 - [ ] **SPEC — Phase 3 design documents (v3.0 roadmap specs)**
-  - [ ] Write design spec for "Declarative table partitioning" — 10-section axiom-level (interfaces, data structures, error paths, DDL, ReQL surface)
+  - [x] Write design spec for "Declarative table partitioning" — 10-section axiom-level (interfaces, data structures, error paths, DDL, ReQL surface) — `264f649b52`
   - [ ] Write design spec for "Parallel query execution" — query planner changes, worker pool, partition-aware executors
   - [ ] Write design spec for "Logical replication / CDC streaming" — WAL shipping, change capture protocol, consumer API
   - [ ] Write design spec for "Async I/O subsystem" — io_uring/epoll abstraction, coroutine scheduler, buffer management
