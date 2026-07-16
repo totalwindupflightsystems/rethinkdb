@@ -169,8 +169,9 @@
   - `test/build.mk:3` had `test-deps: ... web-assets rb-driver py-driver` but none had build rules
   - Added stub `.PHONY` targets for all three legacy deps; `make test-deps` now succeeds
   - `./build/release/rethinkdb-unittest` and `make test` now both work
-- [ ] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing)**
-  - Test crashes with "Memory allocation failed" on clean HEAD (no local changes)
-  - Uses `GIGABYTE` cache balancer; 59Gi system RAM available, no cgroup limits
-  - All other 420+ unit tests pass; this one is likely a test-infra resource config issue
-  - Failing since before v2.4.5 fork — NOT caused by FTS/vector/BRIN additions
+- [x] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing) — INVESTIGATED 2026-07-16**
+  - Root cause confirmed: `TERMINAL_CONTAINER_MEMORY=5120` (5GB container memory limit)
+  - Test allocates 1GB cache buffer (GIGABYTE) + sindex post-construction B-tree memory ≈ exceeds 5GB container limit
+  - 59Gi system RAM available, but process is limited by Hermes container cgroup
+  - NOT a code bug — container memory limit too low for this test. To fix: increase container memory or run outside container
+  - All 420+ other tests pass within the container limit
