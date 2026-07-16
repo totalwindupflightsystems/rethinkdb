@@ -165,11 +165,10 @@
   - [x] Write design spec for "Async I/O subsystem" — `phase3-async-io.md` (1,303 lines, 12 sections)
   - [x] Write design spec for "JSONB/JSONPath improvements" — `phase3-jsonb-jsonpath.md` (1,335 lines, 103 ReQL examples)
   - Files: `.coding-hermes/specs/phase3-<feature>.md`
-- [ ] **BUILD — Fix `make test` target: web-assets dependency broken**
-  - `test/build.mk:3` has `test-deps: ... web-assets` but `web-assets/` directory does not exist
-  - Python scripts exist (`scripts/compile-web-assets.py`, `scripts/build-web-assets-rc.py`) but output dir missing
-  - `./build/release/rethinkdb-unittest` works directly; `make test` fails at dependency resolution
-  - Options: stub the target, create empty dir, or port scripts to Python 3 and generate assets
+- [x] **BUILD — Fix `make test` target: web-assets dependency broken** (`2072d2a40c`)
+  - `test/build.mk:3` had `test-deps: ... web-assets rb-driver py-driver` but none had build rules
+  - Added stub `.PHONY` targets for all three legacy deps; `make test-deps` now succeeds
+  - `./build/release/rethinkdb-unittest` and `make test` now both work
 - [ ] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing)**
   - Test crashes with "Memory allocation failed" on clean HEAD (no local changes)
   - Uses `GIGABYTE` cache balancer; 59Gi system RAM available, no cgroup limits
