@@ -156,3 +156,22 @@
 - [ ] Time-series optimizations
 - [ ] Foreign data wrapper support
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
+
+## Discovery Sweep Findings (2026-07-16 tick)
+- [ ] **SPEC — Phase 3 design documents (v3.0 roadmap specs)**
+  - [ ] Write design spec for "Declarative table partitioning" — 10-section axiom-level (interfaces, data structures, error paths, DDL, ReQL surface)
+  - [ ] Write design spec for "Parallel query execution" — query planner changes, worker pool, partition-aware executors
+  - [ ] Write design spec for "Logical replication / CDC streaming" — WAL shipping, change capture protocol, consumer API
+  - [ ] Write design spec for "Async I/O subsystem" — io_uring/epoll abstraction, coroutine scheduler, buffer management
+  - [ ] Write design spec for "JSONB/JSONPath improvements" — operator support, indexing, PG-compatible path expressions
+  - Files: `.coding-hermes/specs/phase3-<feature>.md`
+- [ ] **BUILD — Fix `make test` target: web-assets dependency broken**
+  - `test/build.mk:3` has `test-deps: ... web-assets` but `web-assets/` directory does not exist
+  - Python scripts exist (`scripts/compile-web-assets.py`, `scripts/build-web-assets-rc.py`) but output dir missing
+  - `./build/release/rethinkdb-unittest` works directly; `make test` fails at dependency resolution
+  - Options: stub the target, create empty dir, or port scripts to Python 3 and generate assets
+- [ ] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing)**
+  - Test crashes with "Memory allocation failed" on clean HEAD (no local changes)
+  - Uses `GIGABYTE` cache balancer; 59Gi system RAM available, no cgroup limits
+  - All other 420+ unit tests pass; this one is likely a test-infra resource config issue
+  - Failing since before v2.4.5 fork — NOT caused by FTS/vector/BRIN additions
