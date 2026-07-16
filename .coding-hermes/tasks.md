@@ -146,11 +146,11 @@
   - Billing check: https://github.com/settings/billing
 
 ## Phase 3: v3.0 (Future)
-- [ ] **SPEC — Phase 3 design documents (batch 2: 4 remaining features)**
+- [x] **SPEC — Phase 3 design documents (batch 2: 4 remaining features)**
   - [x] Write axiom-level design spec for "Generated/virtual columns" — `phase3-generated-columns.md` (14KB, 10-section axiom-level)
   - [x] Write axiom-level design spec for "MERGE/UPSERT with complex conditions" — `phase3-merge-upsert.md` (30KB, 10-section axiom-level, 62 unit tests, 15 integration scenarios)
   - [x] Write axiom-level design spec for "Time-series optimizations" — `phase3-timeseries.md` (15KB, 10-section axiom-level)
-  - [ ] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)"
+  - [x] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)"
   - Note: FDW spec (`phase3-fdw.md`, 1,294 lines) already exists but was not listed in batch 1
 - [ ] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
   - [ ] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc`
