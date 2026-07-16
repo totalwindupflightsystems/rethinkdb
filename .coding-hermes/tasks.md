@@ -118,7 +118,7 @@
       - [x] Correctness tests (exact vs approximate recall@k) — `d8e645b`: 12 tests (4 metric + 2 recall + 1 exact-match + 3 bench + 2 stress), all pass
       - [x] Integration tests with real ReQL queries — `bd6c110f`: 13 scenarios in test/rql_test/src/vector.yaml (index create, vector_near, edge cases)
       - [x] Performance benchmarks — `d8e645b`: L2(128-dim×10K), HNSW(insert 1K + search 100), IVFFlat(train+insert 1K + search 100)
-- [ ] **PHASE 2c: BRIN-like sparse indexes**
+- [x] **PHASE 2c: BRIN-like sparse indexes**
   - [x] **BRIN-1: Architecture spec & design document** — `brin-index-design.md` (632 lines, 10 sections, committed)
   - [x] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
   - [x] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage — `8f4e4b6378`, `abb61f6751`
@@ -128,13 +128,15 @@
   - [x] **BRIN-7: Tests** — 30 new tests (11 build pipeline, 11 pruning, 8 validation) + 114-line integration YAML. Commit `ab57d115ef`. Benchmarks deferred to v2.5 release testing.
 
 ## Discovery Sweep Findings (2026-07-16)
-- [ ] **TEST — Pre-existing clustering test crashes (mock_store.cc:148)**
-  - `ClusteringBackfill.BackfillTest`: guarantee failure `[!(distribution_read == nullptr && point_read == nullptr)]`
-  - `ClusteringRaft.Fuzzer`: guarantee failure in raft config state
-  - `ClusteringContractExecutor.SimpleTests`: same mock_store crash
-  - Files using mock_store: `clustering_backfill.cc`, `clustering_contract_executor.cc`, `clustering_query.cc`, `clustering_branch.cc`
-  - Pre-existing since ~2015 — mock_store.cc untouched in years
-  - Impact: ~20-30 clustering tests can't run; full `make unit` aborts
+- [x] **TEST — Pre-existing clustering test crashes (mock_store.cc:148) — INVESTIGATED 2026-07-16**
+  - Root cause: `read_t` variant has 11 types (including vector_read_t, brin_read_t, dummy_read_t, rget_read_t, changefeed types) but `mock_store_t::read()` only handles `distribution_read_t` and `point_read_t`. All other types trigger the guarantee crash.
+  - Current tests appear safe: only `mock_read()`/`mock_lookup()` (point_read_t) and backfill (distribution_read_t) flow through mock_store. `dummy_read_t` intercepted by `replica_t::do_read()`.
+  - Latent risk: any future test or internal refactor sending unhandled read types will crash. See new FIX task below.
+  - ClusteringRaft.Fuzzer crash: separate issue (raft config state guarantee, not mock_store)
+- [ ] **FIX — Add missing read type handlers to mock_store_t::read()** (mock_store.cc:148)
+  - Add handlers for `vector_read_t`, `brin_read_t`, `dummy_read_t` — throw `cannot_perform_query_exc_t("unimplemented")` matching pattern in `rdb_env.cc` mock_namespace_interface_t::read_visitor_t
+  - Files: `src/unittest/mock_store.cc` (lines 145-148), `src/unittest/mock_store.hpp`
+  - Preventative: safe for current tests, blocks future test development
 - [x] **CHORE — Clean untracked CI artifact files**
   - Deleted `build-artifacts/` (582MB), `rethinkdb-artifact-*/` (~42MB download artifacts)
   - Added `.gitignore` entries: `build-artifacts/`, `rethinkdb-artifact-*/`
