@@ -249,7 +249,7 @@ TPTEST(RDBBtree, SindexPostConstruct) {
     temp_file_t temp_file;
 
     io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
-    dummy_cache_balancer_t balancer(GIGABYTE);
+    dummy_cache_balancer_t balancer(MEGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
     log_serializer_t::create(
@@ -292,7 +292,7 @@ TPTEST(RDBBtree, SindexEraseRange) {
     temp_file_t temp_file;
 
     io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
-    dummy_cache_balancer_t balancer(GIGABYTE);
+    dummy_cache_balancer_t balancer(MEGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
     log_serializer_t::create(
@@ -379,7 +379,7 @@ TPTEST(RDBBtree, SindexInterruptionViaDrop) {
     temp_file_t temp_file;
 
     io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
-    dummy_cache_balancer_t balancer(GIGABYTE);
+    dummy_cache_balancer_t balancer(MEGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
     log_serializer_t::create(
@@ -422,7 +422,7 @@ TPTEST(RDBBtree, SindexInterruptionViaStoreDelete) {
     temp_file_t temp_file;
 
     io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
-    dummy_cache_balancer_t balancer(GIGABYTE);
+    dummy_cache_balancer_t balancer(MEGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
     log_serializer_t::create(
