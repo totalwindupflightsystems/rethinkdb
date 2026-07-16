@@ -153,7 +153,7 @@
   - [x] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)" — `phase3-wasm-udf.md` (1,041 lines, 11-section axiom-level)
   - Note: FDW spec (`phase3-fdw.md`, 1,294 lines) already exists but was not listed in batch 1
 - [ ] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
-  - [ ] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc`
+  - [x] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc` (commit `269ff001eb`)
     - partition_type_t (NONE/RANGE/HASH/LIST), partition_state_t (CREATING→FAILED)
     - partition_entry_t, partition_config_t, partition_map_t (immutable compiled snapshot)
     - validate_or_throw(), route(), prune() with exact C++ signatures from spec §3.1
