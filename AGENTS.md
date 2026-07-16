@@ -37,7 +37,7 @@ RethinkDB has unit tests (in `src/unittest/`) and integration tests. Integration
 ## Security Considerations
 
 - Supports TLS encryption for driver, intracluster, and web UI connections.
-- Includes user authentication and permissions system (since v2.3).
+- Includes user authentication and permissions system (since v2.5).
 - Certificate verification for TLS connections.
 - No known active security issues; follow standard database security practices.
 

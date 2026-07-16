@@ -146,12 +146,12 @@
   - Billing check: https://github.com/settings/billing
 
 ## Phase 3: v3.0 (Future)
-- [ ] **SPEC — Phase 3 design documents (batch 2: 5 remaining features)**
-  - [ ] Write axiom-level design spec for "Generated/virtual columns"
+- [ ] **SPEC — Phase 3 design documents (batch 2: 4 remaining features)**
+  - [x] Write axiom-level design spec for "Generated/virtual columns" — `phase3-generated-columns.md` (14KB, 10-section axiom-level)
   - [ ] Write axiom-level design spec for "MERGE/UPSERT with complex conditions"
-  - [ ] Write axiom-level design spec for "Time-series optimizations"
-  - [ ] Write axiom-level design spec for "Foreign data wrapper support"
+  - [x] Write axiom-level design spec for "Time-series optimizations" — `phase3-timeseries.md` (15KB, 10-section axiom-level)
   - [ ] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)"
+  - Note: FDW spec (`phase3-fdw.md`, 1,294 lines) already exists but was not listed in batch 1
 - [ ] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
   - [ ] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc`
     - partition_type_t (NONE/RANGE/HASH/LIST), partition_state_t (CREATING→FAILED)
@@ -223,7 +223,7 @@
   - `make` produces `build/release/rethinkdb` but linker failed on first attempt (directory issue)
   - Build is running in background (proc_7bb54e17b176)
   - Once complete: verify binary runs (`./build/release/rethinkdb --version`), add to discovery sweep
-- [ ] **DOC — AGENTS.md stale version reference: "since v2.3" should be "since v2.5"**
+- [x] **DOC — AGENTS.md stale version reference fixed: "v2.3" → "v2.5" (line 40)**
   - Line 40: `- Includes user authentication and permissions system (since v2.3).`
   - Project is at v2.5 after Phase 2 completion (C++17, FTS, vector indexes, BRIN indexes)
   - Fix is a one-line mechanical change
