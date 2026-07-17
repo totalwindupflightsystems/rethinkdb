@@ -5,6 +5,8 @@
 
 #include "btree/secondary_operations.hpp"
 #include "buffer_cache/blob.hpp"
+#include "containers/archive/stl_types.hpp"
+#include "containers/archive/versioned.hpp"
 #include "containers/binary_blob.hpp"
 
 /* This is the actual structure stored on disk for the superblock of a table's primary or
@@ -17,13 +19,21 @@ ATTR_PACKED(struct reql_btree_superblock_t {
     block_id_t sindex_block;
     block_id_t vector_graph_block;
     block_id_t brin_summary_block;
+    /* Table-level partition catalog (Phase 3). Unused / NULL_BLOCK_ID on sindex
+    superblocks. */
+    block_id_t partition_catalog_block;
 
     static const int METAINFO_BLOB_MAXREFLEN
         = from_ser_block_size_t<DEVICE_BLOCK_SIZE>::cache_size - sizeof(block_magic_t)
-                                                               - 5 * sizeof(block_id_t);
+                                                               - 6 * sizeof(block_id_t);
 
     char metainfo_blob[METAINFO_BLOB_MAXREFLEN];
 });
+
+RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(
+        partition_store_ref_t, partition_id, storage_id, shard_superblocks);
+RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(
+        partition_catalog_t, format_version, epoch, primary_key_directory_block, stores);
 
 static const uint32_t REQL_BTREE_SUPERBLOCK_SIZE = sizeof(reql_btree_superblock_t);
 
@@ -98,6 +108,22 @@ block_id_t real_superblock_t::get_sindex_block_id() {
         static_cast<const reql_btree_superblock_t *>(read.get_data_read(&sb_size));
     guarantee(sb_size == REQL_BTREE_SUPERBLOCK_SIZE);
     return sb_data->sindex_block;
+}
+
+block_id_t real_superblock_t::get_partition_catalog_block_id() {
+    buf_read_t read(&sb_buf_);
+    uint32_t sb_size;
+    const reql_btree_superblock_t *sb_data =
+        static_cast<const reql_btree_superblock_t *>(read.get_data_read(&sb_size));
+    guarantee(sb_size == REQL_BTREE_SUPERBLOCK_SIZE);
+    return sb_data->partition_catalog_block;
+}
+
+void real_superblock_t::set_partition_catalog_block_id(block_id_t new_id) {
+    buf_write_t write(&sb_buf_);
+    reql_btree_superblock_t *sb_data = static_cast<reql_btree_superblock_t *>(
+        write.get_data_write(REQL_BTREE_SUPERBLOCK_SIZE));
+    sb_data->partition_catalog_block = new_id;
 }
 
 sindex_superblock_t::sindex_superblock_t(buf_lock_t &&sb_buf)
@@ -190,6 +216,9 @@ void btree_slice_t::init_real_superblock(real_superblock_t *superblock,
     sb->root_block = NULL_BLOCK_ID;
     sb->stat_block = create_stat_block(buf_parent_t(superblock->get()->txn()));
     sb->sindex_block = NULL_BLOCK_ID;
+    sb->vector_graph_block = NULL_BLOCK_ID;
+    sb->brin_summary_block = NULL_BLOCK_ID;
+    sb->partition_catalog_block = NULL_BLOCK_ID;
 
     set_superblock_metainfo(superblock, metainfo_key, metainfo_value,
                             cluster_version_t::v2_1);
@@ -213,6 +242,7 @@ void btree_slice_t::init_sindex_superblock(sindex_superblock_t *superblock) {
     sb->sindex_block = NULL_BLOCK_ID;
     sb->vector_graph_block = NULL_BLOCK_ID;
     sb->brin_summary_block = NULL_BLOCK_ID;
+    sb->partition_catalog_block = NULL_BLOCK_ID;
 }
 
 btree_slice_t::btree_slice_t(cache_t *c, perfmon_collection_t *parent,

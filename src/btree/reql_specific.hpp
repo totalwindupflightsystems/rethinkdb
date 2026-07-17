@@ -20,19 +20,27 @@ class binary_blob_t;
 
 #include "containers/uuid.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rpc/serialize_macros.hpp"
 
 struct partition_store_ref_t {
     uuid_u partition_id;
     namespace_id_t storage_id;
     std::vector<block_id_t> shard_superblocks;
 };
+RDB_DECLARE_SERIALIZABLE(partition_store_ref_t);
 
 struct partition_catalog_t {
     uint32_t format_version;
     uint64_t epoch;
     block_id_t primary_key_directory_block;
     std::vector<partition_store_ref_t> stores;
+
+    partition_catalog_t()
+        : format_version(0),
+          epoch(0),
+          primary_key_directory_block(NULL_BLOCK_ID) { }
 };
+RDB_DECLARE_SERIALIZABLE(partition_catalog_t);
 
 /* `real_superblock_t` represents the superblock for the primary B-tree of a table. */
 class real_superblock_t : public superblock_t {
@@ -49,6 +57,11 @@ public:
     block_id_t get_stat_block_id();
 
     block_id_t get_sindex_block_id();
+
+    /* Table-level partition catalog blob (Phase 3 declarative partitioning).
+    NULL_BLOCK_ID means the table is not partitioned / catalog not published. */
+    block_id_t get_partition_catalog_block_id();
+    void set_partition_catalog_block_id(block_id_t new_id);
 
     buf_parent_t expose_buf() { return buf_parent_t(&sb_buf_); }
 
