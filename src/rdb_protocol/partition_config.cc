@@ -418,10 +418,9 @@ const partition_entry_t *partition_config_t::route(
     }
 }
 
-/* PART-01 stub: full predicate pruning lands in PART-04. Safe fallback is
- * every ACTIVE partition (never false-negative by skipping a candidate). */
-std::vector<const partition_entry_t *> partition_config_t::prune(
-        const partition_predicate_t &) const {
+/* Collect every ACTIVE partition (safe fallback — never false-negative). */
+static std::vector<const partition_entry_t *> collect_active_partitions(
+        const std::vector<partition_entry_t> &partitions) {
     std::vector<const partition_entry_t *> out;
     out.reserve(partitions.size());
     for (const partition_entry_t &p : partitions) {
@@ -430,6 +429,87 @@ std::vector<const partition_entry_t *> partition_config_t::prune(
         }
     }
     return out;
+}
+
+/* Predicate-based partition selection for the query planner.
+ *
+ * - UNKNOWN predicate or field mismatch → all ACTIVE (safe fallback)
+ * - type NONE → empty
+ * - EQUALITY → route() to a single partition (if ACTIVE)
+ * - RANGE layout + RANGE pred → O(log P + S) interval overlap
+ * - HASH/LIST + RANGE pred → cannot prune (order-agnostic / unordered) */
+std::vector<const partition_entry_t *> partition_config_t::prune(
+        const partition_predicate_t &pred) const {
+    if (type == partition_type_t::NONE) {
+        return std::vector<const partition_entry_t *>();
+    }
+
+    if (pred.kind == partition_predicate_t::UNKNOWN
+            || pred.field != key_field) {
+        return collect_active_partitions(partitions);
+    }
+
+    switch (pred.kind) {
+    case partition_predicate_t::EQUALITY: {
+        /* RANGE / HASH / LIST equality all go through route(). */
+        const partition_entry_t *p = route(pred.equality_value);
+        std::vector<const partition_entry_t *> out;
+        if (p != nullptr && p->state == partition_state_t::ACTIVE) {
+            out.push_back(p);
+        }
+        return out;
+    }
+
+    case partition_predicate_t::RANGE: {
+        /* Hash and list have no datum ordering that maps to partitions. */
+        if (type == partition_type_t::HASH || type == partition_type_t::LIST) {
+            return collect_active_partitions(partitions);
+        }
+
+        /* RANGE layout: partition i owns [boundaries[i], boundaries[i+1]).
+         * [lo, hi) overlaps [left, right) iff hi > left && lo < right. */
+        std::vector<const partition_entry_t *> out;
+        if (type != partition_type_t::RANGE
+                || range_boundaries.size() < 2
+                || partitions.size() + 1 != range_boundaries.size()) {
+            return out;
+        }
+
+        const ql::datum_t &lo = pred.range_lo;
+        const ql::datum_t &hi = pred.range_hi;
+        if (!lo.has() || !hi.has() || !(lo < hi)) {
+            /* Empty or invalid predicate range selects nothing. */
+            return out;
+        }
+
+        /* First boundary strictly greater than lo → right edge of the first
+         * partition that can overlap (right > lo). Index of that partition is
+         * one before that boundary. */
+        auto ub = std::upper_bound(
+            range_boundaries.begin(), range_boundaries.end(), lo);
+        if (ub == range_boundaries.begin()) {
+            /* lo is below the overall domain (before minval). */
+            return out;
+        }
+        size_t first = static_cast<size_t>(
+            std::distance(range_boundaries.begin(), ub)) - 1;
+
+        /* Walk consecutive partitions while left < hi. */
+        for (size_t i = first; i < partitions.size(); ++i) {
+            if (!(range_boundaries[i] < hi)) {
+                break;
+            }
+            if (partitions[i].state == partition_state_t::ACTIVE) {
+                out.push_back(&partitions[i]);
+            }
+        }
+        return out;
+    }
+
+    case partition_predicate_t::UNKNOWN:
+    default:
+        return collect_active_partitions(partitions);
+    }
 }
 
 /* ── partition_map_t ─────────────────────────────────────────────────────── */
