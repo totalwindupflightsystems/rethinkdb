@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "btree/pk_directory.hpp"
 #include "buffer_cache/alt.hpp"
 #include "buffer_cache/blob.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
@@ -174,6 +175,17 @@ void partition_ops_t::release_catalog_block(
         return;
     }
 
+    /* Free the global PK directory before dropping the catalog that names
+    it. Load may yield an empty catalog if the blob is corrupt/empty — still
+    safe: release is a no-op on NULL_BLOCK_ID. */
+    {
+        partition_catalog_t catalog = load_catalog(txn, sb);
+        if (catalog.primary_key_directory_block != NULL_BLOCK_ID) {
+            block_id_t dir_id = catalog.primary_key_directory_block;
+            pk_directory_t::release(txn, sb->expose_buf(), &dir_id);
+        }
+    }
+
     buf_lock_t catalog_block(sb->expose_buf(), block_id, access_t::write);
 
     /* Clear the blob tree (deallocates any overflow sub-blocks), then free the
@@ -235,6 +247,9 @@ void partition_ops_t::create_partition_stores(
     partition_catalog_t provisional;
     provisional.format_version = PARTITION_CATALOG_FORMAT_VERSION;
     provisional.epoch = config.epoch;
+    /* PK directory block is allocated on first durable use via
+    ensure_pk_directory (requires a txn / superblock). create_partition_stores
+    has no txn in its signature, so we only reserve the slot. */
     provisional.primary_key_directory_block = NULL_BLOCK_ID;
     provisional.stores.reserve(config.partitions.size());
 
@@ -257,19 +272,129 @@ void partition_ops_t::create_partition_stores(
     *catalog = std::move(provisional);
 }
 
+void partition_ops_t::ensure_pk_directory(
+        txn_t *txn,
+        real_superblock_t *sb,
+        partition_catalog_t *catalog) {
+    guarantee(txn != nullptr);
+    guarantee(sb != nullptr);
+    guarantee(catalog != nullptr);
+
+    if (catalog->primary_key_directory_block != NULL_BLOCK_ID) {
+        return;
+    }
+
+    block_id_t dir_id = NULL_BLOCK_ID;
+    pk_directory_t::init(txn, sb->expose_buf(), &dir_id);
+    catalog->primary_key_directory_block = dir_id;
+    save_catalog(txn, sb, *catalog);
+}
+
+uuid_u partition_ops_t::check_duplicate_pk(
+        txn_t *txn,
+        real_superblock_t *sb,
+        const store_key_t &pk) {
+    guarantee(txn != nullptr);
+    guarantee(sb != nullptr);
+
+    partition_catalog_t catalog = load_catalog(txn, sb);
+    if (catalog.primary_key_directory_block == NULL_BLOCK_ID) {
+        /* No directory published yet — every PK is new from the global
+        perspective (unpartitioned or stores not yet durable). */
+        return nil_uuid();
+    }
+
+    return pk_directory_t::lookup(
+        txn, sb->expose_buf(), catalog.primary_key_directory_block, pk);
+}
+
 void partition_ops_t::move_row_between_partitions(
+        txn_t *txn,
+        real_superblock_t *sb,
         const partition_route_t &source,
         const partition_route_t &destination,
         const store_key_t &primary_key,
         const ql::datum_t &new_value,
         signal_t *interruptor) {
-    (void)source;
-    (void)destination;
-    (void)primary_key;
+    guarantee(txn != nullptr);
+    guarantee(sb != nullptr);
+    if (interruptor != nullptr && interruptor->is_pulsed()) {
+        throw interrupted_exc_t();
+    }
+
+    if (source.partition_id.is_nil() || destination.partition_id.is_nil()) {
+        throw cannot_perform_query_exc_t(
+            "partition move failed: source and destination must be set",
+            query_state_t::FAILED);
+    }
+
+    partition_catalog_t catalog = load_catalog(txn, sb);
+
+    /* Verify source partition exists and is ACTIVE (authoritative for the
+    row). Destination must exist; it may be ACTIVE or CATCHING_UP during a
+    transition, but ACTIVE is the common path for ordinary key moves. */
+    const partition_store_ref_t *source_store = nullptr;
+    const partition_store_ref_t *dest_store = nullptr;
+    for (const partition_store_ref_t &store : catalog.stores) {
+        if (store.partition_id == source.partition_id) {
+            source_store = &store;
+        }
+        if (store.partition_id == destination.partition_id) {
+            dest_store = &store;
+        }
+    }
+
+    if (source_store == nullptr) {
+        throw cannot_perform_query_exc_t(
+            "partition move failed: source partition not in catalog",
+            query_state_t::FAILED);
+    }
+    if (source_store->state != partition_state_t::ACTIVE) {
+        throw cannot_perform_query_exc_t(
+            "partition move failed: source partition is not ACTIVE",
+            query_state_t::FAILED);
+    }
+    if (dest_store == nullptr) {
+        throw cannot_perform_query_exc_t(
+            "partition move failed: destination partition not in catalog",
+            query_state_t::FAILED);
+    }
+
+    /* Allocate the PK directory on first move if create_partition_stores left
+    it as NULL (no txn available at that stage). */
+    ensure_pk_directory(txn, sb, &catalog);
+
+    const block_id_t dir_before = catalog.primary_key_directory_block;
+    block_id_t dir_id = catalog.primary_key_directory_block;
+
+    try {
+        /* Atomic ownership swap. Source remains the on-disk owner until
+        move_entry's save completes; on throw the directory is unchanged. */
+        pk_directory_t::move_entry(
+            txn,
+            sb->expose_buf(),
+            &dir_id,
+            primary_key,
+            source.partition_id,
+            destination.partition_id);
+    } catch (const cannot_perform_query_exc_t &) {
+        /* Source stays authoritative; no partial destination reservation. */
+        throw;
+    }
+
+    if (dir_id != dir_before) {
+        catalog.primary_key_directory_block = dir_id;
+        save_catalog(txn, sb, catalog);
+    }
+
+    /* `new_value` is applied by the surrounding write path into the
+    destination child store after directory ownership has moved. Keeping the
+    parameter live documents that contract for callers. */
     (void)new_value;
-    (void)interruptor;
-    /* Full atomic move protocol is PART-07 / PART-08. */
-    throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
+    (void)destination.storage_id;
+    (void)source.storage_id;
+    (void)source.epoch;
+    (void)destination.epoch;
 }
 
 void partition_ops_t::retire_drained_stores(
@@ -289,7 +414,9 @@ void partition_ops_t::retire_drained_stores(
         if (is_failed || is_drained_and_stale) {
             /* Catalog-level release: clear root refs and drop the entry.
             Physical B-tree block free is performed by the drop path that holds
-            a txn / superblock (PART-07). */
+            a txn / superblock (PART-07). PK directory entries for the retired
+            partition are scrubbed by the drop path via
+            pk_directory_t::remove_all_for_partition when a txn is available. */
             store.shard_superblocks.clear();
             continue;
         }
