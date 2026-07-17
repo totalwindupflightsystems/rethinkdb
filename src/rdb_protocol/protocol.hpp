@@ -300,6 +300,17 @@ struct sindex_rangespec_t {
 
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_rangespec_t);
 
+/* Parallel query optargs (Phase 3 / PAR-02). Carried on rget_read_t so the
+ * local planner can decide whether to admit a parallel plan. See
+ * phase3-parallel-query.md §2. */
+struct parallel_hints_t {
+    bool parallel = false;
+    size_t max_workers = 1;
+
+    parallel_hints_t() = default;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(parallel_hints_t);
+
 struct changefeed_stamp_t {
     changefeed_stamp_t() : region(region_t::universe()) { }
     explicit changefeed_stamp_t(ql::changefeed::client_t::addr_t _addr)
@@ -360,8 +371,16 @@ public:
     optional<sindex_rangespec_t> sindex;
 
     sorting_t sorting; // Optional sorting info (UNORDERED means no sorting).
+
+    // Parallel query hints from ReQL optargs (parallel / max_workers).
+    // Empty means the client did not request parallel execution (serial).
+    // Optional for backward compatibility with clusters that don't support it.
+    optional<parallel_hints_t> parallel_hints;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(rget_read_t);
+
+/* Validates ReQL parallel_hints (max_workers range). No-op if empty. */
+void validate_parallel_hints(const optional<parallel_hints_t> &hints);
 
 class intersecting_geo_read_t {
 public:

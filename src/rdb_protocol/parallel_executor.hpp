@@ -117,6 +117,9 @@ struct parallel_planning_result_t {
     std::string serial_reason;
 };
 
+/* Spec §2.3 — hard upper bound for the ReQL max_workers optarg. */
+static constexpr size_t server_parallel_workers_hard_max = 64;
+
 /* parallel_execution_limits_t (§3.7) */
 struct parallel_execution_limits_t {
     size_t max_workers;

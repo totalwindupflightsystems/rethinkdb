@@ -23,6 +23,9 @@ public:
         env_t *, const batchspec_t &) { unreachable(); }
     virtual bool is_finished() const = 0;
 
+    /* Default no-op: only rget-backed readers honor parallel optargs. */
+    virtual void set_parallel_hints(optional<parallel_hints_t>) { }
+
     virtual changefeed::keyspec_t get_changespec() const = 0;
 };
 
@@ -126,6 +129,9 @@ public:
                                                     const batchspec_t &batchspec);
     virtual bool is_finished() const;
 
+    /* Attach ReQL parallel optargs so subsequent rget_read_t payloads carry them. */
+    void set_parallel_hints(optional<parallel_hints_t> hints);
+
     virtual changefeed::keyspec_t get_changespec() const {
         return changefeed::keyspec_t(
             readgen->get_range_spec(transforms),
@@ -143,6 +149,9 @@ protected:
         active_ranges.set(active_ranges_t());
     }
 
+    // Stamp parallel_hints onto an rget_read_t inside a read_t (if present).
+    read_t with_parallel_hints(read_t read) const;
+
     // Returns `true` if there's data in `items`.
     // Overwrite this in an implementation
     virtual bool load_items(env_t *env, const batchspec_t &batchspec) = 0;
@@ -151,6 +160,7 @@ protected:
     counted_t<real_table_t> table;
     std::vector<transform_variant_t> transforms;
     optional<changefeed_stamp_t> stamp;
+    optional<parallel_hints_t> parallel_hints;
 
     bool started;
     const scoped_ptr_t<const readgen_t> readgen;

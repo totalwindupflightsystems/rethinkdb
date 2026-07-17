@@ -22,6 +22,7 @@
 #include "rdb_protocol/context.hpp"
 #include "rdb_protocol/distribution_progress.hpp"
 #include "rdb_protocol/env.hpp"
+#include "rdb_protocol/error.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/brin.hpp"
 #include "rdb_protocol/hnsw.hpp"
@@ -35,6 +36,18 @@
 
 store_key_t key_max(sorting_t sorting) {
     return !reversed(sorting) ? store_key_t::max() : store_key_t::min();
+}
+
+void validate_parallel_hints(const optional<parallel_hints_t> &hints) {
+    if (!hints.has_value()) {
+        return;
+    }
+    // Hard max matches server_parallel_workers_hard_max in parallel_executor.hpp.
+    static constexpr size_t hard_max = 64;
+    rcheck_toplevel(
+        hints->max_workers >= 1 && hints->max_workers <= hard_max,
+        ql::base_exc_t::LOGIC,
+        strprintf("max_workers must be between 1 and %zu", hard_max));
 }
 
 namespace rdb_protocol {
@@ -2017,6 +2030,8 @@ RDB_IMPL_SERIALIZABLE_4_FOR_CLUSTER(sindex_rangespec_t,
                                     datumspec,
                                     require_sindex_val);
 
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(parallel_hints_t, parallel, max_workers);
+
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sorting_t, int8_t,
         sorting_t::UNORDERED, sorting_t::DESCENDING);
@@ -2033,7 +2048,7 @@ RDB_IMPL_SERIALIZABLE_10_FOR_CLUSTER(
     skey_version,
     serializable_env);
 // Note: stamp is intentionally not serialized (always empty for BRIN).
-RDB_IMPL_SERIALIZABLE_12_FOR_CLUSTER(
+RDB_IMPL_SERIALIZABLE_13_FOR_CLUSTER(
     rget_read_t,
     stamp,
     region,
@@ -2046,7 +2061,8 @@ RDB_IMPL_SERIALIZABLE_12_FOR_CLUSTER(
     transforms,
     terminal,
     sindex,
-    sorting);
+    sorting,
+    parallel_hints);
 RDB_IMPL_SERIALIZABLE_9_FOR_CLUSTER(
     intersecting_geo_read_t,
     stamp,

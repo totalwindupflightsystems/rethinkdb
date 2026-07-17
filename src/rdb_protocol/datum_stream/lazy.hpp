@@ -27,6 +27,9 @@ public:
     virtual optional<active_state_t> get_active_state() {
         return reader->get_active_state();
     }
+    virtual void set_parallel_hints(optional<parallel_hints_t> hints) {
+        reader->set_parallel_hints(std::move(hints));
+    }
 
 private:
     virtual std::vector<changespec_t> get_changespecs() {

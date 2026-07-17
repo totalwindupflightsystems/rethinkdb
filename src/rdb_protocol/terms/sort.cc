@@ -50,10 +50,11 @@ class orderby_term_t : public op_term_t {
 public:
     orderby_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1, -1),
-          optargspec_t({"index"})) { }
+          optargspec_t({"index", "parallel", "max_workers"})) { }
 private:
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons
             = build_comparisons_from_raw_term(this, env, args, get_src());
         raw_term_t raw_term = get_src();
@@ -93,6 +94,9 @@ private:
             r_sanity_check(sorting != sorting_t::UNORDERED);
             std::string index_str = index->as_str().to_std();
             tbl_slice = tbl_slice->with_sorting(index_str, sorting);
+            if (phints.has_value()) {
+                tbl_slice = tbl_slice->with_parallel_hints(phints);
+            }
             if (!comparisons.empty()) {
                 seq = make_counted<indexed_sort_datum_stream_t>(
                     tbl_slice->as_seq(env->env, backtrace()), lt_cmp);
@@ -103,6 +107,7 @@ private:
             if (!seq.has()) {
                 seq = tbl_slice->as_seq(env->env, backtrace());
             }
+            apply_parallel_hints(seq, phints);
             rcheck(!comparisons.empty(), base_exc_t::LOGIC,
                    "Must specify something to order by.");
             std::vector<datum_t> to_sort;
@@ -122,6 +127,9 @@ private:
             seq = make_counted<array_datum_stream_t>(
                 datum_t(std::move(to_sort), env->env->limits()),
                 backtrace());
+        }
+        if (seq.has()) {
+            apply_parallel_hints(seq, phints);
         }
         return tbl_slice.has()
             ? new_val(make_counted<selection_t>(tbl_slice->get_tbl(), seq))
