@@ -168,7 +168,7 @@
     - [x] New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
     - [x] New ReQL admin term: `r.table('t').partitionConfig({type: 'range', ...})` for repartition
     - [x] Validation at term level before touching storage
-  - [ ] **PART-04: Query planner pruning** — partition_predicate_t, between/getAll optimization
+  - [x] **PART-04: Query planner pruning** — partition_predicate_t, between/getAll optimization (commit `701623b58a`)
     - Extract partition key from query predicates (equality, between, getAll)
     - range layouts: between selects overlapping intervals
     - hash/list: equality/getAll on partition field → one partition
