@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "buffer_cache/types.hpp"   // for `write_durability_t`
+#include "btree/reql_specific.hpp"  // partition_store_ref_t for set_partition_config_t
 #include "clustering/administration/servers/server_metadata.hpp"
 #include "clustering/generic/nonoverlapping_regions.hpp"
 #include "containers/name_string.hpp"
@@ -144,10 +145,16 @@ public:
         bool overwrite;
     };
 
+    /* Raft cutover for online repartitioning (PART-07 / section 5.3 step 7).
+    `expected_epoch` must match the live config epoch or the change is rejected
+    (concurrent repartition / stale proposal). `provisional_stores` are the
+    target partition-shard store refs allocated before proposal; they become
+    routable only after this change commits with epoch E+1. */
     class set_partition_config_t {
     public:
         uint64_t expected_epoch;
         partition_config_t new_config;
+        std::vector<partition_store_ref_t> provisional_stores;
     };
 
     table_config_and_shards_change_t() { }

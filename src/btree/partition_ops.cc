@@ -298,3 +298,31 @@ void partition_ops_t::retire_drained_stores(
 
     catalog->stores = std::move(survivors);
 }
+
+void partition_ops_t::enqueue_transition_modification(
+        txn_t *txn,
+        real_superblock_t *sb,
+        const store_key_t &pk,
+        const ql::datum_t &value,
+        signal_t *interruptor) {
+    guarantee(txn != nullptr);
+    guarantee(sb != nullptr);
+    if (interruptor != nullptr && interruptor->is_pulsed()) {
+        throw interrupted_exc_t();
+    }
+
+    partition_catalog_t catalog = load_catalog(txn, sb);
+    if (!catalog.transition_active) {
+        /* No online repartition in progress — ordinary writes do not queue. */
+        return;
+    }
+
+    transition_modification_t mod;
+    mod.primary_key = pk;
+    mod.value = value;
+    mod.mutation_stamp = catalog.next_mutation_stamp;
+    ++catalog.next_mutation_stamp;
+    catalog.transition_queue.push_back(std::move(mod));
+
+    save_catalog(txn, sb, catalog);
+}

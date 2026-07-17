@@ -8,6 +8,7 @@
 #include "containers/archive/stl_types.hpp"
 #include "containers/archive/versioned.hpp"
 #include "containers/binary_blob.hpp"
+#include "rdb_protocol/serialize_datum.hpp"
 
 /* This is the actual structure stored on disk for the superblock of a table's primary or
 sindex B-tree. Both of them use the exact same format, but the sindex B-trees don't make
@@ -32,8 +33,13 @@ ATTR_PACKED(struct reql_btree_superblock_t {
 
 RDB_IMPL_SERIALIZABLE_5_SINCE_v2_4(
         partition_store_ref_t, partition_id, storage_id, shard_superblocks, state, epoch);
-RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(
-        partition_catalog_t, format_version, epoch, primary_key_directory_block, stores);
+RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(
+        transition_modification_t, primary_key, value, mutation_stamp);
+RDB_IMPL_SERIALIZABLE_9_SINCE_v2_4(
+        partition_catalog_t,
+        format_version, epoch, primary_key_directory_block, stores,
+        transition_active, transition_source_epoch, next_mutation_stamp,
+        high_water_mark, transition_queue);
 
 static const uint32_t REQL_BTREE_SUPERBLOCK_SIZE = sizeof(reql_btree_superblock_t);
 
