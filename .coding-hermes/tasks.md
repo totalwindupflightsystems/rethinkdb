@@ -209,7 +209,7 @@
 - [ ] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
   - [x] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7. (commit `6066e89846`)
   - [x] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms (commit `cabac136e7`). parallel_hints_t struct, validation, rget_read_t field, datum_stream wiring, term optargs (table/get_all/between/filter/map/order_by). 13 files (+219/-35). Build+proto tests green, guard PASS. Profile deferred to PAR-05.
-  - [ ] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4.
+  - [x] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4. (commit `962f89a56b`)
   - [ ] **PAR-04: Storage integration** — `store_t::read()` fragment dispatch, `btree_store_t` parallel scan state, `parallel_scan_t`. Spec §5.2.
   - [ ] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3.
   - [ ] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure. Spec §6.
