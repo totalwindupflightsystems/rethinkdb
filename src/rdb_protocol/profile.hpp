@@ -64,7 +64,24 @@ struct stop_t {
 
 RDB_DECLARE_SERIALIZABLE(stop_t);
 
-typedef boost::variant<start_t, split_t, sample_t, stop_t> event_t;
+/* Parallel planner admission decision (Phase 3 / PAR-05). Recorded when
+ * `{parallel: true}` is requested so profiles can show selected vs serial
+ * fallback without changing ordinary result data (spec §2.6). */
+struct parallel_decision_t {
+    parallel_decision_t();
+    explicit parallel_decision_t(std::string reason);        // serial fallback
+    parallel_decision_t(size_t workers, size_t fragments);   // parallel admitted
+
+    bool parallel_admitted = false;
+    size_t workers_ = 0;
+    size_t fragments_ = 0;
+    std::string serial_reason_;
+};
+
+RDB_DECLARE_SERIALIZABLE(parallel_decision_t);
+
+typedef boost::variant<start_t, split_t, sample_t, stop_t, parallel_decision_t>
+    event_t;
 
 typedef std::vector<event_t> event_log_t;
 
@@ -75,6 +92,9 @@ public:
     trace_t();
     ql::datum_t as_datum() const;
     event_log_t extract_event_log() RVALUE_THIS;
+    /* Record a parallel planner decision (PAR-05). No-op when profiling is
+     * disabled via disabler_t. */
+    void record_parallel_decision(const parallel_decision_t &decision);
 private:
     friend class starter_t;
     friend class splitter_t;
