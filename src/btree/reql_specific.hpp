@@ -19,13 +19,29 @@ class binary_blob_t;
 /* -- Partition catalog types (Phase 3 declarative partitioning) -- */
 
 #include "containers/uuid.hpp"
+#include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rpc/serialize_macros.hpp"
+
+/* On-disk catalog format version for partition_catalog_t. Bump when the
+serialized layout of the catalog or its store refs changes incompatibly. */
+static constexpr uint32_t PARTITION_CATALOG_FORMAT_VERSION = 1;
 
 struct partition_store_ref_t {
     uuid_u partition_id;
     namespace_id_t storage_id;
     std::vector<block_id_t> shard_superblocks;
+    /* Lifecycle state for this store (CREATING / CATCHING_UP / ACTIVE /
+    DRAINING / FAILED). Tracked on the store ref so the catalog can hold both
+    live and draining stores across an epoch cutover. */
+    partition_state_t state;
+    /* Epoch that published this store. DRAINING stores from epoch E may be
+    retired once minimum_live_epoch > E. */
+    uint64_t epoch;
+
+    partition_store_ref_t()
+        : state(partition_state_t::CREATING),
+          epoch(0) { }
 };
 RDB_DECLARE_SERIALIZABLE(partition_store_ref_t);
 

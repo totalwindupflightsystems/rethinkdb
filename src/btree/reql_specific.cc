@@ -30,8 +30,8 @@ ATTR_PACKED(struct reql_btree_superblock_t {
     char metainfo_blob[METAINFO_BLOB_MAXREFLEN];
 });
 
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(
-        partition_store_ref_t, partition_id, storage_id, shard_superblocks);
+RDB_IMPL_SERIALIZABLE_5_SINCE_v2_4(
+        partition_store_ref_t, partition_id, storage_id, shard_superblocks, state, epoch);
 RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(
         partition_catalog_t, format_version, epoch, primary_key_directory_block, stores);
 
