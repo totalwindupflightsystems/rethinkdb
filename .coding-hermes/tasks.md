@@ -211,7 +211,7 @@
   - [x] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms (commit `cabac136e7`). parallel_hints_t struct, validation, rget_read_t field, datum_stream wiring, term optargs (table/get_all/between/filter/map/order_by). 13 files (+219/-35). Build+proto tests green, guard PASS. Profile deferred to PAR-05.
   - [x] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4. (commit `962f89a56b`)
   - [x] **PAR-04: Storage integration** — `parallel_scan_t` B-tree row counts + quantile sampling. Real `estimate_row_count()` (stat block) and `sample_key_quantiles()` (internal-node key sampling via `get_btree_key_distribution()`). Remaining: `parallel_read_t` protocol variant, `store_t::read()` fragment dispatch. (commits `ed9e0f4609`, `65790a3f09`)
-  - [ ] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3.
+  - [x] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3. (commit `996ac35c1b`)
   - [ ] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure. Spec §6.
   - [ ] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7.
   - [ ] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8.
