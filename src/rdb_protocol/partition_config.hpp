@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "btree/keys.hpp"
@@ -65,11 +66,39 @@ public:
 RDB_DECLARE_SERIALIZABLE(partition_entry_t);
 RDB_DECLARE_EQUALITY_COMPARABLE(partition_entry_t);
 
-/* Forward declarations for types fully defined in later PART-0x work.
- * partition_predicate_t is only used by reference in prune(); the stub
- * ignores it. partition_route_t / partition_selection_t are minimal stubs
- * so partition_map_t::routes_for can compile before PART-04. */
-class partition_predicate_t;
+/* Predicate extracted by the query planner for partition pruning.
+ * UNKNOWN = cannot prove a restriction (safe fallback: all active).
+ * EQUALITY / RANGE only apply when `field` matches config.key_field. */
+class partition_predicate_t {
+public:
+    enum kind_t { UNKNOWN, EQUALITY, RANGE };
+    kind_t kind;
+    std::string field;           /* partition key field name */
+    ql::datum_t equality_value;  /* EQUALITY */
+    ql::datum_t range_lo;        /* RANGE: lower bound (inclusive) */
+    ql::datum_t range_hi;        /* RANGE: upper bound (exclusive) */
+
+    partition_predicate_t() : kind(UNKNOWN) { }
+
+    static partition_predicate_t make_equality(
+            const std::string &f, ql::datum_t val) {
+        partition_predicate_t p;
+        p.kind = EQUALITY;
+        p.field = f;
+        p.equality_value = std::move(val);
+        return p;
+    }
+
+    static partition_predicate_t make_range(
+            const std::string &f, ql::datum_t lo, ql::datum_t hi) {
+        partition_predicate_t p;
+        p.kind = RANGE;
+        p.field = f;
+        p.range_lo = std::move(lo);
+        p.range_hi = std::move(hi);
+        return p;
+    }
+};
 
 class partition_route_t {
 public:
@@ -84,7 +113,7 @@ public:
 
 class partition_selection_t {
 public:
-    /* Opaque selection handle; full semantics arrive in PART-04. */
+    /* Set of partition UUIDs selected by prune() / the planner for fan-out. */
     std::vector<uuid_u> partition_ids;
 };
 
@@ -122,8 +151,7 @@ public:
     partition_map_t() : epoch(0) { }
 
     /* partition UUID → selection of routes for query fan-out.
-     * Full implementation in PART-04; PART-01 returns routes for the
-     * requested partition_ids when present in `stores`. */
+     * Returns routes for the requested partition_ids present in `stores`. */
     std::vector<partition_route_t> routes_for(const partition_selection_t &) const;
 };
 
