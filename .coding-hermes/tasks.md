@@ -191,7 +191,7 @@
     - [x] Target replay idempotent by primary key + mutation stamp (apply_modification_idempotent)
     - [x] Cutover commits only after replay reaches high-water mark (targets_caught_up + commit_catalog_cutover)
     - [x] Failed repartition: source epoch stays authoritative, clean up unpublished (abort_unpublished_transition)
-  - [ ] **PART-08: Global primary-key directory** — duplicate-PK enforcement, atomic move
+  - [x] **PART-08: Global primary-key directory** — duplicate-PK enforcement, atomic move (commit `40b395cd03`)
     - B-tree mapping primary keys → partition UUIDs
     - Duplicate-PK detection at insert across all partitions
     - Atomic move protocol: source authoritative until target confirmed
