@@ -45,16 +45,48 @@ struct partition_store_ref_t {
 };
 RDB_DECLARE_SERIALIZABLE(partition_store_ref_t);
 
+/* One durable entry in the transition modification queue (PART-07). Written
+for every source-epoch mutation while a repartition is in progress so target
+replay can catch up without blocking ordinary writes. */
+struct transition_modification_t {
+    store_key_t primary_key;
+    /* New document value, or a null/empty datum for a delete. */
+    ql::datum_t value;
+    /* Monotonic stamp assigned at enqueue; target replay is idempotent by
+    (primary_key, mutation_stamp). */
+    uint64_t mutation_stamp;
+
+    transition_modification_t()
+        : mutation_stamp(0) { }
+};
+RDB_DECLARE_SERIALIZABLE(transition_modification_t);
+
 struct partition_catalog_t {
     uint32_t format_version;
     uint64_t epoch;
     block_id_t primary_key_directory_block;
     std::vector<partition_store_ref_t> stores;
 
+    /* PART-07: durable transition modification queue, stored alongside the
+    catalog blob so snapshot+replay survives crashes. Empty / inactive when no
+    repartition is running. Cleared after successful cutover or fail cleanup. */
+    bool transition_active;
+    uint64_t transition_source_epoch;
+    /* Next stamp to assign on enqueue; starts at 1 when a transition begins. */
+    uint64_t next_mutation_stamp;
+    /* High-water mark recorded after snapshot copy; replay applies entries
+    with stamp <= high_water_mark. Zero until snapshot completes. */
+    uint64_t high_water_mark;
+    std::vector<transition_modification_t> transition_queue;
+
     partition_catalog_t()
         : format_version(0),
           epoch(0),
-          primary_key_directory_block(NULL_BLOCK_ID) { }
+          primary_key_directory_block(NULL_BLOCK_ID),
+          transition_active(false),
+          transition_source_epoch(0),
+          next_mutation_stamp(1),
+          high_water_mark(0) { }
 };
 RDB_DECLARE_SERIALIZABLE(partition_catalog_t);
 

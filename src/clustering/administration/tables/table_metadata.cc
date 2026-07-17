@@ -103,6 +103,10 @@ public:
                 table_config_and_shards->config.partitioning.epoch) {
             return false;
         }
+        /* Provisional stores are allocated before proposal; after Raft commit
+        they are routable under the new config epoch. The storage-side catalog
+        already holds them — this change only swaps the authoritative map. */
+        (void)set_partition_config.provisional_stores;
         table_config_and_shards->config.partitioning =
             set_partition_config.new_config;
         return true;
@@ -290,9 +294,9 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(table_config_and_shards_change_t::sindex_ren
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_create_t, config);
 RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_drop_t);
-RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     table_config_and_shards_change_t::set_partition_config_t,
-    expected_epoch, new_config);
+    expected_epoch, new_config, provisional_stores);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(database_semilattice_metadata_t, name);
 RDB_IMPL_SEMILATTICE_JOINABLE_1(database_semilattice_metadata_t, name);

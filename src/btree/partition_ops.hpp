@@ -118,6 +118,17 @@ public:
         uint64_t minimum_live_epoch,
         partition_catalog_t *catalog);
 
+    /* Queue a modification for replay during an active repartition (PART-07).
+    Called for every write that routes to the source epoch while a transition is
+    in progress. Stored durably in the catalog blob so replay survives crashes
+    (step 5 idempotency). No-op when no transition is active. */
+    static void enqueue_transition_modification(
+        txn_t *txn,
+        real_superblock_t *sb,
+        const store_key_t &pk,
+        const ql::datum_t &value,
+        signal_t *interruptor);
+
 private:
     /* Allocate a new empty catalog block under `sb` and return its lock with
     a zeroed blob-ref slot. Caller owns the lock. */
