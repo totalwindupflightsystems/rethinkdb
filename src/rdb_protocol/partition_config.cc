@@ -158,17 +158,17 @@ using namespace partition_error_code;
 void partition_config_t::validate_or_throw() const {
     if (type == partition_type_t::NONE) {
         if (!partitions.empty()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(config_invalid,
                 "Unpartitioned table config (type=NONE) must have an empty "
                 "partitions vector.");
         }
         if (!range_boundaries.empty()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(config_invalid,
                 "Unpartitioned table config (type=NONE) must have empty "
                 "range_boundaries.");
         }
         if (hash_modulus != 0) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(config_invalid,
                 "Unpartitioned table config (type=NONE) must have "
                 "hash_modulus=0.");
         }
@@ -176,17 +176,17 @@ void partition_config_t::validate_or_throw() const {
     }
 
     if (key_field.empty()) {
-        rfail_datum(ql::base_exc_t::LOGIC,
+        raise_logic(config_invalid,
             "Partition key field (`by`) must be a non-empty string.");
     }
 
     if (partitions.empty()) {
-        rfail_datum(ql::base_exc_t::LOGIC,
+        raise_logic(config_invalid,
             "Partitioned table config must define at least one partition.");
     }
 
     if (partitions.size() > PARTITION_MAX_COUNT) {
-        rfail_datum(ql::base_exc_t::LOGIC,
+        raise_logic(config_invalid,
             "A table may have at most %zu partitions (got %zu).",
             PARTITION_MAX_COUNT, partitions.size());
     }
@@ -196,11 +196,11 @@ void partition_config_t::validate_or_throw() const {
         std::set<std::string> seen_names;
         for (const partition_entry_t &p : partitions) {
             if (p.name.empty()) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(config_invalid,
                     "Partition names must be non-empty.");
             }
             if (!seen_names.insert(p.name.str()).second) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(config_invalid,
                     "Duplicate partition name `%s`.", p.name.c_str());
             }
         }
@@ -213,41 +213,41 @@ void partition_config_t::validate_or_throw() const {
     case partition_type_t::RANGE: {
         /* N+1 boundaries define N partitions. */
         if (range_boundaries.size() != partitions.size() + 1) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(range_invalid,
                 "Range partitioning requires N+1 boundaries for N partitions "
                 "(got %zu boundaries for %zu partitions).",
                 range_boundaries.size(), partitions.size());
         }
         if (range_boundaries.front() != ql::datum_t::minval()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(range_invalid,
                 "Range partition boundaries must start at r.minval.");
         }
         if (range_boundaries.back() != ql::datum_t::maxval()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(range_invalid,
                 "Range partition boundaries must end at r.maxval.");
         }
         for (size_t i = 0; i + 1 < range_boundaries.size(); ++i) {
             if (!range_boundaries[i].has() || !range_boundaries[i + 1].has()) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(range_invalid,
                     "Range partition boundaries must be initialized datums.");
             }
             if (!(range_boundaries[i] < range_boundaries[i + 1])) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(range_invalid,
                     "Range partition boundaries must be strictly sorted and "
                     "define nonempty [from, to) intervals.");
             }
         }
         if (hash_modulus != 0) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(range_invalid,
                 "Range partitioning must have hash_modulus=0.");
         }
         for (const partition_entry_t &p : partitions) {
             if (!p.hash_buckets.empty()) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(range_invalid,
                     "Range partitions must not carry hash_buckets.");
             }
             if (!p.list_values.empty() || p.list_default) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(range_invalid,
                     "Range partitions must not carry list values/default.");
             }
         }
@@ -257,30 +257,30 @@ void partition_config_t::validate_or_throw() const {
     case partition_type_t::HASH: {
         if (hash_modulus < PARTITION_HASH_MODULUS_MIN
             || hash_modulus > PARTITION_HASH_MODULUS_MAX) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(hash_invalid,
                 "Hash partition modulus must be in [%u, %u] (got %u).",
                 PARTITION_HASH_MODULUS_MIN, PARTITION_HASH_MODULUS_MAX,
                 hash_modulus);
         }
         if (!range_boundaries.empty()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(hash_invalid,
                 "Hash partitioning must have empty range_boundaries.");
         }
         std::vector<bool> seen(hash_modulus, false);
         size_t covered = 0;
         for (const partition_entry_t &p : partitions) {
             if (!p.list_values.empty() || p.list_default) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(hash_invalid,
                     "Hash partitions must not carry list values/default.");
             }
             for (uint32_t bucket : p.hash_buckets) {
                 if (bucket >= hash_modulus) {
-                    rfail_datum(ql::base_exc_t::LOGIC,
+                    raise_logic(hash_invalid,
                         "Hash bucket %u is out of range for modulus %u.",
                         bucket, hash_modulus);
                 }
                 if (seen[bucket]) {
-                    rfail_datum(ql::base_exc_t::LOGIC,
+                    raise_logic(hash_invalid,
                         "Hash bucket %u is assigned to more than one partition.",
                         bucket);
                 }
@@ -289,7 +289,7 @@ void partition_config_t::validate_or_throw() const {
             }
         }
         if (covered != static_cast<size_t>(hash_modulus)) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(hash_invalid,
                 "Hash partitioning must assign every bucket in [0, %u) "
                 "exactly once (covered %zu of %u).",
                 hash_modulus, covered, hash_modulus);
@@ -299,11 +299,11 @@ void partition_config_t::validate_or_throw() const {
 
     case partition_type_t::LIST: {
         if (hash_modulus != 0) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(list_invalid,
                 "List partitioning must have hash_modulus=0.");
         }
         if (!range_boundaries.empty()) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(list_invalid,
                 "List partitioning must have empty range_boundaries.");
         }
         size_t default_count = 0;
@@ -312,7 +312,7 @@ void partition_config_t::validate_or_throw() const {
         std::vector<ql::datum_t> all_values;
         for (const partition_entry_t &p : partitions) {
             if (!p.hash_buckets.empty()) {
-                rfail_datum(ql::base_exc_t::LOGIC,
+                raise_logic(list_invalid,
                     "List partitions must not carry hash_buckets.");
             }
             if (p.list_default) {
@@ -320,14 +320,14 @@ void partition_config_t::validate_or_throw() const {
             }
             for (const ql::datum_t &v : p.list_values) {
                 if (!is_legal_partition_key_datum(v)) {
-                    rfail_datum(ql::base_exc_t::LOGIC,
+                    raise_logic(list_invalid,
                         "List partition values must be non-null scalars "
                         "(or TIME); objects, arrays, geometry, null, minval, "
                         "and maxval are not allowed.");
                 }
                 for (const ql::datum_t &prev : all_values) {
                     if (prev == v) {
-                        rfail_datum(ql::base_exc_t::LOGIC,
+                        raise_logic(list_invalid,
                             "List partition value %s appears in more than one "
                             "partition.",
                             v.trunc_print().c_str());
@@ -337,7 +337,7 @@ void partition_config_t::validate_or_throw() const {
             }
         }
         if (default_count != 1) {
-            rfail_datum(ql::base_exc_t::LOGIC,
+            raise_logic(list_invalid,
                 "List partitioning requires exactly one default partition "
                 "(got %zu).",
                 default_count);
@@ -346,8 +346,7 @@ void partition_config_t::validate_or_throw() const {
     }
 
     default:
-        rfail_datum(ql::base_exc_t::LOGIC,
-            "Unknown partition type.");
+        raise_logic(config_invalid, "Unknown partition type.");
     }
 }
 
