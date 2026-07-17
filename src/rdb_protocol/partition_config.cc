@@ -9,6 +9,7 @@
 #include "containers/archive/vector_stream.hpp"
 #include "containers/archive/versioned.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/partition_errors.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
