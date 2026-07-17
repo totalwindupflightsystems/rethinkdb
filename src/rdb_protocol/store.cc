@@ -20,8 +20,11 @@
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/hnsw.hpp"
+#include "rdb_protocol/query_planner.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/table_common.hpp"
+#include "rdb_protocol/wire_func.hpp"
+#include "logger.hpp"
 
 void store_t::note_reshard(const region_t &shard_region) {
     // We acquire `changefeed_servers_lock` and move the matching pointer out of
@@ -295,6 +298,121 @@ void do_read(ql::env_t *env,
         }
     }
 }
+
+namespace {
+
+/* Map rget terminal variant to parallel planner terminal (PAR-05). */
+parallel_plan_t::terminal_t map_rget_terminal(
+        const optional<ql::terminal_variant_t> &terminal) {
+    if (!terminal.has_value()) {
+        return parallel_plan_t::terminal_t::STREAM;
+    }
+    if (boost::get<ql::count_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::COUNT;
+    }
+    if (boost::get<ql::sum_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::SUM;
+    }
+    if (boost::get<ql::avg_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::AVG;
+    }
+    if (boost::get<ql::min_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::MIN;
+    }
+    if (boost::get<ql::max_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::MAX;
+    }
+    if (boost::get<ql::reduce_wire_func_t>(&*terminal) != nullptr) {
+        return parallel_plan_t::terminal_t::REDUCE;
+    }
+    /* limit_read_t and any unknown terminal: stream-style. */
+    return parallel_plan_t::terminal_t::STREAM;
+}
+
+parallel_plan_t::ordering_t map_rget_ordering(sorting_t sorting) {
+    switch (sorting) {
+    case sorting_t::UNORDERED:
+        return parallel_plan_t::ordering_t::UNORDERED;
+    case sorting_t::ASCENDING:
+        return parallel_plan_t::ordering_t::PRIMARY_KEY_ASCENDING;
+    case sorting_t::DESCENDING:
+        /* Order-preserving reverse merge is out of scope for Phase 3. */
+        return parallel_plan_t::ordering_t::EXPLICIT_ORDER;
+    default:
+        return parallel_plan_t::ordering_t::UNORDERED;
+    }
+}
+
+/* Build a planner request from an rget. Estimates are placeholders until
+ * B-tree stats are threaded through (PAR-04 → later wiring). With zeros the
+ * cost model correctly returns serial (below_threshold). */
+parallel_planning_request_t make_parallel_planning_request(
+        const rget_read_t &rget) {
+    parallel_planning_request_t request;
+    guarantee(rget.parallel_hints.has_value());
+    request.parallel_requested = rget.parallel_hints->parallel;
+    request.max_workers = rget.parallel_hints->max_workers;
+    request.range = rget.region.inner;
+    request.estimated_rows = 0;
+    request.estimated_bytes = 0;
+    request.estimated_serial_us = 0;
+    request.terminal = map_rget_terminal(rget.terminal);
+    request.ordering = map_rget_ordering(rget.sorting);
+    if (!rget.transforms.empty()) {
+        request.preferred_kind =
+            query_fragment_t::kind_t::FILTERED_PRIMARY_RANGE;
+    } else {
+        request.preferred_kind =
+            query_fragment_t::kind_t::PRIMARY_KEY_RANGE;
+    }
+    return request;
+}
+
+/* Invoke the planner when parallel is requested; record the decision on the
+ * profile trace. Actual parallel dispatch is PAR-06 — always fall through to
+ * serial do_read for now. */
+void maybe_plan_parallel_rget(
+        const rget_read_t &rget,
+        profile::trace_t *trace) {
+    if (!rget.parallel_hints.has_value() || !rget.parallel_hints->parallel) {
+        return;
+    }
+
+    parallel_planning_request_t request = make_parallel_planning_request(rget);
+    query_planner_t planner;
+    parallel_planning_result_t result = planner.plan(request);
+
+    if (result.plan.has()) {
+        const size_t n_fragments = result.plan->fragments().size();
+        const size_t workers = n_fragments;
+        logNTC("Parallel plan selected with %zu fragments / ~%zu workers; "
+               "execution deferred to PAR-06 (serial do_read for now).",
+               n_fragments, workers);
+        if (trace != nullptr) {
+            /* Record admission decision (fragments = n_parallel_jobs). */
+            trace->record_parallel_decision(
+                profile::parallel_decision_t(workers, n_fragments));
+            /* Also stamp a split event so profiles surface job count. Nested
+             * fragment event logs are empty until PAR-06 dispatches work; each
+             * job is represented by a lone stop_t so construct_datum stays
+             * well-formed. */
+            profile::event_log_t fragment_logs;
+            fragment_logs.reserve(n_fragments);
+            for (size_t i = 0; i < n_fragments; ++i) {
+                fragment_logs.push_back(profile::stop_t());
+            }
+            profile::splitter_t splitter(trace);
+            splitter.give_splits(n_fragments, fragment_logs);
+        }
+    } else {
+        if (trace != nullptr) {
+            trace->record_parallel_decision(
+                profile::parallel_decision_t(result.serial_reason));
+        }
+    }
+}
+
+}  // namespace
 
 // TODO: get rid of this extra response_t copy on the stack
 struct rdb_read_visitor_t : public boost::static_visitor<void> {
@@ -906,6 +1024,11 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             // rdb_r_unshard_visitor_t.
             rassert(rget.serializable_env.global_optargs.has_optarg("db"));
         }
+
+        /* PAR-05: when ReQL requested parallel execution, run the planner for
+         * profile / admission decision. Dispatch remains serial until PAR-06. */
+        maybe_plan_parallel_rget(rget, trace);
+
         ql::env_t ql_env(
             ctx,
             ql::return_empty_normal_batches_t::NO,
@@ -914,6 +1037,12 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             trace);
         do_read(&ql_env, store, btree, superblock, rget, res,
                 release_superblock_t::RELEASE, nullptr);
+    }
+
+    void operator()(const parallel_read_t &) {
+        throw cannot_perform_query_exc_t(
+            "parallel_read_t not yet implemented — PAR-06",
+            query_state_t::FAILED);
     }
 
     void operator()(const distribution_read_t &dg) {

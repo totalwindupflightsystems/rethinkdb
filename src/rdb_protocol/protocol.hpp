@@ -532,6 +532,37 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(brin_read_t);
 
+/* Fragment-local parallel range read (Phase 3 / PAR-05). Produced by the
+ * parallel executor (PAR-06) for each planned fragment. Half-open key range
+ * [left_key, right_key). */
+class parallel_read_t {
+public:
+    parallel_read_t() : fragment_ordinal(0) { }
+    parallel_read_t(region_t _region,
+                    store_key_t _left_key,
+                    store_key_t _right_key,
+                    size_t _fragment_ordinal,
+                    std::vector<ql::transform_variant_t> _transforms,
+                    optional<ql::terminal_variant_t> _terminal,
+                    serializable_env_t s_env)
+        : region(std::move(_region)),
+          left_key(std::move(_left_key)),
+          right_key(std::move(_right_key)),
+          fragment_ordinal(_fragment_ordinal),
+          transforms(std::move(_transforms)),
+          terminal(std::move(_terminal)),
+          serializable_env(std::move(s_env)) { }
+
+    region_t region;
+    store_key_t left_key;      // half-open [left, right)
+    store_key_t right_key;
+    size_t fragment_ordinal;
+    std::vector<ql::transform_variant_t> transforms;
+    optional<ql::terminal_variant_t> terminal;
+    serializable_env_t serializable_env;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(parallel_read_t);
+
 class distribution_read_t {
 public:
     distribution_read_t()
@@ -596,6 +627,7 @@ struct read_t {
                            nearest_geo_read_t,
                            vector_read_t,
                            brin_read_t,
+                           parallel_read_t,
                            changefeed_subscribe_t,
                            changefeed_stamp_t,
                            changefeed_limit_subscribe_t,

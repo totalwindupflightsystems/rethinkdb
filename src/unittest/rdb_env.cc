@@ -130,6 +130,12 @@ void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
 }
 
 void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
+        UNUSED const parallel_read_t &pr) {
+    throw cannot_perform_query_exc_t(
+        "parallel_read_t not yet implemented — PAR-06", query_state_t::FAILED);
+}
+
+void NORETURN mock_namespace_interface_t::read_visitor_t::operator()(
         UNUSED const distribution_read_t &dg) {
     throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
 }

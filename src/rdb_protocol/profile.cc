@@ -44,6 +44,23 @@ stop_t::stop_t()
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(stop_t, when_);
 
+parallel_decision_t::parallel_decision_t() { }
+
+parallel_decision_t::parallel_decision_t(std::string reason)
+    : parallel_admitted(false),
+      workers_(0),
+      fragments_(0),
+      serial_reason_(std::move(reason)) { }
+
+parallel_decision_t::parallel_decision_t(size_t workers, size_t fragments)
+    : parallel_admitted(true),
+      workers_(workers),
+      fragments_(fragments),
+      serial_reason_() { }
+
+RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(
+    parallel_decision_t, parallel_admitted, workers_, fragments_, serial_reason_);
+
 ql::datum_t construct_start(
         ticks_t duration, std::string description,
         ql::datum_t sub_tasks) {
@@ -74,6 +91,31 @@ ql::datum_t construct_sample(
         ql::datum_t(datum_string_t(sample->description_));
         return ql::datum_t(std::move(res));
     return ql::datum_t();
+}
+
+ql::datum_t construct_parallel_decision(const parallel_decision_t &decision) {
+    std::map<datum_string_t, ql::datum_t> parallel;
+    parallel[datum_string_t("requested")] = ql::datum_t::boolean(true);
+    parallel[datum_string_t("selected")] =
+        ql::datum_t::boolean(decision.parallel_admitted);
+    if (decision.parallel_admitted) {
+        parallel[datum_string_t("fallback_reason")] = ql::datum_t::null();
+        parallel[datum_string_t("admitted_workers")] =
+            ql::datum_t(static_cast<double>(decision.workers_));
+        parallel[datum_string_t("fragments_total")] =
+            ql::datum_t(static_cast<double>(decision.fragments_));
+    } else {
+        parallel[datum_string_t("fallback_reason")] =
+            ql::datum_t(datum_string_t(decision.serial_reason_));
+        parallel[datum_string_t("admitted_workers")] = ql::datum_t(0.0);
+        parallel[datum_string_t("fragments_total")] = ql::datum_t(0.0);
+    }
+
+    std::map<datum_string_t, ql::datum_t> res;
+    res[datum_string_t("description")] =
+        ql::datum_t(datum_string_t("parallel decision"));
+    res[datum_string_t("parallel")] = ql::datum_t(std::move(parallel));
+    return ql::datum_t(std::move(res));
 }
 
 ql::datum_t construct_datum(
@@ -119,6 +161,10 @@ public:
         (*begin_)++;
         res_->push_back(construct_sample(&sample));
     }
+    void operator()(const parallel_decision_t &decision) const {
+        (*begin_)++;
+        res_->push_back(construct_parallel_decision(decision));
+    }
     void operator()(const stop_t &) const {
         //Nothing to do here
     }
@@ -154,6 +200,15 @@ public:
     }
     void operator()(const sample_t &) const {
         logINF("Sample.");
+    }
+    void operator()(const parallel_decision_t &decision) const {
+        if (decision.parallel_admitted) {
+            logINF("Parallel decision: admitted workers=%zu fragments=%zu.\n",
+                   decision.workers_, decision.fragments_);
+        } else {
+            logINF("Parallel decision: serial fallback (%s).\n",
+                   decision.serial_reason_.c_str());
+        }
     }
     void operator()(const stop_t &) const {
         logINF("Stop.\n");
@@ -307,6 +362,11 @@ event_log_t trace_t::extract_event_log() RVALUE_THIS {
     guarantee(redirected_event_log_ == NULL);
     guarantee(disabled_ref_count_ == 0);
     return std::move(event_log_);
+}
+
+void trace_t::record_parallel_decision(const parallel_decision_t &decision) {
+    if (disabled()) { return; }
+    event_log_target()->push_back(decision);
 }
 
 void trace_t::start(const std::string &description) {
