@@ -152,7 +152,7 @@
   - [x] Write axiom-level design spec for "Time-series optimizations" — `phase3-timeseries.md` (15KB, 10-section axiom-level)
   - [x] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)" — `phase3-wasm-udf.md` (1,041 lines, 11-section axiom-level)
   - Note: FDW spec (`phase3-fdw.md`, 1,294 lines) already exists but was not listed in batch 1
-- [ ] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
+- [x] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
   - [x] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc` (commit `269ff001eb`)
     - partition_type_t (NONE/RANGE/HASH/LIST), partition_state_t (CREATING→FAILED)
     - partition_entry_t, partition_config_t, partition_map_t (immutable compiled snapshot)
@@ -206,7 +206,15 @@
   - [x] **PART-10: Unit tests** — serialization, routing, PK directory, superblock (commit `93742cbd9b`)
     - 51 config tests (50 pass, 1 fixed in source), 14 ops tests (store setup deferred)
     - Integration/failure/acceptance tests: deferred to v2.5 release testing
-- [ ] Parallel query execution — spec: `.coding-hermes/specs/phase3-parallel-query.md`
+- [ ] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
+  - [ ] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7.
+  - [ ] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms. Validation (boolean, integer range). Profile output object. Spec §2.
+  - [ ] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4.
+  - [ ] **PAR-04: Storage integration** — `store_t::read()` fragment dispatch, `btree_store_t` parallel scan state, `parallel_scan_t`. Spec §5.2.
+  - [ ] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3.
+  - [ ] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure. Spec §6.
+  - [ ] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7.
+  - [ ] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8.
 - [ ] Logical replication / CDC streaming — spec: `.coding-hermes/specs/phase3-cdc-streaming.md`
 - [ ] Async I/O subsystem (PG18-style) — spec: `.coding-hermes/specs/phase3-async-io.md`
 - [ ] JSONB/JSONPath improvements — spec: `.coding-hermes/specs/phase3-jsonb-jsonpath.md`
