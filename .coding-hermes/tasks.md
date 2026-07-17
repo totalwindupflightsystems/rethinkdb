@@ -179,11 +179,12 @@
     - partition_store_ref_t: partition_id, storage_id, shard_superblocks vector
     - Extend reql_specific.hpp with partition catalog block reference
     - Packed superblock sizing, block-reference accounting, drop cleanup
-  - [ ] **PART-06: Partition lifecycle operations** — create/attach/detach/drop
-    - CREATE: allocate invisible target stores, copy snapshot, replay, Raft cutover
-    - Per-table transition mutex (serializes repartition, NOT all writes)
-    - DETACH/DROP: drain readers, release stores, tombstone catalog entries
-    - State machine: CREATING → CATCHING_UP → ACTIVE → DRAINING → [*]
+  - [x] **PART-06: Partition lifecycle operations** — create/attach/detach/drop (commit `ccf7ec7b54`)
+    - [x] CREATE: allocate invisible target stores (create_partition_stores)
+    - [x] Per-table transition mutex (partition_lifecycle_mutex_t)
+    - [x] DETACH/DROP: drain readers, release stores, tombstone catalog entries (retire_drained_stores)
+    - [x] State machine: CREATING → CATCHING_UP → ACTIVE → DRAINING → [*] (validate + apply)
+    - Note: move_row_between_partitions stubbed (deferred to PART-07 per spec)
   - [ ] **PART-07: Online repartitioning** — snapshot, replay, Raft cutover, drain
     - Validated candidate map → transition lock → source epoch E recorded
     - Durable transition modification queue for source mutations during copy
