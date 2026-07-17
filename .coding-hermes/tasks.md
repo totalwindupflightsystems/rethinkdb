@@ -196,7 +196,7 @@
     - Duplicate-PK detection at insert across all partitions
     - Atomic move protocol: source authoritative until target confirmed
     - Failed move: source stays authoritative, target cleaned idempotently
-  - [ ] **PART-09: Error catalog** — 16 error codes from spec §7
+  - [x] **PART-09: Error catalog** — 16 error codes from spec §7 (commit `partition_errors.hpp` — over-delivery from PART-08 worker)
     - PARTITION_CONFIG_INVALID, PARTITION_RANGE_INVALID, PARTITION_HASH_INVALID
     - PARTITION_LIST_INVALID, PARTITION_KEY_MISSING, PARTITION_KEY_INVALID
     - PARTITION_KEY_UNROUTABLE, PARTITION_MOVE_FAILED, PARTITION_QUERY_LIMIT
