@@ -2,10 +2,14 @@
 #include "btree/parallel_scan.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
-/* Isolated B-tree range-split helpers (PAR-03). Row-count / quantile sampling
- * remain stubs until PAR-04. */
+#include "btree/get_distribution.hpp"
+
+/* Isolated B-tree range-split helpers (PAR-04). Row-count estimates and key
+ * quantile sampling use the existing get_btree_key_distribution() which reads
+ * the stat block and samples internal-node keys. */
 
 parallel_scan_request_t::parallel_scan_request_t()
     : fragment_ordinal(0),
@@ -37,20 +41,66 @@ parallel_scan_state_t::parallel_scan_state_t(
       bytes_scanned(0) { }
 
 int64_t parallel_scan_t::estimate_row_count(
-    superblock_t *,
-    const key_range_t &,
+    superblock_t *superblock,
+    const key_range_t &range,
     signal_t *) {
-    /* stub — PAR-04 wires B-tree estimates */
-    return 0;
+    /* Use the B-tree stat block (btree_statblock_t::population) to get the
+     * total key count. For range-restricted estimates, return the full
+     * population as an upper bound — precise range counting requires a full
+     * leaf traversal (future: use sampled cardinality in PAR-05). */
+    if (superblock == nullptr || range.is_empty()) {
+        return 0;
+    }
+
+    int64_t count = 0;
+    get_btree_key_distribution(superblock, /*depth_limit=*/0,
+                               &count, nullptr);
+    return count;
 }
 
 std::vector<store_key_t> parallel_scan_t::sample_key_quantiles(
-    superblock_t *,
-    const key_range_t &,
-    size_t,
+    superblock_t *superblock,
+    const key_range_t &range,
+    size_t num_splits,
     signal_t *) {
-    /* stub — PAR-04 wires B-tree quantile sampling */
-    return std::vector<store_key_t>();
+    /* Walk the B-tree and collect internal-node keys as split points. The
+     * depth limit controls granularity: higher depth → narrower intervals →
+     * more samples. Returns at most num_splits interior keys that fall within
+     * the requested range. */
+    if (superblock == nullptr || range.is_empty() || num_splits < 2) {
+        return std::vector<store_key_t>();
+    }
+
+    /* Compute a depth limit from the requested split count. Each level of the
+     * B-tree approximately doubles the number of sample points, so use
+     * ceil(log2(num_splits)). */
+    int depth = static_cast<int>(
+        std::ceil(std::log2(static_cast<double>(num_splits))));
+    if (depth < 1) depth = 1;
+
+    std::vector<store_key_t> all_keys;
+    get_btree_key_distribution(superblock, depth,
+                               nullptr, &all_keys);
+
+    /* Filter keys to those strictly inside the range, sort, and deduplicate.
+     * Return at most num_splits - 1 interior keys (producing num_splits
+     * non-overlapping subranges with the original range boundaries). */
+    std::vector<store_key_t> inside;
+    inside.reserve(std::min(all_keys.size(),
+                            static_cast<size_t>(num_splits)));
+    for (const store_key_t &k : all_keys) {
+        if (range.contains_key(k) && k > range.left) {
+            inside.push_back(k);
+            if (inside.size() >= num_splits - 1) {
+                break;
+            }
+        }
+    }
+
+    /* Already sorted by get_btree_key_distribution, but deduplicate just in
+     * case. */
+    inside.erase(std::unique(inside.begin(), inside.end()), inside.end());
+    return inside;
 }
 
 bool parallel_scan_t::validate_fragment_coverage(
