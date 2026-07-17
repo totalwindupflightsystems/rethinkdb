@@ -13,6 +13,11 @@ bytes of that block hold a blob ref; the blob tree holds a
 `NULL_BLOCK_ID` means "no catalog published" (unpartitioned table, or an
 unpublished candidate).
 
+The global primary-key directory (PART-08) is a sibling blob block referenced
+by `partition_catalog_t::primary_key_directory_block`. It maps every encoded
+primary key to its owning partition UUID for duplicate-PK enforcement and
+atomic cross-partition moves (`pk_directory_t`).
+
 Lifecycle (section 5.3):
   CREATING → CATCHING_UP → ACTIVE → DRAINING → (retired)
   CREATING / CATCHING_UP → FAILED → (retired)
@@ -73,7 +78,8 @@ public:
                              const partition_catalog_t &catalog);
 
     /* Clear the catalog blob tree, mark the child block deleted, and set the
-    superblock reference to `NULL_BLOCK_ID`. No-op if already absent. */
+    superblock reference to `NULL_BLOCK_ID`. Also releases the global primary-
+    key directory blob when present. No-op if already absent. */
     static void release_catalog_block(txn_t *txn, real_superblock_t *sb);
 
     /* Allocate invisible target stores for every partition in `config`.
@@ -84,6 +90,8 @@ public:
       - shard_superblocks sized to the table shard count, filled with
         `NULL_BLOCK_ID` (invisible / not yet published on disk)
       - catalog epoch = config.epoch, format_version set
+      - primary_key_directory_block left NULL until first durable init
+        (requires a txn; see `ensure_pk_directory`)
 
     Inherited sindex configs from `table_config` are recorded as a requirement
     for later superblock materialization: at this stage no B-tree blocks are
@@ -97,9 +105,39 @@ public:
         partition_catalog_t *catalog,
         signal_t *interruptor);
 
-    /* Cross-partition primary-key move (PART-07). Skeleton for PART-06 —
-    throws `cannot_perform_query_exc_t("unimplemented")`. */
+    /* Ensure the catalog's global PK directory block is allocated. No-op when
+    already present. Updates `catalog->primary_key_directory_block` and
+    persists the catalog when a new block is created. */
+    static void ensure_pk_directory(
+        txn_t *txn,
+        real_superblock_t *sb,
+        partition_catalog_t *catalog);
+
+    /* Check if PK already exists in the global directory.
+    Returns the owning partition UUID if found, or nil_uuid() if the PK is
+    new / directory absent. Caller (write path) aborts with the ordinary
+    duplicate-PK error when the result is non-nil and not the write target. */
+    static uuid_u check_duplicate_pk(
+        txn_t *txn,
+        real_superblock_t *sb,
+        const store_key_t &pk);
+
+    /* Cross-partition primary-key move (PART-08 atomic protocol).
+
+    1. Load catalog; ensure PK directory is allocated
+    2. Verify source partition exists and is ACTIVE
+    3. `pk_directory_t::move_entry` atomically swaps PK ownership
+       source → destination (source stays authoritative until save completes)
+    4. Persist catalog if the directory block id was newly allocated
+
+    Physical row body insert/delete on the child partition B-trees is driven
+    by the write path using `new_value` after directory ownership moves; this
+    method owns the directory fence and catalog consistency. Throws
+    `cannot_perform_query_exc_t` on illegal source state or ownership mismatch
+    (source remains authoritative; no partial directory update). */
     static void move_row_between_partitions(
+        txn_t *txn,
+        real_superblock_t *sb,
         const partition_route_t &source,
         const partition_route_t &destination,
         const store_key_t &primary_key,
