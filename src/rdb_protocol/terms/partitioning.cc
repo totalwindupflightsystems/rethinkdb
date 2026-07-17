@@ -13,6 +13,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/op.hpp"
+#include "rdb_protocol/partition_errors.hpp"
 #include "rdb_protocol/terms/terms.hpp"
 #include "rdb_protocol/val.hpp"
 
@@ -25,15 +26,21 @@ name_string_t parse_partition_name(
     rcheck_target(target,
                   name_d.get_type() == datum_t::R_STR,
                   base_exc_t::LOGIC,
-                  strprintf("Expected type STRING but found %s for partition name:\n%s",
+                  strprintf("Expected type STRING but found %s for partition name:\n%s%s",
                             name_d.get_type_name().c_str(),
-                            name_d.print().c_str()));
+                            name_d.print().c_str(),
+                            partition_error::error_suffix(
+                                partition_error::PARTITION_CONFIG_INVALID)
+                                .c_str()));
     name_string_t name;
     bool ok = name.assign_value(name_d.as_str());
     rcheck_target(target, ok, base_exc_t::LOGIC,
-                  strprintf("Partition name `%s` invalid (%s).",
+                  strprintf("Partition name `%s` invalid (%s).%s",
                             name_d.as_str().to_std().c_str(),
-                            name_string_t::valid_char_msg));
+                            name_string_t::valid_char_msg,
+                            partition_error::error_suffix(
+                                partition_error::PARTITION_CONFIG_INVALID)
+                                .c_str()));
     return name;
 }
 
@@ -59,24 +66,34 @@ partition_config_t parse_partition_config_from_datum(
     rcheck_target(target,
                   d.get_type() == datum_t::R_OBJECT,
                   base_exc_t::LOGIC,
-                  strprintf("Expected type OBJECT but found %s for partitions config:\n%s",
+                  strprintf("Expected type OBJECT but found %s for partitions config:\n%s%s",
                             d.get_type_name().c_str(),
-                            d.print().c_str()));
+                            d.print().c_str(),
+                            partition_error::error_suffix(
+                                partition_error::PARTITION_CONFIG_INVALID)
+                                .c_str()));
 
     datum_t by_d = d.get_field("by", NOTHROW);
     rcheck_target(target, by_d.has() && by_d.get_type() == datum_t::R_STR,
                   base_exc_t::LOGIC,
-                  "Partition config requires a string `by` field naming the "
-                  "partition key.");
+                  std::string("Partition config requires a string `by` field "
+                              "naming the partition key.")
+                      + partition_error::error_suffix(
+                          partition_error::PARTITION_CONFIG_INVALID));
     std::string key_field = by_d.as_str().to_std();
     rcheck_target(target, !key_field.empty(), base_exc_t::LOGIC,
-                  "Partition key field (`by`) must be a non-empty string.");
+                  std::string("Partition key field (`by`) must be a non-empty "
+                              "string.")
+                      + partition_error::error_suffix(
+                          partition_error::PARTITION_CONFIG_INVALID));
 
     datum_t type_d = d.get_field("type", NOTHROW);
     rcheck_target(target, type_d.has() && type_d.get_type() == datum_t::R_STR,
                   base_exc_t::LOGIC,
-                  "Partition config requires a string `type` field "
-                  "(`range`, `hash`, or `list`).");
+                  std::string("Partition config requires a string `type` field "
+                              "(`range`, `hash`, or `list`).")
+                      + partition_error::error_suffix(
+                          partition_error::PARTITION_CONFIG_INVALID));
     std::string type_str = type_d.as_str().to_std();
 
     partition_config_t config;
@@ -89,21 +106,33 @@ partition_config_t parse_partition_config_from_datum(
         rcheck_target(target,
                       ranges_d.has() && ranges_d.get_type() == datum_t::R_ARRAY,
                       base_exc_t::LOGIC,
-                      "Range partition config requires a `ranges` array.");
+                      std::string("Range partition config requires a `ranges` "
+                                  "array.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_RANGE_INVALID));
         rcheck_target(target, ranges_d.arr_size() > 0, base_exc_t::LOGIC,
-                      "Range partition config must define at least one range.");
+                      std::string("Range partition config must define at least "
+                                  "one range.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_RANGE_INVALID));
 
         for (size_t i = 0; i < ranges_d.arr_size(); ++i) {
             datum_t entry = ranges_d.get(i);
             rcheck_target(target, entry.get_type() == datum_t::R_OBJECT,
                           base_exc_t::LOGIC,
-                          "Each range partition entry must be an object.");
+                          std::string("Each range partition entry must be an "
+                                      "object.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_RANGE_INVALID));
             datum_t name_d = entry.get_field("name", NOTHROW);
             datum_t from_d = entry.get_field("from", NOTHROW);
             datum_t to_d = entry.get_field("to", NOTHROW);
             rcheck_target(target, name_d.has() && from_d.has() && to_d.has(),
                           base_exc_t::LOGIC,
-                          "Range partition entries require `name`, `from`, and `to`.");
+                          std::string("Range partition entries require `name`, "
+                                      "`from`, and `to`.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_RANGE_INVALID));
 
             partition_entry_t part;
             part.name = parse_partition_name(target, name_d);
@@ -117,9 +146,11 @@ partition_config_t parse_partition_config_from_datum(
                 rcheck_target(target,
                               config.range_boundaries.back() == from_d,
                               base_exc_t::LOGIC,
-                              "Range partitions must be contiguous: each "
-                              "range's `from` must equal the previous range's "
-                              "`to`.");
+                              std::string("Range partitions must be contiguous: "
+                                          "each range's `from` must equal the "
+                                          "previous range's `to`.")
+                                  + partition_error::error_suffix(
+                                      partition_error::PARTITION_RANGE_INVALID));
             }
             config.range_boundaries.push_back(to_d);
         }
@@ -128,32 +159,48 @@ partition_config_t parse_partition_config_from_datum(
         datum_t mod_d = d.get_field("modulus", NOTHROW);
         rcheck_target(target, mod_d.has() && mod_d.get_type() == datum_t::R_NUM,
                       base_exc_t::LOGIC,
-                      "Hash partition config requires a numeric `modulus`.");
+                      std::string("Hash partition config requires a numeric "
+                                  "`modulus`.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_HASH_INVALID));
         double mod_num = mod_d.as_num();
         rcheck_target(target,
                       mod_num == floor(mod_num) && mod_num > 0,
                       base_exc_t::LOGIC,
-                      "`modulus` must be a positive integer.");
+                      std::string("`modulus` must be a positive integer.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_HASH_INVALID));
         config.hash_modulus = static_cast<uint32_t>(mod_num);
 
         datum_t parts_d = d.get_field("partitions", NOTHROW);
         rcheck_target(target,
                       parts_d.has() && parts_d.get_type() == datum_t::R_ARRAY,
                       base_exc_t::LOGIC,
-                      "Hash partition config requires a `partitions` array.");
+                      std::string("Hash partition config requires a "
+                                  "`partitions` array.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_HASH_INVALID));
         for (size_t i = 0; i < parts_d.arr_size(); ++i) {
             datum_t entry = parts_d.get(i);
             rcheck_target(target, entry.get_type() == datum_t::R_OBJECT,
                           base_exc_t::LOGIC,
-                          "Each hash partition entry must be an object.");
+                          std::string("Each hash partition entry must be an "
+                                      "object.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_HASH_INVALID));
             datum_t name_d = entry.get_field("name", NOTHROW);
             datum_t buckets_d = entry.get_field("buckets", NOTHROW);
             rcheck_target(target, name_d.has() && buckets_d.has(),
                           base_exc_t::LOGIC,
-                          "Hash partition entries require `name` and `buckets`.");
+                          std::string("Hash partition entries require `name` "
+                                      "and `buckets`.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_HASH_INVALID));
             rcheck_target(target, buckets_d.get_type() == datum_t::R_ARRAY,
                           base_exc_t::LOGIC,
-                          "`buckets` must be an array of integers.");
+                          std::string("`buckets` must be an array of integers.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_HASH_INVALID));
 
             partition_entry_t part;
             part.name = parse_partition_name(target, name_d);
@@ -162,11 +209,16 @@ partition_config_t parse_partition_config_from_datum(
                 datum_t b = buckets_d.get(j);
                 rcheck_target(target, b.get_type() == datum_t::R_NUM,
                               base_exc_t::LOGIC,
-                              "Hash buckets must be numbers.");
+                              std::string("Hash buckets must be numbers.")
+                                  + partition_error::error_suffix(
+                                      partition_error::PARTITION_HASH_INVALID));
                 double bv = b.as_num();
                 rcheck_target(target, bv == std::floor(bv) && bv >= 0,
                               base_exc_t::LOGIC,
-                              "Hash buckets must be non-negative integers.");
+                              std::string("Hash buckets must be non-negative "
+                                          "integers.")
+                                  + partition_error::error_suffix(
+                                      partition_error::PARTITION_HASH_INVALID));
                 part.hash_buckets.push_back(static_cast<uint32_t>(bv));
             }
             config.partitions.push_back(std::move(part));
@@ -177,15 +229,24 @@ partition_config_t parse_partition_config_from_datum(
         rcheck_target(target,
                       parts_d.has() && parts_d.get_type() == datum_t::R_ARRAY,
                       base_exc_t::LOGIC,
-                      "List partition config requires a `partitions` array.");
+                      std::string("List partition config requires a "
+                                  "`partitions` array.")
+                          + partition_error::error_suffix(
+                              partition_error::PARTITION_LIST_INVALID));
         for (size_t i = 0; i < parts_d.arr_size(); ++i) {
             datum_t entry = parts_d.get(i);
             rcheck_target(target, entry.get_type() == datum_t::R_OBJECT,
                           base_exc_t::LOGIC,
-                          "Each list partition entry must be an object.");
+                          std::string("Each list partition entry must be an "
+                                      "object.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_LIST_INVALID));
             datum_t name_d = entry.get_field("name", NOTHROW);
             rcheck_target(target, name_d.has(), base_exc_t::LOGIC,
-                          "List partition entries require a `name`.");
+                          std::string("List partition entries require a "
+                                      "`name`.")
+                              + partition_error::error_suffix(
+                                  partition_error::PARTITION_LIST_INVALID));
 
             partition_entry_t part;
             part.name = parse_partition_name(target, name_d);
@@ -195,7 +256,9 @@ partition_config_t parse_partition_config_from_datum(
             if (default_d.has()) {
                 rcheck_target(target, default_d.get_type() == datum_t::R_BOOL,
                               base_exc_t::LOGIC,
-                              "`default` must be a boolean.");
+                              std::string("`default` must be a boolean.")
+                                  + partition_error::error_suffix(
+                                      partition_error::PARTITION_LIST_INVALID));
                 part.list_default = default_d.as_bool();
             }
 
@@ -203,7 +266,9 @@ partition_config_t parse_partition_config_from_datum(
             if (values_d.has()) {
                 rcheck_target(target, values_d.get_type() == datum_t::R_ARRAY,
                               base_exc_t::LOGIC,
-                              "`values` must be an array.");
+                              std::string("`values` must be an array.")
+                                  + partition_error::error_suffix(
+                                      partition_error::PARTITION_LIST_INVALID));
                 for (size_t j = 0; j < values_d.arr_size(); ++j) {
                     part.list_values.push_back(values_d.get(j));
                 }
@@ -213,8 +278,10 @@ partition_config_t parse_partition_config_from_datum(
     } else {
         rfail_target(target, base_exc_t::LOGIC,
                      "Unknown partition type `%s`; expected `range`, `hash`, "
-                     "or `list`.",
-                     type_str.c_str());
+                     "or `list`.%s",
+                     type_str.c_str(),
+                     partition_error::error_suffix(
+                         partition_error::PARTITION_CONFIG_INVALID).c_str());
     }
 
     finalize_partition_entries(&config);
