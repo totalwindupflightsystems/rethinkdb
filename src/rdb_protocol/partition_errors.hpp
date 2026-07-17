@@ -46,10 +46,35 @@ constexpr const char *storage_unavailable   = "PARTITION_STORAGE_UNAVAILABLE";
 constexpr const char *raft_timeout          = "PARTITION_RAFT_TIMEOUT";
 constexpr const char *metadata_incompatible  = "PARTITION_METADATA_INCOMPATIBLE";
 
+/* ── UPPER_CASE aliases ────────────────────────────────────────────────── */
+
+constexpr const char *PARTITION_CONFIG_INVALID = config_invalid;
+constexpr const char *PARTITION_RANGE_INVALID = range_invalid;
+constexpr const char *PARTITION_HASH_INVALID = hash_invalid;
+constexpr const char *PARTITION_LIST_INVALID = list_invalid;
+constexpr const char *PARTITION_KEY_MISSING = key_missing;
+constexpr const char *PARTITION_KEY_INVALID = key_invalid;
+constexpr const char *PARTITION_KEY_UNROUTABLE = key_unroutable;
+constexpr const char *PARTITION_MOVE_FAILED = move_failed;
+constexpr const char *PARTITION_QUERY_LIMIT = query_limit;
+constexpr const char *PARTITION_METADATA_CORRUPT = metadata_corrupt;
+constexpr const char *PARTITION_TRANSITION_BUSY = transition_busy;
+constexpr const char *PARTITION_BACKFILL_OVERFLOW = backfill_overflow;
+constexpr const char *PARTITION_STORAGE_UNAVAILABLE = storage_unavailable;
+constexpr const char *PARTITION_RAFT_TIMEOUT = raft_timeout;
+constexpr const char *PARTITION_METADATA_INCOMPATIBLE = metadata_incompatible;
+
+/* Format: " [partition_error: CODE]" for diagnostic suffix on existing errors. */
+inline std::string error_suffix(const char *code) {
+    std::string s = " [partition_error: ";
+    s += code;
+    s += "]";
+    return s;
+}
+
 /* ── internal helpers ─────────────────────────────────────────────────────── */
 
-/* Build a "[CODE] user-message" string from printf-style args.
-   Returns the formatted buffer. Truncates to 1023 chars + NUL if overflow. */
+/* Build a "[CODE] user-message" string from printf-style args. */
 inline std::string format_code_msg(const char *code, const char *fmt,
                                    va_list ap) {
     char buf[1024];
@@ -63,7 +88,6 @@ inline std::string format_code_msg(const char *code, const char *fmt,
 
 /* ── raise helpers ───────────────────────────────────────────────────────── */
 
-/* LOGIC: client-side, user-correctable (invalid config / key / field). */
 inline void NORETURN raise_logic(
         const char *code, const char *fmt, ...) ATTR_FORMAT(printf, 2, 3);
 
@@ -75,7 +99,6 @@ inline void raise_logic(const char *code, const char *fmt, ...) {
     rfail_datum(ql::base_exc_t::LOGIC, "%s", msg.c_str());
 }
 
-/* OP_FAILED: operation known to have failed (storage, quorum, transition). */
 inline void NORETURN raise_op_failed(
         const char *code, const char *fmt, ...) ATTR_FORMAT(printf, 2, 3);
 
@@ -87,8 +110,6 @@ inline void raise_op_failed(const char *code, const char *fmt, ...) {
     rfail_datum(ql::base_exc_t::OP_FAILED, "%s", msg.c_str());
 }
 
-/* OP_INDETERMINATE: uncertain whether operation succeeded or failed
-   (Raft timeout, unconfirmed cutover). */
 inline void NORETURN raise_op_indeterminate(
         const char *code, const char *fmt, ...) ATTR_FORMAT(printf, 2, 3);
 
@@ -100,7 +121,6 @@ inline void raise_op_indeterminate(const char *code, const char *fmt, ...) {
     rfail_datum(ql::base_exc_t::OP_INDETERMINATE, "%s", msg.c_str());
 }
 
-/* RESOURCE: exceeded a configured limit (query fan-out, partition count). */
 inline void NORETURN raise_resource(
         const char *code, const char *fmt, ...) ATTR_FORMAT(printf, 2, 3);
 
@@ -112,7 +132,6 @@ inline void raise_resource(const char *code, const char *fmt, ...) {
     rfail_datum(ql::base_exc_t::RESOURCE, "%s", msg.c_str());
 }
 
-/* INTERNAL: corrupt metadata, unrecoverable catalog state. */
 inline void NORETURN raise_internal(
         const char *code, const char *fmt, ...) ATTR_FORMAT(printf, 2, 3);
 
@@ -125,5 +144,9 @@ inline void raise_internal(const char *code, const char *fmt, ...) {
 }
 
 }  // namespace partition_error_code
+
+/* Alias so code can reference `partition_error::PARTITION_CONFIG_INVALID`
+   without knowing the canonical name. */
+namespace partition_error = partition_error_code;
 
 #endif  // RDB_PROTOCOL_PARTITION_ERRORS_HPP_

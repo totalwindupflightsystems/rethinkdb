@@ -18,6 +18,7 @@
 #include "containers/uuid.hpp"
 #include "errors.hpp"
 #include "protocol_api.hpp"
+#include "rdb_protocol/partition_errors.hpp"
 #include "utils.hpp"
 
 std::string validate_partition_state_transition(
@@ -225,7 +226,9 @@ void partition_ops_t::create_partition_stores(
     config.validate_or_throw();
     if (!config.is_partitioned()) {
         throw cannot_perform_query_exc_t(
-            "create_partition_stores requires a partitioned config",
+            std::string("create_partition_stores requires a partitioned config")
+                + partition_error::error_suffix(
+                    partition_error::PARTITION_CONFIG_INVALID),
             query_state_t::FAILED);
     }
 
@@ -324,7 +327,10 @@ void partition_ops_t::move_row_between_partitions(
 
     if (source.partition_id.is_nil() || destination.partition_id.is_nil()) {
         throw cannot_perform_query_exc_t(
-            "partition move failed: source and destination must be set",
+            std::string("partition move failed: source and destination must "
+                        "be set")
+                + partition_error::error_suffix(
+                    partition_error::PARTITION_MOVE_FAILED),
             query_state_t::FAILED);
     }
 
@@ -346,17 +352,26 @@ void partition_ops_t::move_row_between_partitions(
 
     if (source_store == nullptr) {
         throw cannot_perform_query_exc_t(
-            "partition move failed: source partition not in catalog",
+            std::string("partition move failed: source partition not in "
+                        "catalog")
+                + partition_error::error_suffix(
+                    partition_error::PARTITION_MOVE_FAILED),
             query_state_t::FAILED);
     }
     if (source_store->state != partition_state_t::ACTIVE) {
         throw cannot_perform_query_exc_t(
-            "partition move failed: source partition is not ACTIVE",
+            std::string("partition move failed: source partition is not "
+                        "ACTIVE")
+                + partition_error::error_suffix(
+                    partition_error::PARTITION_MOVE_FAILED),
             query_state_t::FAILED);
     }
     if (dest_store == nullptr) {
         throw cannot_perform_query_exc_t(
-            "partition move failed: destination partition not in catalog",
+            std::string("partition move failed: destination partition not in "
+                        "catalog")
+                + partition_error::error_suffix(
+                    partition_error::PARTITION_MOVE_FAILED),
             query_state_t::FAILED);
     }
 

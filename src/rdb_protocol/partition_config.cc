@@ -153,6 +153,8 @@ bool partition_config_t::is_partitioned() const {
     return type != partition_type_t::NONE;
 }
 
+using namespace partition_error_code;
+
 void partition_config_t::validate_or_throw() const {
     if (type == partition_type_t::NONE) {
         if (!partitions.empty()) {
@@ -611,3 +613,4 @@ ql::datum_t partition_config_to_datum(const partition_config_t &config) {
     }
     return std::move(builder).to_datum();
 }
+
