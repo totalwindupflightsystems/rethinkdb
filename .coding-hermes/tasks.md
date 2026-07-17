@@ -207,7 +207,7 @@
     - 51 config tests (50 pass, 1 fixed in source), 14 ops tests (store setup deferred)
     - Integration/failure/acceptance tests: deferred to v2.5 release testing
 - [ ] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
-  - [ ] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7.
+  - [x] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7. (commit `6066e89846`)
   - [ ] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms. Validation (boolean, integer range). Profile output object. Spec §2.
   - [ ] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4.
   - [ ] **PAR-04: Storage integration** — `store_t::read()` fragment dispatch, `btree_store_t` parallel scan state, `parallel_scan_t`. Spec §5.2.
