@@ -174,7 +174,7 @@
     - hash/list: equality/getAll on partition field → one partition
     - Safe fallback: opaque/OR/negation/unrelated sindex → all partitions
     - partition_selection_t → partition_map_t::routes_for()
-  - [ ] **PART-05: Storage layout** — per-partition B-tree stores + superblock
+  - [x] **PART-05: Storage layout** — per-partition B-tree stores + superblock (commit `816bc89cea`)
     - One primary B-tree + local sindex catalog per (table, partition, shard)
     - partition_store_ref_t: partition_id, storage_id, shard_superblocks vector
     - Extend reql_specific.hpp with partition catalog block reference
