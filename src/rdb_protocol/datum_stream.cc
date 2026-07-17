@@ -535,6 +535,20 @@ rget_response_reader_t::rget_response_reader_t(
       readgen(std::move(_readgen)),
       items_index(0) { }
 
+void rget_response_reader_t::set_parallel_hints(optional<parallel_hints_t> hints) {
+    r_sanity_check(!started);
+    parallel_hints = std::move(hints);
+}
+
+read_t rget_response_reader_t::with_parallel_hints(read_t read) const {
+    if (parallel_hints.has_value()) {
+        if (auto *rg = boost::get<rget_read_t>(&read.read)) {
+            rg->parallel_hints = parallel_hints;
+        }
+    }
+    return read;
+}
+
 void rget_response_reader_t::add_transformation(transform_variant_t &&tv) {
     r_sanity_check(!started);
     transforms.push_back(std::move(tv));
@@ -576,7 +590,8 @@ void rget_response_reader_t::accumulate(env_t *env,
     r_sanity_check(!started);
     started = true;
     batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env);
-    read_t read = readgen->terminal_read(transforms, tv, batchspec);
+    read_t read = with_parallel_hints(
+        readgen->terminal_read(transforms, tv, batchspec));
     result_t res = do_read(env, std::move(read)).result;
     mark_shards_exhausted();
     acc->add_res(env, &res, readgen->sorting(batchspec));
@@ -695,8 +710,8 @@ void rget_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     r_sanity_check(!started);
     started = true;
     batchspec_t batchspec = batchspec_t::all();
-    read_t read = readgen->next_read(
-        active_ranges, reql_version, stamp, transforms, batchspec);
+    read_t read = with_parallel_hints(readgen->next_read(
+        active_ranges, reql_version, stamp, transforms, batchspec));
     rget_read_response_t resp = do_read(env, std::move(read));
 
     auto *rr = boost::get<rget_read_t>(&read.read);
@@ -734,8 +749,8 @@ bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
         // because `do_range_read` is responsible for updating the active range.
         items = do_range_read(
             env,
-            readgen->next_read(
-                active_ranges, reql_version, stamp, transforms, batchspec));
+            with_parallel_hints(readgen->next_read(
+                active_ranges, reql_version, stamp, transforms, batchspec)));
         r_sanity_check(active_ranges);
         readgen->sindex_sort(&items, batchspec);
     }
@@ -751,8 +766,8 @@ void intersecting_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     r_sanity_check(!started);
     started = true;
     batchspec_t batchspec = batchspec_t::all();
-    read_t read = readgen->next_read(
-        active_ranges, reql_version, stamp, transforms, batchspec);
+    read_t read = with_parallel_hints(readgen->next_read(
+        active_ranges, reql_version, stamp, transforms, batchspec));
     rget_read_response_t resp = do_read(env, std::move(read));
 
     auto final_key = store_key_t::max();

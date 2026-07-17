@@ -105,6 +105,13 @@ public:
         const datum_range_t &bounds,
         sorting_t sorting);
 
+    void set_parallel_hints(optional<parallel_hints_t> hints) {
+        parallel_hints = std::move(hints);
+    }
+    const optional<parallel_hints_t> &get_parallel_hints() const {
+        return parallel_hints;
+    }
+
     counted_t<base_table_t> tbl;
 
 private:
@@ -119,6 +126,7 @@ private:
         env_t *env, durability_requirement_t durability_requirement);
 
     read_mode_t read_mode;
+    optional<parallel_hints_t> parallel_hints;
 };
 
 class table_slice_t
@@ -127,10 +135,12 @@ public:
     table_slice_t(counted_t<table_t> _tbl,
                   optional<std::string> _idx = r_nullopt,
                   sorting_t _sorting = sorting_t::UNORDERED,
-                  datum_range_t _bounds = datum_range_t::universe());
+                  datum_range_t _bounds = datum_range_t::universe(),
+                  optional<parallel_hints_t> _parallel_hints = r_nullopt);
     counted_t<datum_stream_t> as_seq(env_t *env, backtrace_id_t bt);
     counted_t<table_slice_t> with_sorting(std::string idx, sorting_t sorting);
     counted_t<table_slice_t> with_bounds(std::string idx, datum_range_t bounds);
+    counted_t<table_slice_t> with_parallel_hints(optional<parallel_hints_t> hints);
     const counted_t<table_t> &get_tbl() const { return tbl; }
     const optional<std::string> &get_idx() const { return idx; }
     ql::changefeed::keyspec_t::range_t get_range_spec();
@@ -141,6 +151,7 @@ private:
     const optional<std::string> idx;
     const sorting_t sorting;
     const datum_range_t bounds;
+    const optional<parallel_hints_t> parallel_hints;
 };
 
 enum function_shortcut_t {
@@ -319,6 +330,16 @@ private:
     DISABLE_COPYING(val_t);
 };
 
+/* Extract parallel / max_workers ReQL optargs (PAR-02). Returns empty optional
+ * when neither optarg is present. Validates max_workers is an integer in
+ * [1, 64]. */
+class args_t;
+optional<parallel_hints_t> extract_parallel_hints(scope_env_t *env, args_t *args);
+
+/* Stamp parallel hints onto a stream (no-op for non-rget streams). */
+void apply_parallel_hints(
+    const counted_t<datum_stream_t> &stream,
+    optional<parallel_hints_t> hints);
 
 }  // namespace ql
 

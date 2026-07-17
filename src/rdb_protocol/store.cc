@@ -208,6 +208,7 @@ void do_read(ql::env_t *env,
              rget_read_response_t *res,
              release_superblock_t release_superblock,
              optional<uuid_u> *sindex_id_out) {
+    validate_parallel_hints(rget.parallel_hints);
     guarantee(rget.current_shard.has_value());
     if (!rget.sindex.has_value()) {
         // rget using a primary index

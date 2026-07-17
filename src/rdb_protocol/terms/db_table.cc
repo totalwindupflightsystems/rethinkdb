@@ -838,9 +838,11 @@ class table_term_t : public op_term_t {
 public:
     table_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1, 2),
-                    optargspec_t({"read_mode", "use_outdated", "identifier_format"})) { }
+                    optargspec_t({"read_mode", "use_outdated", "identifier_format",
+                                  "parallel", "max_workers"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         read_mode_t read_mode = read_mode_t::SINGLE;
         if (scoped_ptr_t<val_t> v = args->optarg(env, "use_outdated")) {
             rfail(base_exc_t::LOGIC, "%s",
@@ -896,8 +898,14 @@ private:
                 identifier_format, env->env->interruptor, &table, &error)) {
             REQL_RETHROW(error);
         }
-        return new_val(make_counted<table_t>(
-            std::move(table), db, table_name.str(), read_mode, backtrace()));
+        // table() returns TABLE; parallel hints are stored on table_t and applied
+        // when the table is converted to a sequence/read.
+        counted_t<table_t> tbl = make_counted<table_t>(
+            std::move(table), db, table_name.str(), read_mode, backtrace());
+        if (phints.has_value()) {
+            tbl->set_parallel_hints(std::move(phints));
+        }
+        return new_val(std::move(tbl));
     }
     virtual deterministic_t is_deterministic() const { return deterministic_t::no(); }
     virtual const char *name() const { return "table"; }
@@ -922,7 +930,8 @@ private:
 class get_all_term_t : public op_term_t {
 public:
     get_all_term_t(compile_env_t *env, const raw_term_t &term)
-        : op_term_t(env, term, argspec_t(1, -1), optargspec_t({ "index" })) { }
+        : op_term_t(env, term, argspec_t(1, -1),
+                    optargspec_t({ "index", "parallel", "max_workers" })) { }
 private:
     datum_t get_key_arg(const scoped_ptr_t<val_t> &arg) const {
         datum_t datum_arg = arg->as_datum();
@@ -940,6 +949,7 @@ private:
 
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
         scoped_ptr_t<val_t> index = args->optarg(env, "index");
         std::string index_str = index ? index->as_str().to_std() : table->get_pkey();
@@ -950,13 +960,16 @@ private:
             keys.insert(std::make_pair(std::move(key), 0)).first->second += 1;
         }
 
+        counted_t<datum_stream_t> stream = table->get_all(
+            env->env,
+            datumspec_t(std::move(keys)),
+            index_str,
+            backtrace());
+        apply_parallel_hints(stream, phints);
         return new_val(
             make_counted<selection_t>(
                 table,
-                table->get_all(env->env,
-                               datumspec_t(std::move(keys)),
-                               index_str,
-                               backtrace())));
+                std::move(stream)));
     }
     virtual const char *name() const { return "get_all"; }
 };

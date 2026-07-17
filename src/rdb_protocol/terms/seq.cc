@@ -179,11 +179,13 @@ private:
 class map_term_t : public grouped_seq_op_term_t {
 public:
     map_term_t(compile_env_t *env, const raw_term_t &term)
-        : grouped_seq_op_term_t(env, term, argspec_t(2, -1)) { }
+        : grouped_seq_op_term_t(env, term, argspec_t(2, -1),
+                                optargspec_t({"parallel", "max_workers"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env,
                                           args_t *args,
                                           eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         std::vector<counted_t<datum_stream_t> > streams;
         streams.reserve(args->num_args() >= 1 ? args->num_args() - 1 : 0);
         for (size_t i = 0; i + 1 < args->num_args(); ++i) {
@@ -205,12 +207,14 @@ private:
         }
 
         if (args->num_args() == 2) {
+            apply_parallel_hints(streams.front(), phints);
             streams.front()->add_transformation(
                     map_wire_func_t(std::move(func)), backtrace());
             return new_val(env->env, streams.front());
         } else {
             counted_t<datum_stream_t> map_stream = make_counted<map_datum_stream_t>(
                 std::move(streams), std::move(func), backtrace());
+            apply_parallel_hints(map_stream, phints);
             return new_val(env->env, map_stream);
         }
     }
@@ -418,12 +422,14 @@ private:
 class filter_term_t : public grouped_seq_op_term_t {
 public:
     filter_term_t(compile_env_t *env, const raw_term_t &term)
-        : grouped_seq_op_term_t(env, term, argspec_t(2), optargspec_t({"default"})),
+        : grouped_seq_op_term_t(env, term, argspec_t(2),
+                                optargspec_t({"default", "parallel", "max_workers"})),
           default_filter_term(lazy_literal_optarg(env, "default")) { }
 
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         scoped_ptr_t<val_t> v0 = args->arg(env, 0);
         scoped_ptr_t<val_t> v1 = args->arg(env, 1, LITERAL_OK);
         counted_t<const func_t> f = v1->as_func(CONSTANT_SHORTCUT);
@@ -434,10 +440,12 @@ private:
 
         if (v0->get_type().is_convertible(val_t::type_t::SELECTION)) {
             counted_t<selection_t> ts = v0->as_selection(env->env);
+            apply_parallel_hints(ts->seq, phints);
             ts->seq->add_transformation(filter_wire_func_t(f, defval), backtrace());
             return new_val(ts);
         } else {
             counted_t<datum_stream_t> stream = v0->as_seq(env->env);
+            apply_parallel_hints(stream, phints);
             stream->add_transformation(
                     filter_wire_func_t(f, defval), backtrace());
             return new_val(env->env, stream);
@@ -679,7 +687,8 @@ class between_term_t : public bounded_op_term_t {
 public:
     between_term_t(compile_env_t *env, const raw_term_t &term,
                    between_null_t _null_behavior)
-        : bounded_op_term_t(env, term, argspec_t(3), optargspec_t({"index"})),
+        : bounded_op_term_t(env, term, argspec_t(3),
+                            optargspec_t({"index", "parallel", "max_workers"})),
           null_behavior(_null_behavior) { }
 private:
     datum_t check_bound(scoped_ptr_t<val_t> bound_val,
@@ -698,6 +707,7 @@ private:
 
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+        optional<parallel_hints_t> phints = extract_parallel_hints(env, args);
         counted_t<table_slice_t> tbl_slice = args->arg(env, 0)->as_table_slice();
         bool left_open = is_left_open(env, args);
         bool right_open = is_right_open(env, args);
@@ -712,14 +722,17 @@ private:
             optional<std::string> old_idx = tbl_slice->get_idx();
             idx = old_idx ? *old_idx : tbl_slice->get_tbl()->get_pkey();
         }
-        return new_val(
+        counted_t<table_slice_t> result = tbl_slice->with_bounds(
+            idx,
             // `table_slice_t` can handle emtpy / invalid `datum_range_t`'s, checking is
             // done there.
-            tbl_slice->with_bounds(
-                idx,
-                datum_range_t(
-                    lb, left_open ? key_range_t::open : key_range_t::closed,
-                    rb, right_open ? key_range_t::open : key_range_t::closed)));
+            datum_range_t(
+                lb, left_open ? key_range_t::open : key_range_t::closed,
+                rb, right_open ? key_range_t::open : key_range_t::closed));
+        if (phints.has_value()) {
+            result = result->with_parallel_hints(std::move(phints));
+        }
+        return new_val(std::move(result));
     }
     virtual const char *name() const { return "between"; }
 

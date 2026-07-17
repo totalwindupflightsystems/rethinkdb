@@ -68,6 +68,8 @@ public:
     virtual void add_transformation(transform_variant_t &&tv, backtrace_id_t bt) = 0;
     virtual bool add_stamp(changefeed_stamp_t stamp);
     virtual optional<active_state_t> get_active_state();
+    /* Default no-op; lazy/rget streams override to stamp rget_read_t. */
+    virtual void set_parallel_hints(optional<parallel_hints_t>) { }
     void add_grouping(transform_variant_t &&tv,
                       backtrace_id_t bt);
 

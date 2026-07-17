@@ -1,17 +1,60 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "rdb_protocol/val.hpp"
 
+#include <cmath>
+
 #include "containers/name_string.hpp"
+#include "rdb_protocol/datum_stream.hpp"
 #include "rdb_protocol/datum_stream/readers.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/math_utils.hpp"
 #include "rdb_protocol/minidriver.hpp"
+#include "rdb_protocol/op.hpp"
 #include "rdb_protocol/term.hpp"
 #include "stl_utils.hpp"
 #include "thread_local.hpp"
 
 namespace ql {
+
+// Spec §2.3 hard max for max_workers (matches server_parallel_workers_hard_max).
+static constexpr size_t parallel_max_workers_hard_max = 64;
+
+optional<parallel_hints_t> extract_parallel_hints(scope_env_t *env, args_t *args) {
+    parallel_hints_t hints;
+    bool has_parallel = false;
+
+    if (scoped_ptr_t<val_t> v = args->optarg(env, "parallel")) {
+        has_parallel = true;
+        hints.parallel = v->as_bool();
+    }
+
+    if (scoped_ptr_t<val_t> v = args->optarg(env, "max_workers")) {
+        has_parallel = true;
+        double n = v->as_num();
+        if (n < 1 || n > static_cast<double>(parallel_max_workers_hard_max)
+            || n != std::floor(n)) {
+            rfail_datum(
+                base_exc_t::LOGIC,
+                "max_workers must be an integer between 1 and %zu",
+                parallel_max_workers_hard_max);
+        }
+        hints.max_workers = static_cast<size_t>(n);
+    }
+
+    if (has_parallel) {
+        return make_optional(hints);
+    }
+    return r_nullopt;
+}
+
+void apply_parallel_hints(
+        const counted_t<datum_stream_t> &stream,
+        optional<parallel_hints_t> hints) {
+    if (hints.has_value() && stream.has()) {
+        stream->set_parallel_hints(std::move(hints));
+    }
+}
 
 selection_t::selection_t(counted_t<table_t> _table, counted_t<datum_stream_t> _seq)
         : table(std::move(_table)), seq(std::move(_seq)) { }
@@ -132,16 +175,21 @@ counted_t<single_selection_t> single_selection_t::from_slice(
 table_slice_t::table_slice_t(counted_t<table_t> _tbl,
                              optional<std::string> _idx,
                              sorting_t _sorting,
-                             datum_range_t _bounds)
+                             datum_range_t _bounds,
+                             optional<parallel_hints_t> _parallel_hints)
     : bt_rcheckable_t(_tbl->backtrace()),
       tbl(std::move(_tbl)), idx(std::move(_idx)),
-      sorting(_sorting), bounds(std::move(_bounds)) { }
+      sorting(_sorting), bounds(std::move(_bounds)),
+      parallel_hints(std::move(_parallel_hints)) { }
 
 
 counted_t<datum_stream_t> table_slice_t::as_seq(
     env_t *env, backtrace_id_t _bt) {
     // Empty bounds will be handled by as_seq with empty_reader_t
-    return tbl->as_seq(env, idx ? *idx : tbl->get_pkey(), _bt, bounds, sorting);
+    counted_t<datum_stream_t> stream =
+        tbl->as_seq(env, idx ? *idx : tbl->get_pkey(), _bt, bounds, sorting);
+    apply_parallel_hints(stream, parallel_hints);
+    return stream;
 }
 
 counted_t<table_slice_t>
@@ -153,7 +201,8 @@ table_slice_t::with_sorting(std::string _idx, sorting_t _sorting) {
     rcheck(idx_legal, base_exc_t::LOGIC,
            strprintf("Cannot order by index `%s` after calling BETWEEN on index `%s`.",
                      _idx.c_str(), (*idx).c_str()));
-    return make_counted<table_slice_t>(tbl, make_optional(std::move(_idx)), _sorting, bounds);
+    return make_counted<table_slice_t>(
+        tbl, make_optional(std::move(_idx)), _sorting, bounds, parallel_hints);
 }
 
 counted_t<table_slice_t>
@@ -166,7 +215,14 @@ table_slice_t::with_bounds(std::string _idx, datum_range_t _bounds) {
            strprintf("Cannot call BETWEEN on index `%s` after ordering on index `%s`.",
                      _idx.c_str(), (*idx).c_str()));
     return make_counted<table_slice_t>(
-        tbl, make_optional(std::move(_idx)), sorting, std::move(_bounds));
+        tbl, make_optional(std::move(_idx)), sorting, std::move(_bounds),
+        parallel_hints);
+}
+
+counted_t<table_slice_t>
+table_slice_t::with_parallel_hints(optional<parallel_hints_t> hints) {
+    return make_counted<table_slice_t>(
+        tbl, idx, sorting, bounds, std::move(hints));
 }
 
 ql::changefeed::keyspec_t::range_t table_slice_t::get_range_spec() {
@@ -184,7 +240,7 @@ counted_t<datum_stream_t> table_t::as_seq(
     backtrace_id_t _bt,
     const datum_range_t &bounds,
     sorting_t sorting) {
-    return tbl->read_all(
+    counted_t<datum_stream_t> stream = tbl->read_all(
         env,
         idx,
         _bt,
@@ -192,6 +248,8 @@ counted_t<datum_stream_t> table_t::as_seq(
         datumspec_t(bounds),
         sorting,
         read_mode);
+    apply_parallel_hints(stream, parallel_hints);
+    return stream;
 }
 
 table_t::table_t(counted_t<base_table_t> &&_tbl,
@@ -509,7 +567,7 @@ counted_t<datum_stream_t> table_t::get_all(
         const datumspec_t &datumspec,
         const std::string &get_all_sindex_id,
         backtrace_id_t _bt) {
-    return tbl->read_all(
+    counted_t<datum_stream_t> stream = tbl->read_all(
         env,
         get_all_sindex_id,
         _bt,
@@ -517,6 +575,8 @@ counted_t<datum_stream_t> table_t::get_all(
         datumspec,
         sorting_t::UNORDERED,
         read_mode);
+    apply_parallel_hints(stream, parallel_hints);
+    return stream;
 }
 
 counted_t<datum_stream_t> table_t::get_intersecting(
