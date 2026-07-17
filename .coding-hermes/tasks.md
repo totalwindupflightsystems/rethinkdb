@@ -185,12 +185,12 @@
     - [x] DETACH/DROP: drain readers, release stores, tombstone catalog entries (retire_drained_stores)
     - [x] State machine: CREATING → CATCHING_UP → ACTIVE → DRAINING → [*] (validate + apply)
     - Note: move_row_between_partitions stubbed (deferred to PART-07 per spec)
-  - [ ] **PART-07: Online repartitioning** — snapshot, replay, Raft cutover, drain
-    - Validated candidate map → transition lock → source epoch E recorded
-    - Durable transition modification queue for source mutations during copy
-    - Target replay idempotent by primary key + mutation stamp
-    - Cutover commits only after replay reaches high-water mark
-    - Failed repartition: source epoch stays authoritative, clean up unpublished
+  - [x] **PART-07: Online repartitioning** — snapshot, replay, Raft cutover, drain (commit `6e910aea5d`)
+    - [x] Validated candidate map → transition lock → source epoch E recorded
+    - [x] Durable transition modification queue for source mutations during copy (transition_modification_t + enqueue_transition_modification)
+    - [x] Target replay idempotent by primary key + mutation stamp (apply_modification_idempotent)
+    - [x] Cutover commits only after replay reaches high-water mark (targets_caught_up + commit_catalog_cutover)
+    - [x] Failed repartition: source epoch stays authoritative, clean up unpublished (abort_unpublished_transition)
   - [ ] **PART-08: Global primary-key directory** — duplicate-PK enforcement, atomic move
     - B-tree mapping primary keys → partition UUIDs
     - Duplicate-PK detection at insert across all partitions
