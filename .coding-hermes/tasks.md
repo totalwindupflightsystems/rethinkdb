@@ -250,8 +250,12 @@
       - Added publications map to table_config_and_shards_t with v2_4+ serialization
       - Wired createPublication term to real Raft metadata (no more stub response)
       - Added mock to test_rdb_env_t::instance_t, artificial + real cluster interfaces
-    - [x] **CDC-05b: publicationList/Status/Drop — per-table listing, consumer summaries, drop lifecycle** (commit `e77c21e90d`)
-  - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
+    - [x] **CDC-05b: publicationList/Status/Drop** — commits `e77c21e90d` + `14ee0d93ec`
+      - publicationList: iterate table publications from Raft metadata, return id/name/state array
+      - publicationStatus: resolve by name, return full config datum
+      - publicationDrop: resolve→drop lifecycle via Raft metadata
+      - Test mocks: stub implementations in test_rdb_env_t::instance_t
+    - [ ] **CDC-06: Subscription state machine**
     - createSubscription: commit target metadata, verify source identity, TLS handshake, bind/create slot (spec §2.4)
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
