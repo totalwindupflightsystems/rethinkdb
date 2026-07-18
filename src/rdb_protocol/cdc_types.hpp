@@ -13,6 +13,8 @@
 
 namespace ql {
 
+class datum_t;
+
 // ── Identity and position types ──
 
 // Shard-local monotonically increasing log sequence number.
@@ -76,6 +78,28 @@ struct change_record_t {
     std::vector<char> after_image;   // empty for DELETE
     microtime_t commit_timestamp;
 };
+
+// ── Datum image serialization helpers ──
+//
+// A change_record_t's before_image / after_image stores the serialized form
+// of a datum_t in a self-contained std::vector<char>. We piggyback on the
+// stable datum_serialize / datum_deserialize routines so the bytes are
+// interpretable across processes and across releases of the wire format.
+//
+// CDC-04 will replace these with a journal-backed representation; for now
+// these helpers are sufficient to stage the capture seam in the write path.
+//
+// Declarations only — implementations live in src/rdb_protocol/store.cc
+// where the full datum_t definition is available.
+
+// Serialize a datum_t into a self-contained vector<char>.
+// Returns an empty vector when given a datum with no value (e.g. an
+// uninitialized datum_t on INSERT).
+std::vector<char> serialize_datum_to_vector(const datum_t &d);
+
+// Deserialize a vector<char> back into a datum_t. An empty input yields
+// an uninitialized datum_t.
+datum_t deserialize_datum_from_vector(const std::vector<char> &v);
 
 }  // namespace ql
 

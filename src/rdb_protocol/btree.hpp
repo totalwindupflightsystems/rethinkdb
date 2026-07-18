@@ -343,6 +343,15 @@ public:
     bool has_pkey_cfeeds(const std::vector<store_key_t> &keys);
     void finish(btree_slice_t *btree, real_superblock_t *superblock);
 
+    // CDC-03: when non-null, every `on_mod_report` invocation appends the
+    // report to `*cdc_reports_out` (in addition to the usual sindex/cfeed
+    // machinery). The visitor in `store.cc` uses this to surface change
+    // records for batched writes; it remains nullptr by default, in which
+    // case batched writes emit no CDC records.
+    void set_cdc_reports_sink(std::vector<rdb_modification_report_t> *sink) {
+        cdc_reports_out = sink;
+    }
+
 private:
     void on_mod_report_sub(
         const rdb_modification_report_t &mod_report,
@@ -359,6 +368,10 @@ private:
 
     /* Fields initialized by calls to on_mod_report */
     store_t::sindex_access_vector_t sindexes_;
+
+    /* CDC-03: optional sink for staged modification reports. See
+     * set_cdc_reports_sink(). */
+    std::vector<rdb_modification_report_t> *cdc_reports_out = nullptr;
 };
 
 void rdb_update_sindexes(
