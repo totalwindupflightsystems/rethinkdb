@@ -2,13 +2,15 @@
 #ifndef RDB_PROTOCOL_PARALLEL_EXECUTOR_HPP_
 #define RDB_PROTOCOL_PARALLEL_EXECUTOR_HPP_
 
-/* Parallel query execution data structures (Phase 3 / PAR-01, PAR-06).
+/* Parallel query execution (Phase 3 / PAR-01, PAR-06, PAR-07).
 
 Fragment, plan, limits, executor, and merger. PAR-06 implements the
 coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered
 merge, partial-aggregate finalization, and OR-interruptor cancellation.
+PAR-07 adds error policy, aggregate/per-worker timeouts, store dispatch
+wiring, error profile (fragment ordinal), and debug correctness assertions.
 
-See .coding-hermes/specs/phase3-parallel-query.md §3.2–§3.7, §6. */
+See .coding-hermes/specs/phase3-parallel-query.md §3.2–§3.7, §6, §7. */
 
 #include <cstdint>
 #include <deque>
@@ -128,8 +130,8 @@ struct parallel_execution_limits_t {
     size_t max_workers;
     int64_t aggregate_buffer_bytes;
     int64_t per_worker_buffer_bytes;
-    int64_t aggregate_timeout_ms;
-    int64_t per_worker_timeout_ms;
+    int64_t aggregate_timeout_ms;   /* 0 = no aggregate timeout */
+    int64_t per_worker_timeout_ms;  /* 0 = no per-worker timeout */
 
     parallel_execution_limits_t()
         : max_workers(1),
@@ -174,7 +176,6 @@ public:
 
     state_t state() const;
 
-    /* Payload accessors — valid only for the matching state. */
     const fragment_batch_t &batch() const;
     const partial_aggregate_t &partial() const;
     size_t complete_ordinal() const;
@@ -194,9 +195,7 @@ private:
     query_exc_t error_;
 };
 
-/* result_merger_t (§3.6) — collects and merges worker output.
- * PAR-06: full implementation with ordered/unordered drain, partial-aggregate
- * finalization, and bounded memory backpressure. */
+/* result_merger_t (§3.6 / §7.6) */
 class result_merger_t : public home_thread_mixin_t {
 public:
     result_merger_t(
@@ -213,11 +212,15 @@ public:
     void fail(const query_exc_t &error);
     void drain_into(read_response_t *out);
     bool all_fragments_complete() const;
+    bool failed() const;
+    int64_t memory_used_bytes() const;
+    size_t completed_count() const;
 
 private:
     void drain_unordered(read_response_t *out);
     void drain_ordered(read_response_t *out);
     void merge_partials(read_response_t *out);
+    void assert_memory_invariants() const;
 
     parallel_plan_t::ordering_t ordering_;
     parallel_plan_t::terminal_t terminal_;
@@ -227,25 +230,18 @@ private:
     signal_t *interruptor_;
     bool failed_;
 
-    /* Buffered batches. Unordered: single queue. Ordered: per-ordinal deque. */
     std::deque<fragment_batch_t> unordered_queue_;
     std::vector<std::deque<fragment_batch_t> > ordered_queues_;
     size_t ordered_drain_ordinal_;
 
-    /* Partial aggregates indexed by fragment_ordinal. */
     std::vector<partial_aggregate_t> partials_;
-
-    /* Completed fragments tracking. */
     std::set<size_t> completed_fragments_;
-
-    /* Signalled when memory is freed (space available for waiting workers). */
     cond_t space_available_;
 
     DISABLE_COPYING(result_merger_t);
 };
 
-/* parallel_executor_t (§3.4) — sole owner of worker lifecycle.
- * PAR-06: coordinator lifecycle, worker dispatch, OR-interruptor (§6.1–§6.7). */
+/* parallel_executor_t (§3.4 / §6 / §7) */
 class parallel_executor_t : public home_thread_mixin_t {
 public:
     parallel_executor_t(
@@ -265,7 +261,10 @@ private:
     void launch_worker(const query_fragment_t &fragment);
     void run_fragment(const query_fragment_t &fragment,
                       auto_drainer_t::lock_t keepalive);
+    /* auto_drainer_t destructor joins workers; await_workers is a no-op hook. */
     void await_workers();
+    /* Latch first error, cancel siblings, stop launching (§7.1 / §7.2). */
+    void fail_all(const query_exc_t &error, size_t fragment_ordinal);
 
     store_t *store_;
     const read_t &base_read_;
@@ -273,25 +272,24 @@ private:
     parallel_execution_limits_t limits_;
     signal_t *parent_interruptor_;
 
-    /* OR-interruptor: parent + canceled_ (§6.4). */
+    /* OR-interruptor: parent + canceled_ (+ aggregate timer added in run). */
     cond_t canceled_cond_;
     wait_any_t combined_interruptor_;
 
     result_merger_t merger_;
 
-    /* Coordinator state. */
     size_t active_workers_;
     size_t next_fragment_index_;
+    bool stop_launching_;
 
-    /* Error tracking. */
     bool latched_error_;
     std::string error_message_;
+    size_t error_fragment_ordinal_;  /* SIZE_MAX if unknown */
 
-    /* Declared last so destructor drains before other members are destroyed. */
     auto_drainer_t drainer_;
 };
 
-/* parallel_admission_token_t (§3.7) — RAII reservation for workers + bytes. */
+/* parallel_admission_token_t (§3.7) */
 class parallel_admission_token_t {
 public:
     parallel_admission_token_t(size_t workers, int64_t bytes);
