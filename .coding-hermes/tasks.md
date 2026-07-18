@@ -237,12 +237,12 @@
     - Insert → new_val only; delete → old_val only; update/replace → both images
     - No-op update emits no record; aborted writes emit no record
     - Post-commit notification wakeup for dispatcher (best-effort, not correctness-critical)
-  - [ ] **CDC-04: Logical journal** — `src/serializer/` (new `logical_journal.hpp/cc`)
-    - Append-only versioned journal per table shard, atomically coupled to serializer transactions (spec §4.4)
-    - LSN allocation: shard-local, monotonic, never reused after crash/failover (spec §4.5)
-    - Journal index: LSN range → extent mapping, checkpointed with shard metadata
-    - Recovery: load checkpoint, validate tail, discard incomplete tail records
-    - Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
+  - [x] **CDC-04: Logical journal** — `src/serializer/` (new `logical_journal.hpp/cc`) — commit `07f81203e2`
+    - [x] Append-only versioned journal per table shard, atomically coupled to serializer transactions (spec §4.4)
+    - [x] LSN allocation: shard-local, monotonic, never reused after crash/failover (spec §4.5)
+    - [x] Journal index: LSN range → extent mapping, checkpointed with shard metadata
+    - [x] Recovery: load checkpoint, validate tail, discard incomplete tail records
+    - [x] Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
   - [ ] **CDC-05: Publication lifecycle** — `src/rdb_protocol/publication.cc`
     - createPublication: validate filter grammar, commit Raft metadata, register capture (spec §2.1–2.3)
     - publicationList/Status: per-table publication listing, consumer summaries with lag/state (spec §2.6)
