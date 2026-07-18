@@ -15,6 +15,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/op.hpp"
+#include "rdb_protocol/publication.hpp"
 #include "rdb_protocol/terms/terms.hpp"
 #include "rdb_protocol/val.hpp"
 #include "time.hpp"
@@ -181,22 +182,53 @@ void validate_filter(rcheckable_t *target, const datum_t &filter_d,
     }
 }
 
-datum_t stub_created_response(const char *kind, const std::string &name) {
-    ql::datum_object_builder_t res;
-    res.overwrite("created", datum_t::boolean(true));
-    res.overwrite(kind, datum_t(datum_string_t(name)));
-    res.overwrite("state", datum_t(datum_string_t("creating")));
-    res.overwrite("message",
-                  datum_t(datum_string_t("CDC term not yet wired to backend")));
-    return std::move(res).to_datum();
+const char *publication_state_to_cstr(publication_state_t state) {
+    switch (state) {
+        case publication_state_t::CREATING:  return "creating";
+        case publication_state_t::READY:     return "ready";
+        case publication_state_t::DROPPING:  return "dropping";
+        case publication_state_t::DROPPED:   return "dropped";
+        case publication_state_t::ERROR:     return "error";
+        default:                             return "unknown";
+    }
 }
 
-datum_t stub_dropped_response(const char *kind, const std::string &name) {
+const char *publication_format_to_cstr(publication_format_t fmt) {
+    switch (fmt) {
+        case publication_format_t::JSON_V1:          return "json";
+        case publication_format_t::INTERNAL_RDB_V1:  return "internal_rdb_v1";
+        default:                                     return "unknown";
+    }
+}
+
+const char *snapshot_mode_to_cstr(snapshot_mode_t mode) {
+    switch (mode) {
+        case snapshot_mode_t::FULL:  return "initial";
+        case snapshot_mode_t::NONE:  return "none";
+        default:                     return "unknown";
+    }
+}
+
+datum_t publication_config_to_datum(const publication_config_t &config) {
     ql::datum_object_builder_t res;
-    res.overwrite("dropped", datum_t::boolean(true));
-    res.overwrite(kind, datum_t(datum_string_t(name)));
-    res.overwrite("message",
-                  datum_t(datum_string_t("CDC term not yet wired to backend")));
+    res.overwrite("id", datum_t(datum_string_t(uuid_to_str(config.publication_id))));
+    res.overwrite("name", datum_t(datum_string_t(config.name.str())));
+    res.overwrite("state",
+        datum_t(datum_string_t(publication_state_to_cstr(config.state))));
+    res.overwrite("format",
+        datum_t(datum_string_t(publication_format_to_cstr(config.format))));
+    res.overwrite("include_before",
+        datum_t::boolean(config.include_before_image));
+    res.overwrite("include_after",
+        datum_t::boolean(config.include_after_image));
+    res.overwrite("snapshot",
+        datum_t(datum_string_t(snapshot_mode_to_cstr(config.default_snapshot_mode))));
+    res.overwrite("max_slot_lag_bytes",
+        datum_t(static_cast<double>(config.max_slot_lag_bytes)));
+    res.overwrite("database_id",
+        datum_t(datum_string_t(uuid_to_str(config.database_id))));
+    res.overwrite("table_id",
+        datum_t(datum_string_t(uuid_to_str(config.table_id))));
     return std::move(res).to_datum();
 }
 
@@ -351,11 +383,6 @@ private:
         publication_config_t config =
             parse_publication_config_from_datum(config_val->as_datum(),
                                                 config_val.get());
-        /* CDC-05a: filter is already validated inside
-        parse_publication_config_from_datum -> validate_filter. The parsed
-        config carries publication_id, name, database_id, table_id, and the
-        resolved filter; downstream CDC stages (CDC-07+ replication slots,
-        CDC-08+ sink routing) read this from the committed metadata. */
         config.database_id = table->db->id;
         config.table_id = table->get_id();
 
@@ -393,22 +420,37 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
+
+        counted_t<table_t> table;
         if (args->num_args() == 1) {
-            // Accept table or db scope for listing; validated for type only.
             scoped_ptr_t<val_t> scope = args->arg(env, 0);
-            bool ok = scope->get_type().is_convertible(val_t::type_t::TABLE)
-                || scope->get_type().is_convertible(val_t::type_t::DB);
-            rcheck(ok, base_exc_t::LOGIC,
-                   "publicationList argument must be a table or database.");
-            if (scope->get_type().is_convertible(val_t::type_t::TABLE)) {
-                (void)scope->as_table();
-            } else {
-                (void)scope->as_db();
-            }
+            rcheck(scope->get_type().is_convertible(val_t::type_t::TABLE),
+                   base_exc_t::LOGIC,
+                   "publicationList argument must be a table.");
+            table = scope->as_table();
         }
-        // Stub: empty list until CDC-05 wires metadata.
-        return new_val(datum_t(std::vector<datum_t>(),
-                               env->env->limits()));
+
+        admin_err_t error;
+        std::map<uuid_u, ql::publication_config_t> pubs;
+        if (!env->env->reql_cluster_interface()->publication_list(
+                table->db, name_string_t::guarantee_valid(table->name.c_str()),
+                env->env->interruptor, &error, &pubs)) {
+            REQL_RETHROW(error);
+        }
+        std::vector<datum_t> arr;
+        arr.reserve(pubs.size());
+        for (const auto &pair : pubs) {
+            ql::datum_object_builder_t entry;
+            entry.overwrite("id",
+                datum_t(datum_string_t(uuid_to_str(pair.first))));
+            entry.overwrite("name",
+                datum_t(datum_string_t(pair.second.name.str())));
+            entry.overwrite("state",
+                datum_t(datum_string_t(
+                    publication_state_to_string(pair.second.state))));
+            arr.push_back(std::move(entry).to_datum());
+        }
+        return new_val(datum_t(std::move(arr), env->env->limits()));
     }
     virtual const char *name() const { return "publication_list"; }
 };
@@ -422,28 +464,42 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
-        std::string pub_name;
+
+        counted_t<const db_t> db;
+        name_string_t table_name;
+        std::string pub_name_str;
+
         if (args->num_args() == 2) {
             counted_t<table_t> table = args->arg(env, 0)->as_table();
-            (void)table;
-            pub_name = args->arg(env, 1)->as_str().to_std();
+            db = table->db;
+            table_name = name_string_t::guarantee_valid(table->name.c_str());
+            pub_name_str = args->arg(env, 1)->as_str().to_std();
         } else {
-            pub_name = args->arg(env, 0)->as_str().to_std();
+            pub_name_str = args->arg(env, 0)->as_str().to_std();
+            /* Without explicit table scope, use database from r.db() call. */
+            // No database scope provided — caller must use table-scoped form.
+            rcheck(false, base_exc_t::LOGIC,
+                   "publicationStatus requires either a table scope "
+                   "(r.table('t').publicationStatus('name')) or both a table "
+                   "and publication name.");
         }
-        name_string_t checked;
-        bool ok = checked.assign_value(pub_name);
+
+        name_string_t pub_name;
+        bool ok = pub_name.assign_value(pub_name_str);
         rcheck(ok, base_exc_t::LOGIC,
                strprintf("Publication name `%s` invalid (%s).",
-                         pub_name.c_str(),
+                         pub_name_str.c_str(),
                          name_string_t::valid_char_msg));
 
-        ql::datum_object_builder_t res;
-        res.overwrite("name", datum_t(datum_string_t(checked.str())));
-        res.overwrite("state", datum_t(datum_string_t("unknown")));
-        res.overwrite("message",
-                      datum_t(datum_string_t(
-                          "CDC term not yet wired to backend")));
-        return new_val(std::move(res).to_datum());
+        admin_err_t error;
+        ql::publication_config_t config;
+        if (!env->env->reql_cluster_interface()->publication_status(
+                db, table_name, pub_name,
+                env->env->interruptor, &error, &config)) {
+            REQL_RETHROW(error);
+        }
+
+        return new_val(publication_config_to_datum(config));
     }
     virtual const char *name() const { return "publication_status"; }
 };
@@ -457,21 +513,57 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
-        std::string pub_name;
+
+        counted_t<const db_t> db;
+        name_string_t table_name;
+        std::string pub_name_str;
+
         if (args->num_args() == 2) {
             counted_t<table_t> table = args->arg(env, 0)->as_table();
-            (void)table;
-            pub_name = args->arg(env, 1)->as_str().to_std();
+            db = table->db;
+            table_name = name_string_t::guarantee_valid(table->name.c_str());
+            pub_name_str = args->arg(env, 1)->as_str().to_std();
         } else {
-            pub_name = args->arg(env, 0)->as_str().to_std();
+            pub_name_str = args->arg(env, 0)->as_str().to_std();
+            rcheck(false, base_exc_t::LOGIC,
+                   "publicationDrop requires a table scope "
+                   "(r.table('t').publicationDrop('name')).");
         }
-        name_string_t checked;
-        bool ok = checked.assign_value(pub_name);
+
+        name_string_t pub_name;
+        bool ok = pub_name.assign_value(pub_name_str);
         rcheck(ok, base_exc_t::LOGIC,
                strprintf("Publication name `%s` invalid (%s).",
-                         pub_name.c_str(),
+                         pub_name_str.c_str(),
                          name_string_t::valid_char_msg));
-        return new_val(stub_dropped_response("publication", checked.str()));
+
+        /* First resolve the publication to get its UUID. */
+        admin_err_t error;
+        ql::publication_config_t config;
+        if (!env->env->reql_cluster_interface()->publication_status(
+                db, table_name, pub_name,
+                env->env->interruptor, &error, &config)) {
+            REQL_RETHROW(error);
+        }
+
+        try {
+            if (!env->env->reql_cluster_interface()->publication_drop(
+                    env->env->get_user_context(),
+                    db, table_name,
+                    config.publication_id, pub_name,
+                    env->env->interruptor, &error)) {
+                REQL_RETHROW(error);
+            }
+        } catch (auth::permission_error_t const &permission_error) {
+            rfail(ql::base_exc_t::PERMISSION_ERROR, "%s",
+                  permission_error.what());
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("dropped", datum_t(1.0));
+        res.overwrite("publication",
+            datum_t(datum_string_t(pub_name.str())));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "publication_drop"; }
 };
