@@ -1039,10 +1039,24 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 release_superblock_t::RELEASE, nullptr);
     }
 
-    void operator()(const parallel_read_t &) {
-        throw cannot_perform_query_exc_t(
-            "parallel_read_t not yet implemented — PAR-06",
-            query_state_t::FAILED);
+    void operator()(const parallel_read_t &pread) {
+        response->response = rget_read_response_t();
+        auto *res = boost::get<rget_read_response_t>(&response->response);
+        key_range_t range;
+        range.left = pread.left_key;
+        range.right = pread.right_key == store_key_t::max()
+            ? key_range_t::right_bound_t::make_unbounded()
+            : key_range_t::right_bound_t(pread.right_key);
+        ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
+                         interruptor, pread.serializable_env, trace);
+        try {
+            rdb_rget_slice(btree, pread.region, range, r_nullopt, superblock,
+                &ql_env, ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
+                pread.transforms, pread.terminal, sorting_t::UNORDERED,
+                res, release_superblock_t::RELEASE);
+        } catch (const ql::exc_t &e) { res->result = e; }
+          catch (const ql::datum_exc_t &e) {
+              res->result = ql::exc_t(e, ql::backtrace_id_t::empty()); }
     }
 
     void operator()(const distribution_read_t &dg) {
