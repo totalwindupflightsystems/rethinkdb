@@ -2,20 +2,25 @@
 #ifndef RDB_PROTOCOL_PARALLEL_EXECUTOR_HPP_
 #define RDB_PROTOCOL_PARALLEL_EXECUTOR_HPP_
 
-/* Parallel query execution data structures (Phase 3 / PAR-01).
+/* Parallel query execution data structures (Phase 3 / PAR-01, PAR-06).
 
-Fragment, plan, limits, executor, and merger interfaces. This header is the
-data-structures phase only — no planning or execution logic lives here yet.
+Fragment, plan, limits, executor, and merger. PAR-06 implements the
+coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered
+merge, partial-aggregate finalization, and OR-interruptor cancellation.
 
-See .coding-hermes/specs/phase3-parallel-query.md §3.2–§3.7. */
+See .coding-hermes/specs/phase3-parallel-query.md §3.2–§3.7, §6. */
 
 #include <cstdint>
+#include <deque>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "btree/keys.hpp"
+#include "concurrency/auto_drainer.hpp"
 #include "concurrency/cond_var.hpp"
 #include "concurrency/signal.hpp"
+#include "concurrency/wait_any.hpp"
 #include "containers/scoped.hpp"
 #include "errors.hpp"
 #include "rdb_protocol/datum.hpp"
@@ -36,9 +41,7 @@ private:
     std::string reason_;
 };
 
-/* Spec §3.4/§3.6 — error latched by the coordinator / merger.
- * Lightweight carrier for this data-structures phase; later phases may map it
- * onto ql::exc_t / cannot_perform_query_exc_t. */
+/* Spec §3.4/§3.6 — error latched by the coordinator / merger. */
 class query_exc_t {
 public:
     query_exc_t();
@@ -191,11 +194,15 @@ private:
     query_exc_t error_;
 };
 
-/* result_merger_t (§3.6) */
+/* result_merger_t (§3.6) — collects and merges worker output.
+ * PAR-06: full implementation with ordered/unordered drain, partial-aggregate
+ * finalization, and bounded memory backpressure. */
 class result_merger_t : public home_thread_mixin_t {
 public:
     result_merger_t(
         parallel_plan_t::ordering_t ordering,
+        parallel_plan_t::terminal_t terminal,
+        size_t total_fragments,
         int64_t memory_limit_bytes,
         signal_t *interruptor);
     ~result_merger_t();
@@ -205,6 +212,7 @@ public:
     void mark_fragment_complete(size_t ordinal);
     void fail(const query_exc_t &error);
     void drain_into(read_response_t *out);
+    bool all_fragments_complete() const;
 
 private:
     void drain_unordered(read_response_t *out);
@@ -212,13 +220,32 @@ private:
     void merge_partials(read_response_t *out);
 
     parallel_plan_t::ordering_t ordering_;
+    parallel_plan_t::terminal_t terminal_;
+    size_t total_fragments_;
     int64_t memory_limit_bytes_;
+    int64_t memory_used_bytes_;
     signal_t *interruptor_;
+    bool failed_;
+
+    /* Buffered batches. Unordered: single queue. Ordered: per-ordinal deque. */
+    std::deque<fragment_batch_t> unordered_queue_;
+    std::vector<std::deque<fragment_batch_t> > ordered_queues_;
+    size_t ordered_drain_ordinal_;
+
+    /* Partial aggregates indexed by fragment_ordinal. */
+    std::vector<partial_aggregate_t> partials_;
+
+    /* Completed fragments tracking. */
+    std::set<size_t> completed_fragments_;
+
+    /* Signalled when memory is freed (space available for waiting workers). */
+    cond_t space_available_;
 
     DISABLE_COPYING(result_merger_t);
 };
 
-/* parallel_executor_t (§3.4) — sole owner of worker lifecycle. */
+/* parallel_executor_t (§3.4) — sole owner of worker lifecycle.
+ * PAR-06: coordinator lifecycle, worker dispatch, OR-interruptor (§6.1–§6.7). */
 class parallel_executor_t : public home_thread_mixin_t {
 public:
     parallel_executor_t(
@@ -236,9 +263,8 @@ public:
 
 private:
     void launch_worker(const query_fragment_t &fragment);
-    void run_fragment(const query_fragment_t &fragment);
-    void handle_worker_result(fragment_result_t result);
-    void fail_all(const query_exc_t &error);
+    void run_fragment(const query_fragment_t &fragment,
+                      auto_drainer_t::lock_t keepalive);
     void await_workers();
 
     store_t *store_;
@@ -246,8 +272,23 @@ private:
     const parallel_plan_t &plan_;
     parallel_execution_limits_t limits_;
     signal_t *parent_interruptor_;
-    cond_t canceled_;
+
+    /* OR-interruptor: parent + canceled_ (§6.4). */
+    cond_t canceled_cond_;
+    wait_any_t combined_interruptor_;
+
     result_merger_t merger_;
+
+    /* Coordinator state. */
+    size_t active_workers_;
+    size_t next_fragment_index_;
+
+    /* Error tracking. */
+    bool latched_error_;
+    std::string error_message_;
+
+    /* Declared last so destructor drains before other members are destroyed. */
+    auto_drainer_t drainer_;
 };
 
 /* parallel_admission_token_t (§3.7) — RAII reservation for workers + bytes. */
