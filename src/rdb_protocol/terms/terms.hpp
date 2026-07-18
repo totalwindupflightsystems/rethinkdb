@@ -310,6 +310,36 @@ counted_t<term_t> make_partition_info_term(
 counted_t<term_t> make_repartition_term(
     compile_env_t *env, const raw_term_t &term);
 
+// cdc_publication.cc
+counted_t<term_t> make_publication_create_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_publication_list_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_publication_status_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_publication_drop_term(
+    compile_env_t *env, const raw_term_t &term);
+
+// cdc_subscription.cc
+counted_t<term_t> make_subscription_create_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_subscription_list_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_subscription_status_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_subscription_drop_term(
+    compile_env_t *env, const raw_term_t &term);
+
+// cdc_sink.cc
+counted_t<term_t> make_cdc_sink_create_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_cdc_sink_list_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_cdc_sink_status_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_cdc_sink_drop_term(
+    compile_env_t *env, const raw_term_t &term);
+
 // fts.cc
 counted_t<term_t> make_fts_tokenize_term(
     compile_env_t *env, const raw_term_t &term);

@@ -142,6 +142,18 @@ counted_t<const term_t> compile_on_current_stack(
     case Term::VECTOR_NEAR:       return make_vector_near_term(env, t);
     case Term::PARTITION_INFO:     return make_partition_info_term(env, t);
     case Term::REPARTITION:        return make_repartition_term(env, t);
+    case Term::PUBLICATION_CREATE: return make_publication_create_term(env, t);
+    case Term::PUBLICATION_LIST:   return make_publication_list_term(env, t);
+    case Term::PUBLICATION_STATUS: return make_publication_status_term(env, t);
+    case Term::PUBLICATION_DROP:   return make_publication_drop_term(env, t);
+    case Term::SUBSCRIPTION_CREATE: return make_subscription_create_term(env, t);
+    case Term::SUBSCRIPTION_LIST:  return make_subscription_list_term(env, t);
+    case Term::SUBSCRIPTION_STATUS: return make_subscription_status_term(env, t);
+    case Term::SUBSCRIPTION_DROP:  return make_subscription_drop_term(env, t);
+    case Term::CDC_SINK_CREATE:    return make_cdc_sink_create_term(env, t);
+    case Term::CDC_SINK_LIST:      return make_cdc_sink_list_term(env, t);
+    case Term::CDC_SINK_STATUS:    return make_cdc_sink_status_term(env, t);
+    case Term::CDC_SINK_DROP:      return make_cdc_sink_drop_term(env, t);
     case Term::FUNCALL:            return make_funcall_term(env, t);
     case Term::BRANCH:             return make_branch_term(env, t);
     case Term::OR:                 return make_or_term(env, t);

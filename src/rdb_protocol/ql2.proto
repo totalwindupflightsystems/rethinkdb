@@ -822,6 +822,33 @@ message Term {
         // Online repartition of a table; accepts the same layout as tableCreate's
         // `partitions` optarg plus optional {wait: BOOL}.
         REPARTITION = 203; // Table, OBJECT {wait: BOOL} -> OBJECT
+
+        // * CDC / Logical Replication Operations (Phase 3)
+        // IDs start at 204 because 202-203 are PARTITION_INFO/REPARTITION.
+        // Create a durable publication on a table. Config object carries name + options.
+        PUBLICATION_CREATE = 204; // TABLE, OBJECT {name:STRING, filter:OBJECT, ...} -> OBJECT
+        // List publications (optionally scoped to a table).
+        PUBLICATION_LIST = 205;   // [TABLE] -> ARRAY
+        // Status for a named publication.
+        PUBLICATION_STATUS = 206; // [TABLE,] STRING -> OBJECT
+        // Drop a named publication.
+        PUBLICATION_DROP = 207;   // [TABLE,] STRING -> OBJECT
+        // Create a subscription that applies a remote publication into a target table.
+        SUBSCRIPTION_CREATE = 208; // [TABLE|DATABASE,] OBJECT {name:STRING, ...} -> OBJECT
+        // List subscriptions (optionally scoped to a database or table).
+        SUBSCRIPTION_LIST = 209;   // [DATABASE|TABLE] -> ARRAY
+        // Status for a named subscription.
+        SUBSCRIPTION_STATUS = 210; // [TABLE,] STRING -> OBJECT
+        // Drop a named subscription.
+        SUBSCRIPTION_DROP = 211;   // [TABLE,] STRING -> OBJECT
+        // Create an external CDC sink fed by a publication.
+        CDC_SINK_CREATE = 212;    // TABLE, OBJECT {name:STRING, publication:STRING, type:STRING, ...} -> OBJECT
+        // List CDC sinks on a table.
+        CDC_SINK_LIST = 213;      // TABLE -> ARRAY
+        // Status for a named CDC sink.
+        CDC_SINK_STATUS = 214;    // TABLE, STRING -> OBJECT
+        // Drop a named CDC sink.
+        CDC_SINK_DROP = 215;      // TABLE, STRING -> OBJECT
     }
     optional TermType type = 1;
 
