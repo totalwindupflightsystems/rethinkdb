@@ -216,14 +216,15 @@
   - [x] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7. (over-delivered by PAR-06 `8c7e26c38e`: fail_all() error latch, OR-interruptor via wait_any_t, aggregate/per-worker timeouts via signal_timer_t, merger backpressure, debug assertions §7.6 — all 11 policy table rows covered)
   - [x] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8. (commit `ae39f6fe10`)
 - [ ] **CDC-00: Logical replication / CDC streaming** — spec: `.coding-hermes/specs/phase3-cdc-streaming.md` (779 lines, 10-section axiom-level)
-  - [ ] **CDC-01: Data structures** — `src/rdb_protocol/cdc_types.hpp` (all shared types), `src/rdb_protocol/publication.hpp/cc`, `src/rdb_protocol/subscription.hpp/cc`, `src/rdb_protocol/cdc_sink.hpp/cc`
-    - log_sequence_number_t, shard_lsn_t, change_event_id_t, change_record_t (spec §3.1, §3.5)
-    - publication_config_t, publication_filter_t, publication_format_t, publication_state_t (spec §3.2)
-    - subscription_config_t, conflict_resolution_t, subscription_state_t (spec §3.3)
-    - cdc_sink_config_t, cdc_sink_type_t, cdc_sink_state_t, cdc_batching_config_t (spec §3.4)
-    - replication_slot_t, replication_slot_state_t (spec §3.6)
-    - applied_change_t, subscription_applier_t (spec §3.7)
-    - Serialization macros for all structs; backward-compat defaults
+  - [x] **CDC-01: Data structures** — `src/rdb_protocol/cdc_types.hpp` (all shared types), `src/rdb_protocol/publication.hpp/cc`, `src/rdb_protocol/subscription.hpp/cc`, `src/rdb_protocol/cdc_sink.hpp/cc` (commit `1b1fd1c1a0`)
+    - [x] log_sequence_number_t, shard_lsn_t, change_event_id_t, change_record_t (spec §3.1, §3.5)
+    - [x] publication_config_t, publication_filter_t, publication_format_t, publication_state_t (spec §3.2)
+    - [x] subscription_config_t, conflict_resolution_t, subscription_state_t (spec §3.3)
+    - [x] cdc_sink_config_t, cdc_sink_type_t, cdc_sink_state_t, cdc_batching_config_t (spec §3.4)
+    - [x] replication_slot_t, replication_slot_state_t, replication_slot_kind_t (spec §3.6)
+    - [x] applied_change_t, subscription_applier_t (with dedup + prune-before, spec §3.7)
+    - [x] Serialization macros for all structs; backward-compat defaults
+    - 11 files, +609 lines, 15 unit tests (all pass, deterministic)
   - [ ] **CDC-02: ReQL surface** — `src/rdb_protocol/ql2.proto`, `src/rdb_protocol/terms/`
     - 12 new TermType entries (PUBLICATION_CREATE/LIST/STATUS/DROP, SUBSCRIPTION_CREATE/LIST/STATUS/DROP, CDC_SINK_CREATE/LIST/STATUS/DROP) (spec §2.7)
     - createPublication, publicationList, publicationStatus, publicationDrop terms
