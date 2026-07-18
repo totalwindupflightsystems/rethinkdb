@@ -214,7 +214,7 @@
   - [x] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3. (commit `996ac35c1b`)
   - [x] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure, parallel_read_t store handler, OR-interruptor cancellation, partial-aggregate merge. Spec §6. (commit `8c7e26c38e`)
   - [x] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7. (over-delivered by PAR-06 `8c7e26c38e`: fail_all() error latch, OR-interruptor via wait_any_t, aggregate/per-worker timeouts via signal_timer_t, merger backpressure, debug assertions §7.6 — all 11 policy table rows covered)
-  - [ ] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8.
+  - [x] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8. (commit `ae39f6fe10`)
 - [ ] Logical replication / CDC streaming — spec: `.coding-hermes/specs/phase3-cdc-streaming.md`
 - [ ] Async I/O subsystem (PG18-style) — spec: `.coding-hermes/specs/phase3-async-io.md`
 - [ ] JSONB/JSONPath improvements — spec: `.coding-hermes/specs/phase3-jsonb-jsonpath.md`
