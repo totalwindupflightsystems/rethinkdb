@@ -532,6 +532,36 @@ public:
             signal_t *interruptor,
             admin_err_t *error_out) = 0;
 
+    /* CDC-05b: list publications on a table. Returns a map of publication_id →
+    config. Returns true on success. */
+    virtual bool publication_list(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            std::map<uuid_u, ql::publication_config_t> *publications_out) = 0;
+
+    /* CDC-05b: get status of a single publication by name. Returns config in
+    *config_out on success. */
+    virtual bool publication_status(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const name_string_t &publication_name,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            ql::publication_config_t *config_out) = 0;
+
+    /* CDC-05b: drop a publication. The caller provides both publication_id and
+    publication_name for unambiguous Raft identification. */
+    virtual bool publication_drop(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const uuid_u &publication_id,
+            const name_string_t &publication_name,
+            signal_t *interruptor,
+            admin_err_t *error_out) = 0;
+
 protected:
     virtual ~reql_cluster_interface_t() { }   // silence compiler warnings
 };

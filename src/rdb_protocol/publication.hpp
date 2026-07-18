@@ -19,6 +19,17 @@ enum class publication_format_t { JSON_V1 = 0, INTERNAL_RDB_V1 = 1 };
 
 enum class publication_state_t { CREATING = 0, READY = 1, DROPPING = 2, DROPPED = 3, ERROR = 4 };
 
+inline const char *publication_state_to_string(publication_state_t state) {
+    switch (state) {
+    case publication_state_t::CREATING: return "creating";
+    case publication_state_t::READY: return "ready";
+    case publication_state_t::DROPPING: return "dropping";
+    case publication_state_t::DROPPED: return "dropped";
+    case publication_state_t::ERROR: return "error";
+    default: return "unknown";
+    }
+}
+
 enum class snapshot_mode_t { FULL = 0, NONE = 1 };
 
 struct publication_filter_t {
