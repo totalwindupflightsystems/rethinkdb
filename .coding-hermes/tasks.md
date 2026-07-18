@@ -231,7 +231,7 @@
     - [x] createSubscription, subscriptionList, subscriptionStatus, subscriptionDrop terms — validated, cluster-version-gated stubs
     - [x] createCDCSink, cdcSinkList, cdcSinkStatus, cdcSinkDrop terms — validated, cluster-version-gated stubs
     - [x] 9 files, +1,451 lines; build green; 6/6 CDC tests pass
-  - [ ] **CDC-03: Write capture seam** — `src/rdb_protocol/store.hpp/cc`, `src/rdb_protocol/btree_store.hpp/cc`
+  - [x] **CDC-03: Write capture seam** — `src/rdb_protocol/store.hpp/cc`, `src/rdb_protocol/btree_store.hpp/cc` (commit `09c2a07430`)
     - Stage change_record_t in store_t::write() after mutation normalization, before serializer commit (spec §4.2)
     - btree_store_t expose normalized before/after mutation reports (spec §4.3)
     - Insert → new_val only; delete → old_val only; update/replace → both images
