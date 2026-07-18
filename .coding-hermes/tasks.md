@@ -225,13 +225,12 @@
     - [x] applied_change_t, subscription_applier_t (with dedup + prune-before, spec §3.7)
     - [x] Serialization macros for all structs; backward-compat defaults
     - 11 files, +609 lines, 15 unit tests (all pass, deterministic)
-  - [ ] **CDC-02: ReQL surface** — `src/rdb_protocol/ql2.proto`, `src/rdb_protocol/terms/`
-    - 12 new TermType entries (PUBLICATION_CREATE/LIST/STATUS/DROP, SUBSCRIPTION_CREATE/LIST/STATUS/DROP, CDC_SINK_CREATE/LIST/STATUS/DROP) (spec §2.7)
-    - createPublication, publicationList, publicationStatus, publicationDrop terms
-    - createSubscription, subscriptionList, subscriptionStatus, subscriptionDrop terms
-    - createCDCSink, cdcSinkList, cdcSinkStatus, cdcSinkDrop terms
-    - Optarg validation: filter grammar, conflict resolution, batching, auth references
-    - Cluster-version-gated DDL (reject until all members can deserialize new metadata)
+  - [x] **CDC-02: ReQL surface** — `src/rdb_protocol/ql2.proto`, `src/rdb_protocol/terms/` (commit `cadaefece9`)
+    - [x] 12 new TermType entries (PUBLICATION_CREATE/LIST/STATUS/DROP, SUBSCRIPTION_CREATE/LIST/STATUS/DROP, CDC_SINK_CREATE/LIST/STATUS/DROP) allocated 202-213 (spec §2.7)
+    - [x] createPublication, publicationList, publicationStatus, publicationDrop terms — validated, cluster-version-gated stubs
+    - [x] createSubscription, subscriptionList, subscriptionStatus, subscriptionDrop terms — validated, cluster-version-gated stubs
+    - [x] createCDCSink, cdcSinkList, cdcSinkStatus, cdcSinkDrop terms — validated, cluster-version-gated stubs
+    - [x] 9 files, +1,451 lines; build green; 6/6 CDC tests pass
   - [ ] **CDC-03: Write capture seam** — `src/rdb_protocol/store.hpp/cc`, `src/rdb_protocol/btree_store.hpp/cc`
     - Stage change_record_t in store_t::write() after mutation normalization, before serializer commit (spec §4.2)
     - btree_store_t expose normalized before/after mutation reports (spec §4.3)
