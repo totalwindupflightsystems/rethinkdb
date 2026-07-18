@@ -14,8 +14,9 @@
 #include "clustering/generic/nonoverlapping_regions.hpp"
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
-#include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/partition_config.hpp"
+#include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/publication.hpp"  // publication_config_t for publications map
 #include "rpc/connectivity/server_id.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
 #include "rpc/serialize_macros.hpp"
@@ -106,6 +107,11 @@ public:
     /* This contains an entry for every server mentioned in the config. The `uint64_t`s
     are server config versions. */
     server_name_map_t server_names;
+
+    /* CDC publications attached to this table. CDC-05a: keyed by publication_id.
+    Committed through Raft via table_config_and_shards_change_t::publication_create_t /
+    publication_drop_t. The map is empty on tables that have no publications. */
+    std::map<uuid_u, ql::publication_config_t> publications;
 };
 
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_t);
@@ -157,6 +163,27 @@ public:
         std::vector<partition_store_ref_t> provisional_stores;
     };
 
+    /* CDC-05a: register a publication on this table. Replaces the stub createPublication
+    backend with a real Raft-propagated metadata change. The publication is inserted into
+    `table_config_and_shards_t::publications` keyed by `config.publication_id`; apply_change
+    returns false if a publication with that id already exists. The filter, format, and
+    snapshot-mode fields on the config drive downstream change-record capture (CDC-03) and
+    replication-slot allocation (CDC-07+); CDC-05a only commits the metadata. */
+    class publication_create_t {
+    public:
+        ql::publication_config_t config;
+    };
+
+    /* CDC-05a counterpart: drop a publication by id. `name` is echoed in audit logs and
+    is required by the change's wire contract but is not consulted by apply_change — the
+    map is keyed by publication_id. apply_change returns false if the publication does not
+    exist (idempotent re-drop is rejected here; callers should re-read config to confirm). */
+    class publication_drop_t {
+    public:
+        uuid_u publication_id;
+        name_string_t name;
+    };
+
     table_config_and_shards_change_t() { }
 
     explicit table_config_and_shards_change_t(set_table_config_and_shards_t &&_change)
@@ -172,6 +199,10 @@ public:
     explicit table_config_and_shards_change_t(write_hook_drop_t &&_change)
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(set_partition_config_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(publication_create_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(publication_drop_t &&_change)
         : change(std::move(_change)) { }
 
 
@@ -191,7 +222,9 @@ private:
         sindex_rename_t,
         write_hook_create_t,
         write_hook_drop_t,
-        set_partition_config_t> change;
+        set_partition_config_t,
+        publication_create_t,
+        publication_drop_t> change;
 
     class apply_change_visitor_t;
 };
@@ -203,5 +236,7 @@ RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_rename_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::set_partition_config_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_create_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_drop_t);
 
 #endif // CLUSTERING_ADMINISTRATION_TABLES_TABLE_METADATA_HPP_

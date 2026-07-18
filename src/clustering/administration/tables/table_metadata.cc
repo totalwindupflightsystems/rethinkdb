@@ -112,6 +112,22 @@ public:
         return true;
     }
 
+    result_type operator()(
+            const publication_create_t &publication_create) const {
+        auto pair = table_config_and_shards->publications.insert(
+            std::make_pair(
+                publication_create.config.publication_id,
+                publication_create.config));
+        return pair.second;
+    }
+
+    result_type operator()(
+            const publication_drop_t &publication_drop) const {
+        auto size = table_config_and_shards->publications.erase(
+            publication_drop.publication_id);
+        return size == 1;
+    }
+
 private:
     table_config_and_shards_t *table_config_and_shards;
 };
@@ -277,13 +293,101 @@ RDB_IMPL_EQUALITY_COMPARABLE_7(table_config_t,
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);
 
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_1(table_config_and_shards_t,
-                                    config, shard_scheme, server_names);
-RDB_IMPL_EQUALITY_COMPARABLE_3(table_config_and_shards_t,
-                               config, shard_scheme, server_names);
+RDB_IMPL_EQUALITY_COMPARABLE_4(table_config_and_shards_t,
+                               config, shard_scheme, server_names, publications);
 
-RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
-    table_config_and_shards_change_t::set_table_config_and_shards_t,
+template <cluster_version_t W>
+void serialize(write_message_t *wm, const table_config_and_shards_t &tcas) {
+    serialize<W>(wm, tcas.config);
+    serialize<W>(wm, tcas.shard_scheme);
+    serialize<W>(wm, tcas.server_names);
+    /* CDC-05a: publications map is only serialized in v2_4+. Older protocol
+    versions were fixed before CDC-05; older nodes see an empty map. The map
+    is empty on tables that have never had a publication created. */
+    std::map<uuid_u, ql::publication_config_t> publications = tcas.publications;
+    serialize<W>(wm, publications);
+}
+
+INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(table_config_and_shards_t);
+
+template <cluster_version_t W>
+archive_result_t deserialize_table_config_and_shards_pre_v2_4(
+    read_stream_t *s, table_config_and_shards_t *tcas) {
+    archive_result_t res;
+
+    table_config_t config;
+    res = deserialize<W>(s, &config);
+    if (bad(res)) { return res; }
+
+    table_shard_scheme_t shard_scheme;
+    res = deserialize<W>(s, &shard_scheme);
+    if (bad(res)) { return res; }
+
+    server_name_map_t server_names;
+    res = deserialize<W>(s, &server_names);
+    if (bad(res)) { return res; }
+
+    tcas->config = std::move(config);
+    tcas->shard_scheme = std::move(shard_scheme);
+    tcas->server_names = std::move(server_names);
+    /* publications is empty on pre-v2_4 nodes — already default-initialized. */
+    return res;
+}
+
+template <cluster_version_t W>
+archive_result_t deserialize(
+        read_stream_t *s, table_config_and_shards_t *tcas) {
+    archive_result_t res;
+
+    table_config_t config;
+    res = deserialize<W>(s, &config);
+    if (bad(res)) { return res; }
+
+    table_shard_scheme_t shard_scheme;
+    res = deserialize<W>(s, &shard_scheme);
+    if (bad(res)) { return res; }
+
+    server_name_map_t server_names;
+    res = deserialize<W>(s, &server_names);
+    if (bad(res)) { return res; }
+
+    std::map<uuid_u, ql::publication_config_t> publications;
+    res = deserialize<W>(s, &publications);
+    if (bad(res)) { return res; }
+
+    tcas->config = std::move(config);
+    tcas->shard_scheme = std::move(shard_scheme);
+    tcas->server_names = std::move(server_names);
+    tcas->publications = std::move(publications);
+
+    return res;
+}
+
+template <>
+archive_result_t deserialize<cluster_version_t::v2_1>(
+        read_stream_t *s, table_config_and_shards_t *tcas) {
+    return deserialize_table_config_and_shards_pre_v2_4<cluster_version_t::v2_1>(
+        s, tcas);
+}
+
+template <>
+archive_result_t deserialize<cluster_version_t::v2_2>(
+        read_stream_t *s, table_config_and_shards_t *tcas) {
+    return deserialize_table_config_and_shards_pre_v2_4<cluster_version_t::v2_2>(
+        s, tcas);
+}
+
+template <>
+archive_result_t deserialize<cluster_version_t::v2_3>(
+        read_stream_t *s, table_config_and_shards_t *tcas) {
+    return deserialize_table_config_and_shards_pre_v2_4<cluster_version_t::v2_3>(
+        s, tcas);
+}
+
+template archive_result_t deserialize<cluster_version_t::v2_4_is_latest>(
+        read_stream_t *, table_config_and_shards_t *);
+
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(table_config_and_shards_change_t::set_table_config_and_shards_t,
     new_config_and_shards);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(table_config_and_shards_change_t::sindex_create_t,
     name, config);
@@ -297,6 +401,12 @@ RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(table_config_and_shards_change_t::write_hook
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     table_config_and_shards_change_t::set_partition_config_t,
     expected_epoch, new_config, provisional_stores);
+
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
+    table_config_and_shards_change_t::publication_create_t, config);
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
+    table_config_and_shards_change_t::publication_drop_t,
+    publication_id, name);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(database_semilattice_metadata_t, name);
 RDB_IMPL_SEMILATTICE_JOINABLE_1(database_semilattice_metadata_t, name);
