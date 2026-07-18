@@ -805,4 +805,43 @@ bool test_rdb_env_t::instance_t::publication_create(
     return false;
 }
 
+bool test_rdb_env_t::instance_t::publication_list(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED std::map<uuid_u, ql::publication_config_t> *publications_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support publication_list()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::publication_status(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const name_string_t &publication_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED ql::publication_config_t *config_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support publication_status()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::publication_drop(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const uuid_u &publication_id,
+        UNUSED const name_string_t &publication_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support publication_drop()",
+        query_state_t::FAILED};
+    return false;
+}
+
 }  // namespace unittest

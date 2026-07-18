@@ -1,1 +1,19 @@
-tasks: []
+tasks:
+- id: CDC-05b
+  title: "CDC-05b: publicationList, publicationStatus, publicationDrop \u2014 wired\
+    \ to Raft metadata"
+  criteria:
+  - publicationList returns publications from table_config_and_shards_t.publications
+    map
+  - publicationStatus finds publication by name in config.publications
+  - publicationDrop uses publication_drop_t Raft change for metadata commit
+  - Both artificial_reql_cluster_interface_t and real_reql_cluster_interface_t implement
+    all three methods
+  - reql_cluster_interface_t declares virtual methods for all three operations
+  - publication_state_to_string() helper added to publication.hpp
+  - publication_config_to_datum() serializes full config including id/name/state/format/snapshot/lag/db/table
+  - Publication list returns structured datum array with id/name/state per publication
+  - Publication drop resolves publication_id via publication_status before Raft call
+  - Build passes clean
+  status: pending
+  created_at: '2026-07-18T22:04:41.801651+00:00'
