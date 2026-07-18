@@ -15,6 +15,7 @@
 #include "containers/archive/vector_stream.hpp"
 #include "rdb_protocol/brin.hpp"
 #include "rdb_protocol/btree.hpp"
+#include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/erase_range.hpp"
@@ -1335,7 +1336,8 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
                         profile::sampler_t *_sampler,
                         profile::trace_t *_trace,
                         write_response_t *_response,
-                        signal_t *_interruptor) :
+                        signal_t *_interruptor,
+                        std::vector<ql::change_record_t> *_cdc_records_out) :
         btree(_btree),
         store(_store),
         txn(_txn),
@@ -1348,10 +1350,39 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         trace(_trace),
         sindex_block((*superblock)->expose_buf(),
                      (*superblock)->get_sindex_block_id(),
-                     access_t::write) {
+                     access_t::write),
+        cdc_records_out(_cdc_records_out) {
     }
 
 private:
+    // Allocates the next LSN from the store's counter and returns a fully
+    // initialized change_event_id_t. Must be called from inside the write
+    // transaction.
+    ql::change_event_id_t next_change_event_id(ql::change_operation_t) {
+        uint64_t lsn_val = store->next_lsn.fetch_add(1, std::memory_order_relaxed);
+        ql::change_event_id_t id;
+        id.shard_id = generate_uuid();  // placeholder — CDC-04 replaces this
+        id.lsn.value = lsn_val;
+        return id;
+    }
+
+    // Helper: push a single change_record_t into the output vector.
+    void stage_change_record(ql::change_operation_t op,
+                             const ql::datum_t *old_val,
+                             const ql::datum_t *new_val) {
+        if (cdc_records_out == nullptr) return;
+        ql::change_record_t rec;
+        rec.op = op;
+        rec.commit_timestamp = current_microtime();
+        rec.event_id = next_change_event_id(op);
+        if (old_val != nullptr) {
+            rec.before_image = ql::serialize_datum_to_vector(*old_val);
+        }
+        if (new_val != nullptr) {
+            rec.after_image = ql::serialize_datum_to_vector(*new_val);
+        }
+        cdc_records_out->push_back(std::move(rec));
+    }
     void update_sindexes(const rdb_modification_report_t &mod_report) {
         std::vector<rdb_modification_report_t> mod_reports;
         // This copying of the mod_report is inefficient, but it seems this
@@ -1373,6 +1404,7 @@ private:
     profile::trace_t *const trace;
     buf_lock_t sindex_block;
     profile::event_log_t event_log_out;
+    std::vector<ql::change_record_t> *const cdc_records_out;
 
     DISABLE_COPYING(rdb_write_visitor_t);
 };
@@ -1381,7 +1413,8 @@ void store_t::protocol_write(const write_t &_write,
                              write_response_t *response,
                              state_timestamp_t timestamp,
                              scoped_ptr_t<real_superblock_t> *superblock,
-                             signal_t *interruptor) {
+                             signal_t *interruptor,
+                             std::vector<ql::change_record_t> *cdc_records_out) {
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(_write.profile);
 
     {
@@ -1395,7 +1428,8 @@ void store_t::protocol_write(const write_t &_write,
                               &start_write,
                               trace.get_or_null(),
                               response,
-                              interruptor);
+                              interruptor,
+                              cdc_records_out);
         boost::apply_visitor(v, _write.write);
     }
 
@@ -1512,4 +1546,29 @@ std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
             region_t(_region),
             make_scoped<ql::changefeed::server_t>(ctx->manager, this))).first;
     return std::make_pair(it->second.get(), it->second->get_keepalive());
+}
+
+// ── CDC datum serialization helpers ──
+
+std::vector<char> ql::serialize_datum_to_vector(const datum_t &d) {
+    if (!d.has()) {
+        return std::vector<char>();
+    }
+    write_message_t wm;
+    datum_serialize(&wm, d, check_datum_serialization_errors_t::NO);
+    vector_stream_t stream;
+    int res = send_write_message(&stream, &wm);
+    guarantee(res == 0);
+    return std::move(stream).vector();
+}
+
+ql::datum_t ql::deserialize_datum_from_vector(const std::vector<char> &v) {
+    if (v.empty()) {
+        return datum_t();
+    }
+    vector_read_stream_t stream{std::vector<char>(v)};
+    datum_t out;
+    archive_result_t res = datum_deserialize(&stream, &out);
+    guarantee(res == archive_result_t::SUCCESS);
+    return out;
 }

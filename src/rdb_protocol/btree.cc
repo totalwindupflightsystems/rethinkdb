@@ -1575,6 +1575,19 @@ void rdb_modification_report_cb_t::on_mod_report(
     bool update_pkey_cfeeds,
     new_mutex_in_line_t *sindex_spot,
     rwlock_in_line_t *cfeed_stamp_spot) {
+    // CDC-03: stage the raw modification report for the CDC capture seam in
+    // store.cc. We append only when one of the serialized blobs is non-empty
+    // (a non-empty blob means the BTree actually wrote or erased the row —
+    // an upsert against an existing key with `overwrite=false` is a no-op
+    // and produces no CDC record). `added.second` and `deleted.second` are
+    // populated by `kv_location_set` / `kv_location_delete` only when the
+    // underlying key/value pair actually changed on disk, so this filter
+    // captures the "no-op" semantics from the test suite.
+    if (cdc_reports_out != nullptr
+            && (!report.info.deleted.second.empty()
+                || !report.info.added.second.empty())) {
+        cdc_reports_out->push_back(report);
+    }
     if (report.info.deleted.first.has() || report.info.added.first.has()) {
         // We spawn the sindex update in its own coroutine because we don't want to
         // hold the sindex update for the changefeed update or vice-versa.
