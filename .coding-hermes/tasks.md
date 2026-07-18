@@ -244,11 +244,13 @@
     - [x] Recovery: load checkpoint, validate tail, discard incomplete tail records
     - [x] Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
   - [ ] **CDC-05: Publication lifecycle** — `src/rdb_protocol/publication.cc`
-    - createPublication: validate filter grammar, commit Raft metadata, register capture (spec §2.1–2.3)
-    - publicationList/Status: per-table publication listing, consumer summaries with lag/state (spec §2.6)
-    - publicationDrop: commit DROPPING through Raft, reject new connections, send terminal frame, release slots (spec §2.6)
-    - Filter compilation: deterministic declarative JSON → conjunction of scalar equality/finite `in` (spec §2.3)
-    - Projection after eligibility; predicate-only fields not exported
+    - [x] CDC-05a: createPublication Raft wiring + filter validation → commit `03a3f421ac` (11 files, +317/-11)
+      - createPublication: validate filter grammar, commit Raft metadata, register capture
+      - Added publication_create_t/drop_t to table_config_and_shards_change_t variant
+      - Added publications map to table_config_and_shards_t with v2_4+ serialization
+      - Wired createPublication term to real Raft metadata (no more stub response)
+      - Added mock to test_rdb_env_t::instance_t, artificial + real cluster interfaces
+    - [ ] CDC-05b: publicationList/Status/Drop — per-table listing, consumer summaries, drop lifecycle
   - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
     - createSubscription: commit target metadata, verify source identity, TLS handshake, bind/create slot (spec §2.4)
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
