@@ -206,7 +206,7 @@
   - [x] **PART-10: Unit tests** — serialization, routing, PK directory, superblock (commit `93742cbd9b`)
     - 51 config tests (50 pass, 1 fixed in source), 14 ops tests (store setup deferred)
     - Integration/failure/acceptance tests: deferred to v2.5 release testing
-- [ ] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
+- [x] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
   - [x] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7. (commit `6066e89846`)
   - [x] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms (commit `cabac136e7`). parallel_hints_t struct, validation, rget_read_t field, datum_stream wiring, term optargs (table/get_all/between/filter/map/order_by). 13 files (+219/-35). Build+proto tests green, guard PASS. Profile deferred to PAR-05.
   - [x] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4. (commit `962f89a56b`)
@@ -215,7 +215,76 @@
   - [x] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure, parallel_read_t store handler, OR-interruptor cancellation, partial-aggregate merge. Spec §6. (commit `8c7e26c38e`)
   - [x] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7. (over-delivered by PAR-06 `8c7e26c38e`: fail_all() error latch, OR-interruptor via wait_any_t, aggregate/per-worker timeouts via signal_timer_t, merger backpressure, debug assertions §7.6 — all 11 policy table rows covered)
   - [x] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8. (commit `ae39f6fe10`)
-- [ ] Logical replication / CDC streaming — spec: `.coding-hermes/specs/phase3-cdc-streaming.md`
+- [ ] **CDC-00: Logical replication / CDC streaming** — spec: `.coding-hermes/specs/phase3-cdc-streaming.md` (779 lines, 10-section axiom-level)
+  - [ ] **CDC-01: Data structures** — `src/rdb_protocol/cdc_types.hpp` (all shared types), `src/rdb_protocol/publication.hpp/cc`, `src/rdb_protocol/subscription.hpp/cc`, `src/rdb_protocol/cdc_sink.hpp/cc`
+    - log_sequence_number_t, shard_lsn_t, change_event_id_t, change_record_t (spec §3.1, §3.5)
+    - publication_config_t, publication_filter_t, publication_format_t, publication_state_t (spec §3.2)
+    - subscription_config_t, conflict_resolution_t, subscription_state_t (spec §3.3)
+    - cdc_sink_config_t, cdc_sink_type_t, cdc_sink_state_t, cdc_batching_config_t (spec §3.4)
+    - replication_slot_t, replication_slot_state_t (spec §3.6)
+    - applied_change_t, subscription_applier_t (spec §3.7)
+    - Serialization macros for all structs; backward-compat defaults
+  - [ ] **CDC-02: ReQL surface** — `src/rdb_protocol/ql2.proto`, `src/rdb_protocol/terms/`
+    - 12 new TermType entries (PUBLICATION_CREATE/LIST/STATUS/DROP, SUBSCRIPTION_CREATE/LIST/STATUS/DROP, CDC_SINK_CREATE/LIST/STATUS/DROP) (spec §2.7)
+    - createPublication, publicationList, publicationStatus, publicationDrop terms
+    - createSubscription, subscriptionList, subscriptionStatus, subscriptionDrop terms
+    - createCDCSink, cdcSinkList, cdcSinkStatus, cdcSinkDrop terms
+    - Optarg validation: filter grammar, conflict resolution, batching, auth references
+    - Cluster-version-gated DDL (reject until all members can deserialize new metadata)
+  - [ ] **CDC-03: Write capture seam** — `src/rdb_protocol/store.hpp/cc`, `src/rdb_protocol/btree_store.hpp/cc`
+    - Stage change_record_t in store_t::write() after mutation normalization, before serializer commit (spec §4.2)
+    - btree_store_t expose normalized before/after mutation reports (spec §4.3)
+    - Insert → new_val only; delete → old_val only; update/replace → both images
+    - No-op update emits no record; aborted writes emit no record
+    - Post-commit notification wakeup for dispatcher (best-effort, not correctness-critical)
+  - [ ] **CDC-04: Logical journal** — `src/serializer/` (new `logical_journal.hpp/cc`)
+    - Append-only versioned journal per table shard, atomically coupled to serializer transactions (spec §4.4)
+    - LSN allocation: shard-local, monotonic, never reused after crash/failover (spec §4.5)
+    - Journal index: LSN range → extent mapping, checkpointed with shard metadata
+    - Recovery: load checkpoint, validate tail, discard incomplete tail records
+    - Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
+  - [ ] **CDC-05: Publication lifecycle** — `src/rdb_protocol/publication.cc`
+    - createPublication: validate filter grammar, commit Raft metadata, register capture (spec §2.1–2.3)
+    - publicationList/Status: per-table publication listing, consumer summaries with lag/state (spec §2.6)
+    - publicationDrop: commit DROPPING through Raft, reject new connections, send terminal frame, release slots (spec §2.6)
+    - Filter compilation: deterministic declarative JSON → conjunction of scalar equality/finite `in` (spec §2.3)
+    - Projection after eligibility; predicate-only fields not exported
+  - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
+    - createSubscription: commit target metadata, verify source identity, TLS handshake, bind/create slot (spec §2.4)
+    - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
+    - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
+    - Replication RPC: dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
+    - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
+    - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
+  - [ ] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.cc`
+    - cdc_sink_driver_t abstract interface: connect/deliver/close (spec §6.5)
+    - Kafka driver: TLS/SASL, event IDs in key/header, batch flush, broker outage retry (spec §2.5, §5.6)
+    - Webhook driver: HTTPS POST, Idempotency-Key header, 2xx ACK, retry classification (spec §2.5)
+    - File/S3 driver: object finalization + manifest as ACK boundary (spec §2.5)
+    - Batching: maxRecords, maxInFlightBatches, flushIntervalMs, maxBufferBytes (spec §5.5)
+    - Dead-letter: DLQ event with original envelope, slot advances only after DLQ write is durable (spec §8.4)
+    - Sink ACK mapping: contiguous LSN acknowledged only after durable external write (spec §5.6)
+  - [ ] **CDC-08: Replication coordinator + retention** — `src/clustering/replication_coordinator.cc`, `src/serializer/log/lba/`
+    - Slot lifecycle: create, bind to authenticated consumer, confirm/advance cursor, pause, evict, drop (spec §3.6, §4.8)
+    - Retention: pin extents below minimum confirmed LSN across active slots; never release on flush-only position (spec §4.7)
+    - Backpressure: per-slot bounded in-memory queues; source writes never blocked by slow sinks (spec §4.9)
+    - Lag accounting: lag_bytes, lag_lsn, lag_ms per consumer; alert thresholds at 80%/100% quota (spec §8.6)
+    - Shard leadership/routing change: reconnect/handoff without altering durable confirmed position (spec §6.4)
+    - Observability: low-cardinality metrics (cdc_records_captured/delivered, slot_lag_bytes, retained_journal_bytes) (spec §6.6)
+  - [ ] **CDC-09: Conflict resolution** — `src/rdb_protocol/` (new `conflict_resolver.hpp/cc`)
+    - Last-write-wins: deterministic (commit_timestamp, cluster_uuid, shard_uuid, LSN) tuple comparison (spec §7.2)
+    - Primary-key merge: upsert-oriented shallow merge; PK type/value mismatch → identity conflict (spec §7.3)
+    - Custom handler: serialized restricted ReQL function, no table/network/random access (spec §7.4)
+    - Conflict log: durable record per unresolved conflict; operator retry/skip/resolve (spec §7.5)
+    - Tombstone versions for LWW deletes to prevent resurrection from old replayed writes
+    - Replication metadata stored outside user JSON fields (spec §7.1)
+  - [ ] **CDC-10: Tests** — unit tests, integration tests, failure tests, benchmarks
+    - Unit tests: change record codec, LSN allocator, publication validation, filter evaluation, slot manager, retention accounting, batching, apply ledger, conflict policies, sink error classification, protocol auth/version (spec §9.2)
+    - Source-to-target integration: bootstrap+mutate parity, concurrent snapshot, kill-after-apply replay dedup, source restart cursor recovery, multi-shard routing handoff, fast+slow slot independence, live publication drop, snapshot:none start (spec §9.3)
+    - CDC sink tests: Kafka event IDs + broker outage, webhook idempotency + retry, File/S3 manifest ACK boundary (spec §9.4)
+    - Failure/durability: kill-before-commit atomicity, kill-after-commit dispatch, partition/backpressure, retention-GC pressure, WAL-gap recovery, corrupt journal/checkpoint, create/drop race (spec §9.5)
+    - Performance benchmarks: capture/delivery throughput, E2E latency p50/p95/p99, write overhead, journal amplification, retention growth, recovery/resync time (spec §9.6)
+    - Compatibility/security: old/new metadata defaults, mixed-version rejection, unauthorized access denial, secret redaction, TLS bad-cert/wrong-name, plaintext downgrade rejection (spec §9.7)
 - [ ] Async I/O subsystem (PG18-style) — spec: `.coding-hermes/specs/phase3-async-io.md`
 - [ ] JSONB/JSONPath improvements — spec: `.coding-hermes/specs/phase3-jsonb-jsonpath.md`
 - [ ] Generated/virtual columns
