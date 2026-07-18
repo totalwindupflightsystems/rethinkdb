@@ -243,7 +243,7 @@
     - [x] Journal index: LSN range → extent mapping, checkpointed with shard metadata
     - [x] Recovery: load checkpoint, validate tail, discard incomplete tail records
     - [x] Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
-  - [ ] **CDC-05: Publication lifecycle** — `src/rdb_protocol/publication.cc`
+  - [x] **CDC-05: Publication lifecycle** — commits `03a3f421ac` + `e77c21e90d`
     - [x] CDC-05a: createPublication Raft wiring + filter validation → commit `03a3f421ac` (11 files, +317/-11)
       - createPublication: validate filter grammar, commit Raft metadata, register capture
       - Added publication_create_t/drop_t to table_config_and_shards_change_t variant
