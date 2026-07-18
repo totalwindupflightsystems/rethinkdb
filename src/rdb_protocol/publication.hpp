@@ -25,6 +25,14 @@ struct publication_filter_t {
     std::set<std::string> projected_fields;
     // operations bitmap serialized separately in CDC-02 term implementation
     uint32_t allowed_operations = 0x0F;  // all operations by default
+
+    bool operator==(const publication_filter_t &other) const {
+        return projected_fields == other.projected_fields
+            && allowed_operations == other.allowed_operations;
+    }
+    bool operator!=(const publication_filter_t &other) const {
+        return !(*this == other);
+    }
 };
 
 struct publication_config_t {
@@ -41,6 +49,25 @@ struct publication_config_t {
     publication_state_t state = publication_state_t::CREATING;
     uuid_u created_by_user_id;
     microtime_t created_at;
+
+    bool operator==(const publication_config_t &other) const {
+        return publication_id == other.publication_id
+            && name == other.name
+            && database_id == other.database_id
+            && table_id == other.table_id
+            && filter == other.filter
+            && format == other.format
+            && include_before_image == other.include_before_image
+            && include_after_image == other.include_after_image
+            && default_snapshot_mode == other.default_snapshot_mode
+            && max_slot_lag_bytes == other.max_slot_lag_bytes
+            && state == other.state
+            && created_by_user_id == other.created_by_user_id
+            && created_at == other.created_at;
+    }
+    bool operator!=(const publication_config_t &other) const {
+        return !(*this == other);
+    }
 };
 
 }  // namespace ql

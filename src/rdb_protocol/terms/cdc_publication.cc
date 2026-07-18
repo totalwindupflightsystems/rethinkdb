@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "clustering/administration/admin_op_exc.hpp"
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
 #include "rdb_protocol/cdc_types.hpp"
@@ -346,13 +347,39 @@ private:
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
-        (void)table;
         scoped_ptr_t<val_t> config_val = args->arg(env, 1);
         publication_config_t config =
             parse_publication_config_from_datum(config_val->as_datum(),
                                                 config_val.get());
-        return new_val(stub_created_response("publication",
-                                             config.name.str()));
+        /* CDC-05a: filter is already validated inside
+        parse_publication_config_from_datum -> validate_filter. The parsed
+        config carries publication_id, name, database_id, table_id, and the
+        resolved filter; downstream CDC stages (CDC-07+ replication slots,
+        CDC-08+ sink routing) read this from the committed metadata. */
+        config.database_id = table->db->id;
+        config.table_id = table->get_id();
+
+        try {
+            admin_err_t error;
+            if (!env->env->reql_cluster_interface()->publication_create(
+                    env->env->get_user_context(),
+                    table->db,
+                    name_string_t::guarantee_valid(table->name.c_str()),
+                    config,
+                    env->env->interruptor,
+                    &error)) {
+                REQL_RETHROW(error);
+            }
+        } catch (auth::permission_error_t const &permission_error) {
+            rfail(ql::base_exc_t::PERMISSION_ERROR, "%s",
+                  permission_error.what());
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("created", datum_t(1.0));
+        res.overwrite("publication", datum_t(datum_string_t(config.name.str())));
+        res.overwrite("state", datum_t(datum_string_t("creating")));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "publication_create"; }
 };

@@ -1526,6 +1526,43 @@ bool real_reql_cluster_interface_t::sindex_list(
         "Failed to retrieve all secondary indexes.")
 }
 
+bool real_reql_cluster_interface_t::publication_create(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        const ql::publication_config_t &config,
+        signal_t *interruptor_on_caller,
+        admin_err_t *error_out) {
+    guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
+        "real_reql_cluster_interface_t should never get queries for system tables");
+
+    try {
+        cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
+        on_thread_t thread_switcher(home_thread());
+
+        namespace_id_t table_id;
+        m_table_meta_client->find(db->id, table, &table_id);
+
+        user_context.require_config_permission(m_rdb_context, db->id, table_id);
+
+        table_config_and_shards_change_t table_config_and_shards_change(
+            table_config_and_shards_change_t::publication_create_t{config});
+        m_table_meta_client->set_config(
+            table_id, table_config_and_shards_change, &interruptor_on_home);
+
+        return true;
+    } catch (const config_change_exc_t &) {
+        *error_out = admin_err_t{
+            strprintf("Publication `%s` already exists on table `%s.%s`.",
+                      config.name.c_str(), db->name.c_str(), table.c_str()),
+            query_state_t::FAILED};
+        return false;
+    } CATCH_NAME_ERRORS(db->name, table, error_out)
+      CATCH_OP_ERRORS(db->name, table, error_out,
+        "The publication was not created.",
+        "The publication may or may not have been created.")
+}
+
 /* Checks that divisor is indeed a divisor of multiple. */
 template <class T>
 bool is_joined(const T &multiple, const T &divisor) {

@@ -378,6 +378,14 @@ public:
                 std::map<std::string, std::pair<sindex_config_t, sindex_status_t> >
                     *configs_and_statuses_out);
 
+        bool publication_create(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const ql::publication_config_t &config,
+                signal_t *interruptor,
+                admin_err_t *error_out);
+
     private:
         extproc_pool_t extproc_pool;
         dummy_semilattice_controller_t<auth_semilattice_metadata_t> auth_manager;
