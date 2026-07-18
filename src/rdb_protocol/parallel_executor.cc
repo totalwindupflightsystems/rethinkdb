@@ -250,7 +250,8 @@ void result_merger_t::drain_into(read_response_t *out) {
     case parallel_plan_t::ordering_t::UNORDERED:
         drain_unordered(out);
         break;
-    default:
+    case parallel_plan_t::ordering_t::PRIMARY_KEY_ASCENDING:
+    case parallel_plan_t::ordering_t::EXPLICIT_ORDER:
         drain_ordered(out);
         break;
     }
@@ -311,7 +312,11 @@ void result_merger_t::merge_partials(read_response_t *out) {
             rget.result = std::move(g);
             break;
         }
-        default: {
+        case parallel_plan_t::terminal_t::STREAM:
+        case parallel_plan_t::terminal_t::AVG:
+        case parallel_plan_t::terminal_t::MIN:
+        case parallel_plan_t::terminal_t::MAX:
+        case parallel_plan_t::terminal_t::REDUCE: {
             ql::grouped_t<ql::stream_t> g;
             rget.result = std::move(g);
             break;
@@ -390,7 +395,8 @@ void result_merger_t::merge_partials(read_response_t *out) {
         memory_used_bytes_ = 0;
         return;
     }
-    default: {
+    case parallel_plan_t::terminal_t::STREAM:
+    case parallel_plan_t::terminal_t::REDUCE: {
         std::vector<ql::datum_t> rows;
         for (auto &p : partials_) {
             if (p.state.has()) {
