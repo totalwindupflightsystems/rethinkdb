@@ -386,6 +386,30 @@ public:
                 signal_t *interruptor,
                 admin_err_t *error_out);
 
+        bool publication_list(
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                signal_t *interruptor,
+                admin_err_t *error_out,
+                std::map<uuid_u, ql::publication_config_t> *publications_out);
+
+        bool publication_status(
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const name_string_t &publication_name,
+                signal_t *interruptor,
+                admin_err_t *error_out,
+                ql::publication_config_t *config_out);
+
+        bool publication_drop(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const uuid_u &publication_id,
+                const name_string_t &publication_name,
+                signal_t *interruptor,
+                admin_err_t *error_out);
+
     private:
         extproc_pool_t extproc_pool;
         dummy_semilattice_controller_t<auth_semilattice_metadata_t> auth_manager;
