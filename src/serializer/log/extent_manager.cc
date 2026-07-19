@@ -322,3 +322,15 @@ size_t extent_manager_t::held_extents() {
     assert_thread();
     return zone->held_extents();
 }
+
+void extent_manager_t::set_retention_callback(retention_callback_t cb) {
+    assert_thread();
+    retention_cb_ = cb;
+}
+
+bool extent_manager_t::check_retention(
+        const uuid_u &table_id, const uuid_u &shard_id,
+        uint64_t extent_lsn) const {
+    if (!retention_cb_) return true;
+    return retention_cb_(table_id, shard_id, extent_lsn);
+}
