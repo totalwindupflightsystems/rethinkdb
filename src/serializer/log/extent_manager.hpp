@@ -12,6 +12,7 @@
 #include "arch/types.hpp"
 #include "config/args.hpp"
 #include "containers/scoped.hpp"
+#include "containers/uuid.hpp"
 #include "serializer/log/config.hpp"
 
 #define NULL_OFFSET static_cast<int64_t>(-1)
@@ -133,6 +134,14 @@ public:
     /* Number of extents that have been released but not handed back out again. */
     size_t held_extents();
 
+    // CDC retention consultation (spec §4.7)
+    using retention_callback_t = bool (*)(const uuid_u &table_id,
+                                          const uuid_u &shard_id,
+                                          uint64_t extent_lsn);
+    void set_retention_callback(retention_callback_t cb);
+    bool check_retention(const uuid_u &table_id, const uuid_u &shard_id,
+                         uint64_t extent_lsn) const;
+
     log_serializer_stats_t *const stats;
     const uint64_t extent_size;   /* Same as static_config->extent_size */
 
@@ -140,6 +149,8 @@ private:
     void release_extent_preliminaries();
 
     scoped_ptr_t<extent_zone_t> zone;
+
+    retention_callback_t retention_cb_ = nullptr;
 
     /* During serializer startup, each component informs the extent manager
     which extents in the file it was using at shutdown. This is the
