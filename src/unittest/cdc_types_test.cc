@@ -169,57 +169,89 @@ TEST(ReplicationTest, ReplicationSlotStateEnum) {
     EXPECT_EQ(static_cast<int>(ql::replication_slot_state_t::EVICTED), 3);
 }
 
-// --- subscription_applier_t dedup ---
+// --- subscription_applier_t dedup (CDC-06e API) ---
 
-TEST(ReplicationTest, ApplierRecordAndDedup) {
-    ql::subscription_applier_t applier;
+TEST(ReplicationTest, ApplierApplyBatchAndDedup) {
+    ql::subscription_handle_t handle;
+    ql::subscription_applier_t applier(&handle);
+    cond_t never_interrupted;
     uuid_u cluster = generate_uuid();
     uuid_u table = generate_uuid();
     uuid_u shard = generate_uuid();
 
-    ql::change_event_id_t id1{cluster, table, shard, {10}};
-    ql::change_event_id_t id2{cluster, table, shard, {20}};
+    // change_record_t needs non-empty after_image for INSERT
+    ql::change_record_t r1;
+    r1.event_id = ql::change_event_id_t{cluster, table, shard, {10}};
+    r1.op = ql::change_operation_t::INSERT;
+    r1.after_image = {'x'};
+    r1.commit_timestamp = 1000.0;
 
-    EXPECT_FALSE(applier.already_applied(id1));
-    EXPECT_FALSE(applier.already_applied(id2));
+    ql::change_record_t r2;
+    r2.event_id = ql::change_event_id_t{cluster, table, shard, {20}};
+    r2.op = ql::change_operation_t::INSERT;
+    r2.after_image = {'y'};
+    r2.commit_timestamp = 2000.0;
 
-    applier.record_apply(id1);
-    EXPECT_TRUE(applier.already_applied(id1));
-    EXPECT_FALSE(applier.already_applied(id2));
+    // Neither should be in the ledger yet
+    EXPECT_FALSE(applier.already_applied_no_interruptor(r1.event_id));
+    EXPECT_FALSE(applier.already_applied_no_interruptor(r2.event_id));
+    EXPECT_EQ(0U, applier.ledger_size());
 
-    // Dedup: recording again is a no-op (set semantics)
-    applier.record_apply(id1);
-    EXPECT_TRUE(applier.already_applied(id1));
+    // Apply batch: both records should be recorded
+    applier.apply_batch({r1, r2}, &never_interrupted);
+    EXPECT_TRUE(applier.already_applied_no_interruptor(r1.event_id));
+    EXPECT_TRUE(applier.already_applied_no_interruptor(r2.event_id));
+    EXPECT_EQ(2U, applier.ledger_size());
 
-    applier.record_apply(id2);
-    EXPECT_TRUE(applier.already_applied(id2));
+    // Apply again: dedup should skip both (set semantics)
+    applier.apply_batch({r1, r2}, &never_interrupted);
+    EXPECT_TRUE(applier.already_applied_no_interruptor(r1.event_id));
+    EXPECT_TRUE(applier.already_applied_no_interruptor(r2.event_id));
+    EXPECT_EQ(2U, applier.ledger_size());  // unchanged
 }
 
-TEST(ReplicationTest, ApplierPruneBefore) {
-    ql::subscription_applier_t applier;
+TEST(ReplicationTest, ApplierLedgerShardTracking) {
+    ql::subscription_handle_t handle;
+    ql::subscription_applier_t applier(&handle);
+    cond_t never_interrupted;
     uuid_u cluster = generate_uuid();
     uuid_u table = generate_uuid();
     uuid_u shard_a = generate_uuid();
     uuid_u shard_b = generate_uuid();
 
-    ql::change_event_id_t id1{cluster, table, shard_a, {10}};
-    ql::change_event_id_t id2{cluster, table, shard_a, {20}};
-    ql::change_event_id_t id3{cluster, table, shard_a, {30}};
-    ql::change_event_id_t id4{cluster, table, shard_b, {5}};
+    ql::change_record_t r_a1;
+    r_a1.event_id = ql::change_event_id_t{cluster, table, shard_a, {10}};
+    r_a1.op = ql::change_operation_t::INSERT;
+    r_a1.after_image = {'a'};
+    r_a1.commit_timestamp = 1000.0;
 
-    applier.record_apply(id1);
-    applier.record_apply(id2);
-    applier.record_apply(id3);
-    applier.record_apply(id4);
+    ql::change_record_t r_a2;
+    r_a2.event_id = ql::change_event_id_t{cluster, table, shard_a, {20}};
+    r_a2.op = ql::change_operation_t::INSERT;
+    r_a2.after_image = {'b'};
+    r_a2.commit_timestamp = 2000.0;
 
-    // Prune shard_a entries with LSN < 25
-    ql::shard_lsn_t horizon{shard_a, {25}};
-    applier.prune_before(horizon);
+    ql::change_record_t r_a3;
+    r_a3.event_id = ql::change_event_id_t{cluster, table, shard_a, {30}};
+    r_a3.op = ql::change_operation_t::INSERT;
+    r_a3.after_image = {'c'};
+    r_a3.commit_timestamp = 3000.0;
 
-    EXPECT_FALSE(applier.already_applied(id1)); // LSN 10 < 25, pruned
-    EXPECT_FALSE(applier.already_applied(id2)); // LSN 20 < 25, pruned
-    EXPECT_TRUE(applier.already_applied(id3));  // LSN 30 >= 25, kept
-    EXPECT_TRUE(applier.already_applied(id4));  // Different shard, kept
+    ql::change_record_t r_b1;
+    r_b1.event_id = ql::change_event_id_t{cluster, table, shard_b, {5}};
+    r_b1.op = ql::change_operation_t::INSERT;
+    r_b1.after_image = {'d'};
+    r_b1.commit_timestamp = 500.0;
+
+    // Apply all records
+    applier.apply_batch({r_a1, r_a2, r_a3, r_b1}, &never_interrupted);
+    EXPECT_EQ(4U, applier.ledger_size());
+    EXPECT_TRUE(applier.ledger_has_shard(shard_a));
+    EXPECT_TRUE(applier.ledger_has_shard(shard_b));
+
+    // Confirmed LSN should have advanced per shard
+    EXPECT_EQ(30U, handle.confirmed_lsn_by_shard[shard_a].value);
+    EXPECT_EQ(5U, handle.confirmed_lsn_by_shard[shard_b].value);
 }
 
 } // namespace unittest
