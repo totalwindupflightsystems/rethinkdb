@@ -262,11 +262,11 @@
       - Wire subscriptionCreate term eval_impl to commit Raft metadata (no more stub)
       - Add mock handlers to test_rdb_env_t::instance_t, artificial + real cluster interfaces
       - Pattern: follow CDC-05a commit `03a3f421ac` (11 files, +317/-11)
-    - [ ] **CDC-06b: subscriptionList/Status/Drop wiring** — wire remaining terms to Raft backend
+    - [x] **CDC-06b: subscriptionList/Status/Drop wiring** — commit `b691100f21`
       - subscriptionList: iterate table subscriptions from Raft metadata, return id/name/state array
       - subscriptionStatus: resolve by name, return full config datum
       - subscriptionDrop: resolve→drop lifecycle via Raft metadata
-      - Pattern: follow CDC-05b commits `e77c21e90d` + `14ee0d93ec` (7 files, +392/-53)
+      - Pattern: followed CDC-05b commits `e77c21e90d` + `14ee0d93ec` (9 files, +445/-33)
     - [ ] **CDC-06c: State machine + snapshot orchestration**
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
