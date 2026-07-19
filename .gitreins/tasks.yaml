@@ -18,3 +18,18 @@ tasks:
   status: complete
   created_at: '2026-07-18T22:04:41.801651+00:00'
   completed_at: '2026-07-18T22:07:54.563750+00:00'
+- id: CDC-06d
+  title: "CDC-06d: Replication RPC mailbox service \u2014 TLS-authenticated framed\
+    \ protocol"
+  criteria:
+  - replication_mailbox.hpp defines mailbox_addr_t, replication_frame_t, replication_mailbox_business_card_t
+  - replication_mailbox.cc implements TLS-authenticated mailbox_service_t with framed
+    protocol
+  - "Version negotiation in connection handshake (spec \xA75.1-5.3)"
+  - Typed mailbox with typed_addr_t pattern matching existing cluster mailbox conventions
+  - 'Frame header: length, type (DATA/SNAPSHOT_BARRIER/ACK/NACK/KEEPALIVE), flags'
+  - SERIALIZABLE macros for all business card + frame types
+  - 'Files: src/clustering/replication_mailbox.hpp/cc (new)'
+  - Build passes clean
+  status: pending
+  created_at: '2026-07-19T06:46:46.402674+00:00'
