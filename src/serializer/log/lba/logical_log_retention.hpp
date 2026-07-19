@@ -4,6 +4,7 @@
 
 #include <map>
 #include <mutex>
+#include <vector>
 #include "containers/uuid.hpp"
 #include "rdb_protocol/cdc_types.hpp"
 
@@ -11,7 +12,7 @@ namespace ql {
 
 class logical_log_retention_t {
 public:
-    void pin_through(const uuid_u &tid, const uuid_u &shid,
+    void pin_through(const uuid_u &sid, const uuid_u &tid, const uuid_u &shid,
                      log_sequence_number_t lsn);
     void advance_slot(const uuid_u &sid, const shard_lsn_t &lsn);
     void release_slot(const uuid_u &sid);
@@ -28,6 +29,9 @@ private:
         }
     };
     std::map<key_t, log_sequence_number_t> floors_;
+    // Per-slot pin tracking: which (table, shard, lsn) each slot has pinned.
+    // Used by release_slot to recalculate the aggregate floor.
+    std::map<uuid_u, std::map<key_t, log_sequence_number_t>> slot_pins_;
 };
 
 }  // namespace ql
