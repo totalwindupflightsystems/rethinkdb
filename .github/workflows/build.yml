@@ -65,15 +65,15 @@ jobs:
         run: ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs CXX=${{ matrix.cxx }} CC=${{ matrix.cc }}
 
       - name: make support
-        run: make support -j $(nproc)
+        run: make support -j4
 
       - name: make
-        run: make -j $(nproc)
+        run: make -j4
 
       - name: generate compile_commands.json
         run: |
           sudo apt update && sudo apt install -y bear
-          bear -- make -j $(nproc)
+          bear -- make -j4
           # Verify it was generated
           test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
 
@@ -130,14 +130,14 @@ jobs:
       - name: configure
         run: ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs
       - name: make support
-        run: make support -j $(nproc)
+        run: make support -j4
       - name: make
-        run: make -j $(nproc)
+        run: make -j4
 
       - name: generate compile_commands.json
         run: |
           sudo apt update && sudo apt install -y bear
-          bear -- make -j $(nproc)
+          bear -- make -j4
           test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
 
       - name: upload compile_commands.json
@@ -181,7 +181,7 @@ jobs:
         uses: ./.github/actions/tests
         with:
           command: |
-            export MAX_JOBS=$(nproc)
+            export MAX_JOBS=4
             test/run --verbose --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H unit
 
   # ── Sanitizer Build (ASan + UBSan) ──
@@ -208,10 +208,10 @@ jobs:
             CXXFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
             LDFLAGS="-fsanitize=address,undefined"
       - name: make
-        run: make -j $(nproc)
+        run: make -j4
       - name: unit tests (sanitized)
         run: |
-          export MAX_JOBS=$(nproc)
+          export MAX_JOBS=4
           test/run --verbose --jobs "${MAX_JOBS}" -o /tmp/test-output -H unit
         continue-on-error: true  # Sanitizer findings are informational
 
@@ -232,7 +232,7 @@ jobs:
           driver_dist_dir: /tmp/python-driver/rethinkdb
           test_command: |
             export PYTHON_DRIVER=/tmp/python-driver/rethinkdb
-            export MAX_JOBS=$(nproc)
+            export MAX_JOBS=4
             test/run --timeout 300 --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H all '!unit' '!cpplint' '!long' '!disabled'
 
   # ── Long-Running Tests ──
@@ -252,7 +252,7 @@ jobs:
           driver_dist_dir: /tmp/python-driver/rethinkdb
           test_command: |
             export PYTHON_DRIVER=/tmp/python-driver/rethinkdb
-            export MAX_JOBS=$(nproc)
+            export MAX_JOBS=4
             test/run --timeout 900 --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H long '!disabled'
 
   # ── Polyglot Tests ──
