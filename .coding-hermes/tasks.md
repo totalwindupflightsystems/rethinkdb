@@ -273,8 +273,10 @@
     - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
     - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
     - [ ] **CDC-06e: Apply batch + reconnect/resync**
-    - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
-    - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
+    - [x] Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
+      - [x] Production code (`e22df9552f`, `693053822c`)
+      - [x] Expanded tests — apply_batch dedup, ledger shard tracking, prune_before with batch flow (`6ca9aa8ec5`)
+    - [ ] Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
   - [ ] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.cc`
     - cdc_sink_driver_t abstract interface: connect/deliver/close (spec §6.5)
     - Kafka driver: TLS/SASL, event IDs in key/header, batch flush, broker outage retry (spec §2.5, §5.6)
