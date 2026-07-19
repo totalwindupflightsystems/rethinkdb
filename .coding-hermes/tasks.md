@@ -38,259 +38,75 @@
 - [x] Replace deprecated Python 2 scripts with Python 3
 - [x] **PHASE 2a: Full-Text Search (GIN-style indexes)**
   - [x] **FTS-1: Tokenizer + stemmer infrastructure** (committed 2026-07-09)
-    - Created `src/rdb_protocol/fts_tokenizer.hpp` and `src/rdb_protocol/fts_tokenizer.cc`
-    - `fts_tokenizer_t` class: text → lowercased tokens with Porter stemming (Porter 1980)
-    - Configurable: min_token_length (default 2), stop_words (SMART list), language
-    - re2 regex tokenization (`\w+`), stop-word filter, self-contained Porter stemmer (steps 1a-5)
-    - Builds clean with `make -j4`
   - [x] **FTS-2: GIN-type sindex support**
-  - [x] Add `sindex_fts_bool_t` enum alongside `sindex_multi_bool_t` / `sindex_geo_bool_t` (committed)
-  - [x] Add `fts` field to `sindex_config_t` and `sindex_disk_info_t` (committed)
-  - [x] Serialize/deserialize the new field (ARCHIVE_PRIM + RDB_DECLARE_SERIALIZABLE)
-  - [x] Add fts optarg to sindex_create_term_t (r.indexCreate("idx", func, {fts: true}))
-  - [x] Wire FTS-aware index creation into the sindex execution path
-  - [x] **FTS-2 complete**: all sub-items committed. sindex_create_term_t accepts {fts: true}, serialized through sindex_disk_info_t with backward-compat deserialization, exposed in sindex_status() output. Builds clean.
   - [x] **FTS-3: FTS index function + match query operator** (committed 2026-07-09)
-    - [x] Add `fts_tokenize()` ReQL term wrapping the tokenizer
-    - [x] Add `fts_match()` ReQL term for querying FTS indexes
-    - [x] Wire into term.cc, terms.hpp, and ql2.proto (types 198, 199)
-    - [x] Builds clean with main + unit test targets
   - [x] **FTS-4: Integration tests and end-to-end FTS pipeline** (committed 2026-07-11)
-    - [x] Fixed critical re2 regex bug: FindAndConsume requires `(\w+)` capture group, not `\w+`
-    - [x] 25 unit tests covering tokenization, stop words, Porter stemming, min_token_length
-    - [x] 364/364 full unit test suite passes
-    - [x] Main binary builds clean
 - [x] **PHASE 2b: Vector indexes (HNSW/IVFFlat)**
-  - [x] **VECTOR-1: Architecture spec & design document**
-    - Design vector index API (ReQL terms, data types)
-    - Choose initial algorithm (HNSW vs IVFFlat vs brute-force for POC)
-    - Define data structures, storage layout, serialization
-    - Map integration points with existing sindex infrastructure
-    - Output: `.coding-hermes/research/vector-index-design.md`
-  - [x] **VECTOR-2: Vector data type support** (committed 2026-07-12)
-    - Add `r.vector([1.0, 2.0, 3.0])` ReQL datum type
-    - Define `datum_t::R_VECTOR` variant
-    - Serialization, wire protocol, ql2.proto
-  - [x] **VECTOR-3: Distance functions** (committed 2026-07-12)
-    - [x] L2 (Euclidean), cosine similarity, inner product — all three implemented
-    - [x] SIMD-accelerated (AVX2/AVX-512 runtime detection)
-    - [x] 24 unit tests covering edge cases (zero norms, large/odd dimensions)
-    - [x] 388/388 full test suite passes, build clean
-  - [x] **VECTOR-4: HNSW index implementation** (committed 2026-07-12)
-    - [x] `hnsw_graph_t` class: full HNSW with insert, search_knn, remove
-    - [x] Multi-layer navigable small world, greedy descent, beam search
-    - [x] L2, cosine, inner product distance metrics
-    - [x] Serialization with INSTANTIATE_SERIALIZABLE_SINCE_v2_4
-    - [x] 16 unit tests, 403/403 non-Raft tests pass
-  - [x] **VECTOR-5: IVFFlat index implementation** (commit `9e48192`)
-    - K-means clustering for IVF centroids (Forgy init + Lloyd iteration)
-    - Flat quantization within clusters (linear scan, top-k heap)
-    - Insert, search, training phase (16/16 unit tests pass)
-  - [x] **VECTOR-6: Sindex integration** (`7d577d3245`)
-    - [x] Add `sindex_vector_bool_t` enum + fields to config structs
-    - [x] Wire vector index creation into sindex execution path
-    - [x] ReQL: `r.indexCreate("vec_idx", func, {vector: {dim: 768, metric: "cosine"}})`
-    - [x] ReQL: `r.vectorNear("vec_idx", query_vec, {k: 10})`
-  - [x] **VECTOR-7a: Config ↔ disk info flow** (`4acdfd2`)
-    - [x] Forward vector, vector_dim, vector_metric from sindex_config_t to sindex_disk_info_t (write path)
-    - [x] Copy vector fields back from disk_info to config (read path)
-    - [x] Build clean, 420/420 unit tests pass
-  - [x] **VECTOR-7b: Build + store HNSW graph on disk** (commit `d73e904369`)
-    - During post-construction, if sindex is VECTOR type: iterate sindex B-tree, build hnsw_graph_t, serialize and store in sindex superblock
-    - Add opaque_vector_graph field to secondary_index_t or sindex superblock
-    - Handle backward-compat deserialization (empty graph for non-vector sindexes)
-    - Files: btree.cc, secondary_operations.hpp/cc, btree_store.cc
-  - [x] **VECTOR-7c: vector_read_t + protocol dispatch** (commit `f74849cbc6`)
-    - [x] Add vector_read_t struct to protocol.hpp (read_t variant)
-    - [x] Add shard/unshard/unshard visitors in protocol.cc
-    - [x] Implement store_t handler: reads sindex superblock, deserializes HNSW, searches
-    - [x] Wire get_region, use_snapshot, route_to_primary visitors
-    - [x] Add mock_namespace_interface_t visitor handler
-    - [x] Build clean, all 420 unit tests pass
-  - [x] **VECTOR-7d: Wire vector_near to actual search** (commit `4f6d539d17`)
-    - [x] Replace placeholder empty-array return with table->get_vector_nearest() call
-    - [x] Pass query vector, k, ef_search, sindex_name
-    - [x] Return matching documents as datum array
-    - Files: terms/vector_near.cc, val.hpp, val.cc (+ context.hpp, real_table.hpp/cc, artificial_table.hpp/cc)
-    - 8 files, +130/-4 lines; build+420 tests green; guard PASS
-  - [x] **VECTOR-8: Tests** (4/4 done — commits `d8e645b`, `bd6c110f`)
-      - [x] Unit tests for distance functions, HNSW, IVF (68 tests: 24 dist + 16 HNSW + 16 IVF + 12 correctness)
-      - [x] Correctness tests (exact vs approximate recall@k) — `d8e645b`: 12 tests (4 metric + 2 recall + 1 exact-match + 3 bench + 2 stress), all pass
-      - [x] Integration tests with real ReQL queries — `bd6c110f`: 13 scenarios in test/rql_test/src/vector.yaml (index create, vector_near, edge cases)
-      - [x] Performance benchmarks — `d8e645b`: L2(128-dim×10K), HNSW(insert 1K + search 100), IVFFlat(train+insert 1K + search 100)
+  - [x] **VECTOR-1 through VECTOR-8** (all committed, 68 tests, 420+ unit tests pass)
 - [x] **PHASE 2c: BRIN-like sparse indexes**
-  - [x] **BRIN-1: Architecture spec & design document** — `brin-index-design.md` (632 lines, 10 sections, committed)
-  - [x] **BRIN-2: Sindex type + config structs** — `sindex_brin_bool_t`, config fields, serialization
-  - [x] **BRIN-3: BRIN summary data structures** — `brin_range_t`, min/max summaries, persistent storage — `8f4e4b6378`, `abb61f6751`
-  - [x] **BRIN-4: Build pipeline** — post-construction BRIN summary building (VECTOR-7b pattern) — `bab098314e`
-  - [x] **BRIN-5: Query integration** — `between` optimization using BRIN summaries — `0ce949be9b`
-  - [x] **BRIN-6: ReQL wiring** — `indexCreate` optarg, `indexStatus`, `indexWait` (commit `9dba0afaae`)
-  - [x] **BRIN-7: Tests** — 30 new tests (11 build pipeline, 11 pruning, 8 validation) + 114-line integration YAML. Commit `ab57d115ef`. Benchmarks deferred to v2.5 release testing.
+  - [x] **BRIN-1 through BRIN-7** (all committed, 30 tests)
 
 ## Discovery Sweep Findings (2026-07-16)
 - [x] **TEST — Pre-existing clustering test crashes (mock_store.cc:148) — INVESTIGATED 2026-07-16**
-  - Root cause: `read_t` variant has 11 types (including vector_read_t, brin_read_t, dummy_read_t, rget_read_t, changefeed types) but `mock_store_t::read()` only handles `distribution_read_t` and `point_read_t`. All other types trigger the guarantee crash.
-  - Current tests appear safe: only `mock_read()`/`mock_lookup()` (point_read_t) and backfill (distribution_read_t) flow through mock_store. `dummy_read_t` intercepted by `replica_t::do_read()`.
-  - Latent risk: any future test or internal refactor sending unhandled read types will crash. See new FIX task below.
-  - ClusteringRaft.Fuzzer crash: separate issue (raft config state guarantee, not mock_store)
 - [x] **FIX — Add missing read type handlers to mock_store_t::read()** (commit `d54e289694`)
-  - Add handlers for `vector_read_t`, `brin_read_t`, `dummy_read_t` — throw `cannot_perform_query_exc_t("unimplemented")` matching pattern in `rdb_env.cc` mock_namespace_interface_t::read_visitor_t
-  - Files: `src/unittest/mock_store.cc` (lines 145-148), `src/unittest/mock_store.hpp`
-  - Preventative: safe for current tests, blocks future test development
 - [x] **CHORE — Clean untracked CI artifact files**
-  - Deleted `build-artifacts/` (582MB), `rethinkdb-artifact-*/` (~42MB download artifacts)
-  - Added `.gitignore` entries: `build-artifacts/`, `rethinkdb-artifact-*/`
 - [x] **CI — Zero workflow runs despite active workflow (INVESTIGATED)** — `3a243b0936`
-  - Root cause confirmed: GH Actions billing exhaustion for personal account
-  - Added `workflow_dispatch` trigger to enable manual testing when billing resolves
-  - Billing check: https://github.com/settings/billing
 
 ## Phase 3: v3.0 (Future)
 - [x] **SPEC — Phase 3 design documents (batch 2: 4 remaining features)**
-  - [x] Write axiom-level design spec for "Generated/virtual columns" — `phase3-generated-columns.md` (14KB, 10-section axiom-level)
-  - [x] Write axiom-level design spec for "MERGE/UPSERT with complex conditions" — `phase3-merge-upsert.md` (30KB, 10-section axiom-level, 62 unit tests, 15 integration scenarios)
-  - [x] Write axiom-level design spec for "Time-series optimizations" — `phase3-timeseries.md` (15KB, 10-section axiom-level)
-  - [x] Write axiom-level design spec for "WASM-based UDF sandbox (replace V8/QuickJS)" — `phase3-wasm-udf.md` (1,041 lines, 11-section axiom-level)
-  - Note: FDW spec (`phase3-fdw.md`, 1,294 lines) already exists but was not listed in batch 1
-- [x] **PART-00: Declarative table partitioning** — spec: `.coding-hermes/specs/phase3-partitioning.md` (710 lines, 10-section axiom-level)
-  - [x] **PART-01: Configuration & routing data structures** — `src/rdb_protocol/partition_config.hpp/cc` (commit `269ff001eb`)
-    - partition_type_t (NONE/RANGE/HASH/LIST), partition_state_t (CREATING→FAILED)
-    - partition_entry_t, partition_config_t, partition_map_t (immutable compiled snapshot)
-    - validate_or_throw(), route(), prune() with exact C++ signatures from spec §3.1
-    - Serialization macros (INSTANTIATE_SERIALIZABLE) for all structs
-  - [x] **PART-02: Metadata + Raft integration** — table_config_t extension, partition_catalog_t superblock (commit `a251e1522e`)
-    - [x] Extend table_config_t with optional partition_config_t field
-    - [x] Raft commit for partition map epoch changes
-    - [x] partition_catalog_t: format_version, epoch, primary_key_directory_block, stores vector
-    - [x] Backward-compat: tables with no partition config default to NONE
-  - [x] **PART-03: ReQL surface** — tableCreate {partitions} optarg, partitionInfo, partitionConfig (commit `9b1d050d35`)
-    - [x] tableCreate gains `partitions` optarg (type, key_field, partitions array)
-    - [x] New ReQL term: `r.table('t').partitionInfo()` → partition map, states, replay lag
-    - [x] New ReQL admin term: `r.table('t').partitionConfig({type: 'range', ...})` for repartition
-    - [x] Validation at term level before touching storage
-  - [x] **PART-04: Query planner pruning** — partition_predicate_t, between/getAll optimization (commit `701623b58a`)
-    - Extract partition key from query predicates (equality, between, getAll)
-    - range layouts: between selects overlapping intervals
-    - hash/list: equality/getAll on partition field → one partition
-    - Safe fallback: opaque/OR/negation/unrelated sindex → all partitions
-    - partition_selection_t → partition_map_t::routes_for()
-  - [x] **PART-05: Storage layout** — per-partition B-tree stores + superblock (commit `816bc89cea`)
-    - One primary B-tree + local sindex catalog per (table, partition, shard)
-    - partition_store_ref_t: partition_id, storage_id, shard_superblocks vector
-    - Extend reql_specific.hpp with partition catalog block reference
-    - Packed superblock sizing, block-reference accounting, drop cleanup
-  - [x] **PART-06: Partition lifecycle operations** — create/attach/detach/drop (commit `ccf7ec7b54`)
-    - [x] CREATE: allocate invisible target stores (create_partition_stores)
-    - [x] Per-table transition mutex (partition_lifecycle_mutex_t)
-    - [x] DETACH/DROP: drain readers, release stores, tombstone catalog entries (retire_drained_stores)
-    - [x] State machine: CREATING → CATCHING_UP → ACTIVE → DRAINING → [*] (validate + apply)
-    - Note: move_row_between_partitions stubbed (deferred to PART-07 per spec)
-  - [x] **PART-07: Online repartitioning** — snapshot, replay, Raft cutover, drain (commit `6e910aea5d`)
-    - [x] Validated candidate map → transition lock → source epoch E recorded
-    - [x] Durable transition modification queue for source mutations during copy (transition_modification_t + enqueue_transition_modification)
-    - [x] Target replay idempotent by primary key + mutation stamp (apply_modification_idempotent)
-    - [x] Cutover commits only after replay reaches high-water mark (targets_caught_up + commit_catalog_cutover)
-    - [x] Failed repartition: source epoch stays authoritative, clean up unpublished (abort_unpublished_transition)
-  - [x] **PART-08: Global primary-key directory** — duplicate-PK enforcement, atomic move (commit `40b395cd03`)
-    - B-tree mapping primary keys → partition UUIDs
-    - Duplicate-PK detection at insert across all partitions
-    - Atomic move protocol: source authoritative until target confirmed
-    - Failed move: source stays authoritative, target cleaned idempotently
-  - [x] **PART-09: Error catalog** — 16 error codes from spec §7 (over-delivery from PART-08 worker; wired into validate_or_throw `74ce07d6d2`)
-    - PARTITION_CONFIG_INVALID, PARTITION_RANGE_INVALID, PARTITION_HASH_INVALID
-    - PARTITION_LIST_INVALID, PARTITION_KEY_MISSING, PARTITION_KEY_INVALID
-    - PARTITION_KEY_UNROUTABLE, PARTITION_MOVE_FAILED, PARTITION_QUERY_LIMIT
-    - PARTITION_METADATA_CORRUPT, PARTITION_TRANSITION_BUSY
-    - PARTITION_BACKFILL_OVERFLOW, PARTITION_STORAGE_UNAVAILABLE
-    - PARTITION_RAFT_TIMEOUT, PARTITION_METADATA_INCOMPATIBLE
-  - [x] **PART-10: Unit tests** — serialization, routing, PK directory, superblock (commit `93742cbd9b`)
-    - 51 config tests (50 pass, 1 fixed in source), 14 ops tests (store setup deferred)
-    - Integration/failure/acceptance tests: deferred to v2.5 release testing
-- [x] **PAR-00: Parallel query execution** — spec: `.coding-hermes/specs/phase3-parallel-query.md` (1,356 lines, 10-section axiom-level)
-  - [x] **PAR-01: Data structures** — `src/rdb_protocol/parallel_executor.hpp/cc`, `src/rdb_protocol/query_planner.hpp/cc`, `src/btree/parallel_scan.hpp/cc`. query_fragment_t, parallel_plan_t, parallel_executor_t, fragment_result_t, result_merger_t, parallel_execution_limits_t. Exact interfaces from spec §3.2–§3.7. (commit `6066e89846`)
-  - [x] **PAR-02: ReQL surface** — parallel/max_workers optargs on sequence-producing terms (commit `cabac136e7`). parallel_hints_t struct, validation, rget_read_t field, datum_stream wiring, term optargs (table/get_all/between/filter/map/order_by). 13 files (+219/-35). Build+proto tests green, guard PASS. Profile deferred to PAR-05.
-  - [x] **PAR-03: Query planner** — eligibility matrix, range decomposition, cost model, serial fallback. `query_planner_t`. Spec §4. (commit `962f89a56b`)
-  - [x] **PAR-04: Storage integration** — `parallel_scan_t` B-tree row counts + quantile sampling. Real `estimate_row_count()` (stat block) and `sample_key_quantiles()` (internal-node key sampling via `get_btree_key_distribution()`). Remaining: `parallel_read_t` protocol variant, `store_t::read()` fragment dispatch. (commits `ed9e0f4609`, `65790a3f09`)
-  - [x] **PAR-05: Request flow wiring** — `val.cc` optarg propagation, read-generation seam, profile construction. Spec §5.2–§5.3. (commit `996ac35c1b`)
-  - [x] **PAR-06: Executor + merger** — coordinator lifecycle, worker dispatch, bounded channels, ordered/unordered merge, backpressure, parallel_read_t store handler, OR-interruptor cancellation, partial-aggregate merge. Spec §6. (commit `8c7e26c38e`)
-  - [x] **PAR-07: Error paths + cancellation** — error policy table, OR-interruptor, worker failure, timeout, OOM, coro-pool exhaustion. Spec §7. (over-delivered by PAR-06 `8c7e26c38e`: fail_all() error latch, OR-interruptor via wait_any_t, aggregate/per-worker timeouts via signal_timer_t, merger backpressure, debug assertions §7.6 — all 11 policy table rows covered)
-  - [x] **PAR-08: Unit tests** — decomposition, merger, failure/cancellation, stress/regression. Spec §8. (commit `ae39f6fe10`)
+- [x] **PART-00: Declarative table partitioning** — all 10 sub-tasks complete (PART-01 through PART-10)
+- [x] **PAR-00: Parallel query execution** — all 8 sub-tasks complete (PAR-01 through PAR-08)
 - [ ] **CDC-00: Logical replication / CDC streaming** — spec: `.coding-hermes/specs/phase3-cdc-streaming.md` (779 lines, 10-section axiom-level)
-  - [x] **CDC-01: Data structures** — `src/rdb_protocol/cdc_types.hpp` (all shared types), `src/rdb_protocol/publication.hpp/cc`, `src/rdb_protocol/subscription.hpp/cc`, `src/rdb_protocol/cdc_sink.hpp/cc` (commit `1b1fd1c1a0`)
-    - [x] log_sequence_number_t, shard_lsn_t, change_event_id_t, change_record_t (spec §3.1, §3.5)
-    - [x] publication_config_t, publication_filter_t, publication_format_t, publication_state_t (spec §3.2)
-    - [x] subscription_config_t, conflict_resolution_t, subscription_state_t (spec §3.3)
-    - [x] cdc_sink_config_t, cdc_sink_type_t, cdc_sink_state_t, cdc_batching_config_t (spec §3.4)
-    - [x] replication_slot_t, replication_slot_state_t, replication_slot_kind_t (spec §3.6)
-    - [x] applied_change_t, subscription_applier_t (with dedup + prune-before, spec §3.7)
-    - [x] Serialization macros for all structs; backward-compat defaults
-    - 11 files, +609 lines, 15 unit tests (all pass, deterministic)
-  - [x] **CDC-02: ReQL surface** — `src/rdb_protocol/ql2.proto`, `src/rdb_protocol/terms/` (commit `cadaefece9`)
-    - [x] 12 new TermType entries (PUBLICATION_CREATE/LIST/STATUS/DROP, SUBSCRIPTION_CREATE/LIST/STATUS/DROP, CDC_SINK_CREATE/LIST/STATUS/DROP) allocated 202-213 (spec §2.7)
-    - [x] createPublication, publicationList, publicationStatus, publicationDrop terms — validated, cluster-version-gated stubs
-    - [x] createSubscription, subscriptionList, subscriptionStatus, subscriptionDrop terms — validated, cluster-version-gated stubs
-    - [x] createCDCSink, cdcSinkList, cdcSinkStatus, cdcSinkDrop terms — validated, cluster-version-gated stubs
-    - [x] 9 files, +1,451 lines; build green; 6/6 CDC tests pass
-  - [x] **CDC-03: Write capture seam** — `src/rdb_protocol/store.hpp/cc`, `src/rdb_protocol/btree_store.hpp/cc` (commit `09c2a07430`)
-    - Stage change_record_t in store_t::write() after mutation normalization, before serializer commit (spec §4.2)
-    - btree_store_t expose normalized before/after mutation reports (spec §4.3)
-    - Insert → new_val only; delete → old_val only; update/replace → both images
-    - No-op update emits no record; aborted writes emit no record
-    - Post-commit notification wakeup for dispatcher (best-effort, not correctness-critical)
-  - [x] **CDC-04: Logical journal** — `src/serializer/` (new `logical_journal.hpp/cc`) — commit `07f81203e2`
-    - [x] Append-only versioned journal per table shard, atomically coupled to serializer transactions (spec §4.4)
-    - [x] LSN allocation: shard-local, monotonic, never reused after crash/failover (spec §4.5)
-    - [x] Journal index: LSN range → extent mapping, checkpointed with shard metadata
-    - [x] Recovery: load checkpoint, validate tail, discard incomplete tail records
-    - [x] Snapshot barrier: per-shard LSN separating initial snapshot from live changes (spec §4.6)
-  - [x] **CDC-05: Publication lifecycle** — commits `03a3f421ac` + `e77c21e90d`
-    - [x] CDC-05a: createPublication Raft wiring + filter validation → commit `03a3f421ac` (11 files, +317/-11)
-      - createPublication: validate filter grammar, commit Raft metadata, register capture
-      - Added publication_create_t/drop_t to table_config_and_shards_change_t variant
-      - Added publications map to table_config_and_shards_t with v2_4+ serialization
-      - Wired createPublication term to real Raft metadata (no more stub response)
-      - Added mock to test_rdb_env_t::instance_t, artificial + real cluster interfaces
-    - [x] **CDC-05b: publicationList/Status/Drop** — commits `e77c21e90d` + `14ee0d93ec`
-      - publicationList: iterate table publications from Raft metadata, return id/name/state array
-      - publicationStatus: resolve by name, return full config datum
-      - publicationDrop: resolve→drop lifecycle via Raft metadata
-      - Test mocks: stub implementations in test_rdb_env_t::instance_t
-    - [x] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
-    - [x] **CDC-06a: createSubscription Raft wiring** — wire createSubscription term to Raft metadata backend (`b1e26aa34b`, `57e44abc90`)
-      - Add subscription_create_t/drop_t variants to table_config_and_shards_change_t
-      - Add subscriptions map to table_config_and_shards_t with v2_4+ serialization
-      - Wire subscriptionCreate term eval_impl to commit Raft metadata (no more stub)
-      - Add mock handlers to test_rdb_env_t::instance_t, artificial + real cluster interfaces
-      - Pattern: follow CDC-05a commit `03a3f421ac` (11 files, +317/-11)
-    - [x] **CDC-06b: subscriptionList/Status/Drop wiring** — commit `b691100f21`
-      - subscriptionList: iterate table subscriptions from Raft metadata, return id/name/state array
-      - subscriptionStatus: resolve by name, return full config datum
-      - subscriptionDrop: resolve→drop lifecycle via Raft metadata
-      - Pattern: followed CDC-05b commits `e77c21e90d` + `14ee0d93ec` (9 files, +445/-33)
-    - [x] **CDC-06c: State machine + snapshot orchestration** — commit `3593a61022`
-    - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
-    - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
-    - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
-    - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
-    - [x] **CDC-06e: Apply batch + reconnect/resync** — commits `e22df9552f`, `693053822c`
-    - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
-    - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
-      - [x] Expanded tests — apply_batch dedup, ledger shard tracking, prune_before with batch flow (`6ca9aa8ec5`)
-  - [x] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.hpp/cc` (commit `36d5d31b57`, 1,450 lines, 19 tests pass)
-    - cdc_sink_driver_t abstract interface: connect/deliver/close (spec §6.5)
-    - Kafka driver: TLS/SASL, event IDs in key/header, batch flush, broker outage retry (spec §2.5, §5.6)
-    - Webhook driver: HTTPS POST, Idempotency-Key header, 2xx ACK, retry classification (spec §2.5)
-    - File/S3 driver: object finalization + manifest as ACK boundary (spec §2.5)
-    - Batching: maxRecords, maxInFlightBatches, flushIntervalMs, maxBufferBytes (spec §5.5)
-    - Dead-letter: DLQ event with original envelope, slot advances only after DLQ write is durable (spec §8.4)
-    - Sink ACK mapping: contiguous LSN acknowledged only after durable external write (spec §5.6)
-  - [ ] **CDC-08: Replication coordinator + retention** — `src/clustering/replication_coordinator.cc`, `src/serializer/log/lba/`
-    - Slot lifecycle: create, bind to authenticated consumer, confirm/advance cursor, pause, evict, drop (spec §3.6, §4.8)
-    - Retention: pin extents below minimum confirmed LSN across active slots; never release on flush-only position (spec §4.7)
-    - Backpressure: per-slot bounded in-memory queues; source writes never blocked by slow sinks (spec §4.9)
-    - Lag accounting: lag_bytes, lag_lsn, lag_ms per consumer; alert thresholds at 80%/100% quota (spec §8.6)
+  - [x] **CDC-01: Data structures** (commit `1b1fd1c1a0`, 11 files, +609 lines, 15 tests)
+  - [x] **CDC-02: ReQL surface** (commit `cadaefece9`, 9 files, +1,451 lines)
+  - [x] **CDC-03: Write capture seam** (commit `09c2a07430`)
+  - [x] **CDC-04: Logical journal** (commit `07f81203e2`)
+  - [x] **CDC-05: Publication lifecycle** (commits `03a3f421ac`, `e77c21e90d`, `14ee0d93ec`)
+  - [x] **CDC-06: Subscription state machine** (CDC-06a through CDC-06e, all committed)
+  - [x] **CDC-07: CDC sink drivers** (commit `36d5d31b57`, 1,450 lines, 19 tests)
+  - [ ] **CDC-08a: logical_log_retention_t** — `src/serializer/log/lba/logical_log_retention.hpp/cc`
+    - `pin_through(table_id, shard_id, required_lsn)` — register pin from active slot
+    - `advance_slot(slot_id, confirmed)` — move slot's confirmed cursor forward
+    - `retention_floor(table_id, shard_id)` — min confirmed LSN across active slots
+    - GC consultation: extent reclaimable only when all records below retention floor (spec §4.7)
+    - Never release retention on flush-only position; confirmed_lsn is the sole release cursor
+    - Serialization via RDB_IMPL_SERIALIZABLE macros; backward-compat defaults
+    - Files: 2 new (~100 lines), build target: `build/release/obj/.../logical_log_retention.o`
+  - [ ] **CDC-08b: replication_coordinator_t header + slot management** — `src/clustering/replication_coordinator.hpp/cc`
+    - Slot lifecycle state machine: create→bind→confirm→pause→evict→drop (spec §3.6)
+    - `replication_slot_t` struct + `replication_slot_state_t` enum (spec §3.6, cross-ref CDC-01 types)
+    - `create_slot()`, `bind_consumer()`, `confirm_lsn()`, `advance_cursor()`, `pause_slot()`, `evict_slot()`, `drop_slot()`
+    - confirmed_lsn_by_shard map — monotonic, contiguous-only advancement (spec §3.6)
+    - Mailbox registration via `rpc/mailbox/typed.hpp` + business card pattern (see foreman patterns ref)
+    - `auto_drainer_t` lifecycle management (spec §6.4)
+    - Files: 2 new (~200 lines), build target object files
+  - [ ] **CDC-08c: Coordinator Raft + shard-routing integration** — extend coordinator (08b)
+    - Raft metadata for slot lifecycle (create/drop/pause/evict durable states) (spec §6.3)
+    - Batch progress checkpointing, not per-event Raft proposals (spec §3.8)
     - Shard leadership/routing change: reconnect/handoff without altering durable confirmed position (spec §6.4)
-    - Observability: low-cardinality metrics (cdc_records_captured/delivered, slot_lag_bytes, retained_journal_bytes) (spec §6.6)
+    - Distinguish stale shard incarnation from current before cursor ACK (spec §6.3)
+    - Integration with existing table_config_t, shard routing, mailbox infrastructure
+    - Files: extend coordinator.cc (~150 lines), build+link with 08b
+  - [ ] **CDC-08d: Backpressure + lag accounting** — extend coordinator (08b/08c)
+    - Per-slot bounded in-memory queues with `maxInFlightBatches`, `maxBufferBytes` (spec §4.9)
+    - lag_bytes, lag_lsn, lag_ms per consumer (spec §8.6)
+    - Alert thresholds: warn at 80%, hard-limit pause/eviction policy at 100% quota (spec §4.8)
+    - Disk watermarks: identify pinning slots, refuse unsafe new workload (spec §4.8)
+    - Source foreground writes never blocked by slow sinks (spec §4.9)
+    - Stalled consumer: warn, alert, explicit pause/evict — never silent discard (spec §4.8)
+    - Files: extend coordinator (~100 lines)
+  - [ ] **CDC-08e: Shard leadership/routing change** — extend coordinator (08b/08c)
+    - Detect shard movement: stale vs current incarnation check (spec §6.3)
+    - Stream handoff/reconnect without cursor loss (spec §6.4)
+    - Slot reconnect: compare required LSN with retained history (spec §4.8)
+    - EVICTED slot: explicit state, last confirmed LSN, retention floor recorded (spec §4.8)
+    - RESYNC_REQUIRED when history gone — never silent resume (spec §4.8)
+    - Files: extend coordinator (~100 lines)
+  - [ ] **CDC-08f: Observability** — extend coordinator (08b/08c)
+    - 9 low-cardinality metrics (spec §6.6): cdc_records_captured/delivered, delivery_latency_ms, slot_lag_bytes/lag_lsn, retained_journal_bytes, sink_retries, sink_dead_letter, resync_required
+    - Keyed by IDs or controlled names, never document/user values as labels (spec §6.6)
+    - Slot blocking reclamation identification in status/alert path (spec §8.6)
+    - Files: extend coordinator (~60 lines), wire into stats reporting path
   - [ ] **CDC-09: Conflict resolution** — `src/rdb_protocol/` (new `conflict_resolver.hpp/cc`)
     - Last-write-wins: deterministic (commit_timestamp, cluster_uuid, shard_uuid, LSN) tuple comparison (spec §7.2)
     - Primary-key merge: upsert-oriented shallow merge; PK type/value mismatch → identity conflict (spec §7.3)
@@ -299,12 +115,7 @@
     - Tombstone versions for LWW deletes to prevent resurrection from old replayed writes
     - Replication metadata stored outside user JSON fields (spec §7.1)
   - [ ] **CDC-10: Tests** — unit tests, integration tests, failure tests, benchmarks
-    - Unit tests: change record codec, LSN allocator, publication validation, filter evaluation, slot manager, retention accounting, batching, apply ledger, conflict policies, sink error classification, protocol auth/version (spec §9.2)
-    - Source-to-target integration: bootstrap+mutate parity, concurrent snapshot, kill-after-apply replay dedup, source restart cursor recovery, multi-shard routing handoff, fast+slow slot independence, live publication drop, snapshot:none start (spec §9.3)
-    - CDC sink tests: Kafka event IDs + broker outage, webhook idempotency + retry, File/S3 manifest ACK boundary (spec §9.4)
-    - Failure/durability: kill-before-commit atomicity, kill-after-commit dispatch, partition/backpressure, retention-GC pressure, WAL-gap recovery, corrupt journal/checkpoint, create/drop race (spec §9.5)
-    - Performance benchmarks: capture/delivery throughput, E2E latency p50/p95/p99, write overhead, journal amplification, retention growth, recovery/resync time (spec §9.6)
-    - Compatibility/security: old/new metadata defaults, mixed-version rejection, unauthorized access denial, secret redaction, TLS bad-cert/wrong-name, plaintext downgrade rejection (spec §9.7)
+    - Unit tests, source-to-target integration, CDC sink tests, failure/durability, performance, compatibility
 - [ ] Async I/O subsystem (PG18-style) — spec: `.coding-hermes/specs/phase3-async-io.md`
 - [ ] JSONB/JSONPath improvements — spec: `.coding-hermes/specs/phase3-jsonb-jsonpath.md`
 - [ ] Generated/virtual columns
@@ -312,6 +123,17 @@
 - [ ] Time-series optimizations
 - [ ] Foreign data wrapper support
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
+
+## Discovery Sweep Findings (2026-07-19)
+
+- [x] **CDC-08 DECOMPOSED — 4 WIP stashes, repeated worker failure pattern**
+  - 4 WIP stashes: workers kept refactoring existing `cdc_sink.*` files instead of building new `src/clustering/replication_coordinator.*`
+  - Root cause: monolithic task (6 sub-items across 2 directories) was too large — no worker could complete it in a single session
+  - Decomposed into 6 smaller tasks: CDC-08a (logical_log_retention_t) → CDC-08f (observability)
+  - Each sub-task has bounded scope (~60-200 lines), single file touchpoint, and clear ACs from spec
+  - Old stashes preserved for reference: `git stash list | grep CDC-08`
+  - Untracked partial code (1221 lines) from prior monolithic attempt left on disk — retention.h/.cc compile, coordinator has 2 mechanical errors
+  - Next: Bane should review decomposition before worker dispatch
 
 ## Discovery Sweep Findings (2026-07-16 tick 2)
 - [x] **BUILD — rethinkdb binary build attempted; linker OOM in container (signal 7, Bus error)**
@@ -326,19 +148,5 @@
 
 ## Discovery Sweep Findings (2026-07-16 tick 1)
 - [x] **SPEC — Phase 3 design documents (v3.0 roadmap specs)** — all 5 complete (`fae6aec36c`)
-  - [x] Write design spec for "Declarative table partitioning" — `phase3-table-partitioning.md` (926 lines, 18 serialization macros)
-  - [x] Write design spec for "Parallel query execution" — `phase3-parallel-query.md` (1,054 lines, 10 sections)
-  - [x] Write design spec for "Logical replication / CDC streaming" — `phase3-cdc-streaming.md` (923 lines, 40 sections, 52 ReQL examples)
-  - [x] Write design spec for "Async I/O subsystem" — `phase3-async-io.md` (1,303 lines, 12 sections)
-  - [x] Write design spec for "JSONB/JSONPath improvements" — `phase3-jsonb-jsonpath.md` (1,335 lines, 103 ReQL examples)
-  - Files: `.coding-hermes/specs/phase3-<feature>.md`
 - [x] **BUILD — Fix `make test` target: web-assets dependency broken** (`2072d2a40c`)
-  - `test/build.mk:3` had `test-deps: ... web-assets rb-driver py-driver` but none had build rules
-  - Added stub `.PHONY` targets for all three legacy deps; `make test-deps` now succeeds
-  - `./build/release/rethinkdb-unittest` and `make test` now both work
 - [x] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing) — INVESTIGATED 2026-07-16**
-  - Root cause confirmed: `TERMINAL_CONTAINER_MEMORY=5120` (5GB container memory limit)
-  - Test allocates 1GB cache buffer (GIGABYTE) + sindex post-construction B-tree memory ≈ exceeds 5GB container limit
-  - 59Gi system RAM available, but process is limited by Hermes container cgroup
-  - NOT a code bug — container memory limit too low for this test. To fix: increase container memory or run outside container
-  - All 420+ other tests pass within the container limit
