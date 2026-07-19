@@ -31,5 +31,5 @@ tasks:
   - SERIALIZABLE macros for all business card + frame types
   - 'Files: src/clustering/replication_mailbox.hpp/cc (new)'
   - Build passes clean
-  status: pending
+  status: in_progress
   created_at: '2026-07-19T06:46:46.402674+00:00'
