@@ -122,12 +122,14 @@
 
 ## Discovery Sweep Findings (2026-07-19 tick 3)
 
-- [ ] **TEST — ReplicationCoordinatorTest: 8/8 tests crash with SIGSEGV at get_num_threads()**
-  - Root cause: `replication_coordinator_t` constructor calls `get_num_threads()` (arch/runtime), which requires the RethinkDB thread pool to be initialized. Unit tests don't set up the runtime.
-  - All 8 tests fail before reaching their test body — crash is in the constructor call on line 30 of replication_coordinator_test.cc
-  - 32/32 other CDC tests pass clean (CdcTypes, Publication, Subscription, CdcSink, Replication — excluding Coordinator)
-  - Fix options: (a) mock/shim `get_num_threads()` for unit tests, (b) refactor coordinator to accept thread count as parameter, (c) suppress coordinator tests until runtime mock infra exists
-  - Priority: P2 — blocks CDC-08 test validation but doesn't block CDC-09/CDC-10 forward progress
+- [x] **TEST — ReplicationCoordinatorTest: 8/8 tests pass** (commit `379e2a5e38`)
+  - Root cause: `replication_coordinator_t` constructor called `get_num_threads()` (arch/runtime), which requires the RethinkDB thread pool — not initialized in unit tests. All 8 tests crashed in the constructor before reaching test body.
+  - Fix: refactored constructor to accept `num_threads` parameter (defaults to 1 for tests). Three secondary bugs discovered during verification:
+    - `confirm_lsn()` held `mutex_` and called `advance_slot()` → non-recursive `std::mutex` deadlock. Split into `advance_slot`/`advance_slot_nolock`.
+    - Same deadlock in `get_slot_lag()` → `pause_slot()`. Added `pause_slot_nolock`.
+    - `logical_log_retention_t::release_slot()` was stub no-op. Implemented per-slot pin tracking with MIN-aggregate floor recalculation.
+    - `on_batch_enqueued()` boundary: when hitting the limit, accept the batch but signal pause correctly.
+  - 42/42 CDC tests pass (8 coordinator + 5 replication + 4 types + 19 sink + 6 contract)
 
 - [ ] **CDC-09 — Conflict Resolution: 4 sub-tasks proposed (needs review before worker dispatch)**
   - Spec: `.coding-hermes/specs/phase3-cdc-streaming.md` §7 (lines 634-662)
