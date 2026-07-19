@@ -544,4 +544,26 @@ counted_t<term_t> make_subscription_drop_term(
     return make_counted<subscription_drop_term_t>(env, term);
 }
 
+datum_t subscription_config_to_datum(
+        const subscription_config_t &config) {
+    ql::datum_object_builder_t res;
+    res.overwrite("id", datum_t(datum_string_t(uuid_to_str(config.subscription_id))));
+    res.overwrite("name", datum_t(datum_string_t(config.name.str())));
+    res.overwrite("state",
+        datum_t(datum_string_t(subscription_state_to_string(config.state))));
+    res.overwrite("target_database_id",
+        datum_t(datum_string_t(uuid_to_str(config.target_database_id))));
+    res.overwrite("target_table_id",
+        datum_t(datum_string_t(uuid_to_str(config.target_table_id))));
+    res.overwrite("publication",
+        datum_t(datum_string_t(config.publication_name.str())));
+    res.overwrite("conflict_policy",
+        datum_t(datum_string_t(conflict_resolution_to_string(config.conflict_policy))));
+    res.overwrite("source_cluster_id",
+        datum_t(datum_string_t(uuid_to_str(config.source_cluster_id))));
+    res.overwrite("created_at",
+        datum_t(static_cast<double>(config.created_at)));
+    return std::move(res).to_datum();
+}
+
 }  // namespace ql
