@@ -270,7 +270,7 @@
     - [x] **CDC-06c: State machine + snapshot orchestration** — commit `3593a61022`
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
-    - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc` (commit `429ce6a380`)
+    - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
     - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
     - [ ] **CDC-06e: Apply batch + reconnect/resync**
     - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
