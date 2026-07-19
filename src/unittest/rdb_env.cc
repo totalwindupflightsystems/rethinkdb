@@ -818,6 +818,45 @@ bool test_rdb_env_t::instance_t::subscription_create(
     return false;
 }
 
+bool test_rdb_env_t::instance_t::subscription_list(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED std::map<uuid_u, ql::subscription_config_t> *subscriptions_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support subscription_list()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::subscription_status(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const name_string_t &subscription_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED ql::subscription_config_t *config_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support subscription_status()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::subscription_drop(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const uuid_u &subscription_id,
+        UNUSED const name_string_t &subscription_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support subscription_drop()",
+        query_state_t::FAILED};
+    return false;
+}
+
 bool test_rdb_env_t::instance_t::publication_list(
         UNUSED counted_t<const ql::db_t> db,
         UNUSED const name_string_t &table,

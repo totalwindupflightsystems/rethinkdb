@@ -382,20 +382,37 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
+
+        counted_t<table_t> table;
         if (args->num_args() == 1) {
             scoped_ptr_t<val_t> scope = args->arg(env, 0);
-            bool ok = scope->get_type().is_convertible(val_t::type_t::TABLE)
-                || scope->get_type().is_convertible(val_t::type_t::DB);
-            rcheck(ok, base_exc_t::LOGIC,
-                   "subscriptionList argument must be a table or database.");
-            if (scope->get_type().is_convertible(val_t::type_t::TABLE)) {
-                (void)scope->as_table();
-            } else {
-                (void)scope->as_db();
-            }
+            rcheck(scope->get_type().is_convertible(val_t::type_t::TABLE),
+                   base_exc_t::LOGIC,
+                   "subscriptionList argument must be a table.");
+            table = scope->as_table();
         }
-        return new_val(datum_t(std::vector<datum_t>(),
-                               env->env->limits()));
+
+        admin_err_t error;
+        std::map<uuid_u, ql::subscription_config_t> subs;
+        if (!env->env->reql_cluster_interface()->subscription_list(
+                table->db, name_string_t::guarantee_valid(table->name.c_str()),
+                env->env->interruptor, &error, &subs)) {
+            REQL_RETHROW(error);
+        }
+        std::vector<datum_t> arr;
+        arr.reserve(subs.size());
+        for (const auto &pair : subs) {
+            ql::datum_object_builder_t entry;
+            entry.overwrite("id",
+                datum_t(datum_string_t(uuid_to_str(pair.first))));
+            entry.overwrite("name",
+                datum_t(datum_string_t(pair.second.name.str())));
+            entry.overwrite("state",
+                datum_t(datum_string_t(
+                    subscription_state_to_string(pair.second.state))));
+            arr.push_back(std::move(entry).to_datum());
+        }
+        return new_val(datum_t(std::move(arr), env->env->limits()));
     }
     virtual const char *name() const { return "subscription_list"; }
 };
@@ -409,28 +426,39 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
-        std::string sub_name;
+
+        counted_t<const db_t> db;
+        name_string_t table_name;
+        std::string sub_name_str;
+
         if (args->num_args() == 2) {
             counted_t<table_t> table = args->arg(env, 0)->as_table();
-            (void)table;
-            sub_name = args->arg(env, 1)->as_str().to_std();
+            db = table->db;
+            table_name = name_string_t::guarantee_valid(table->name.c_str());
+            sub_name_str = args->arg(env, 1)->as_str().to_std();
         } else {
-            sub_name = args->arg(env, 0)->as_str().to_std();
+            sub_name_str = args->arg(env, 0)->as_str().to_std();
+            rcheck(false, base_exc_t::LOGIC,
+                   "subscriptionStatus requires either a table scope "
+                   "(r.table('t').subscriptionStatus('name')) or both a table "
+                   "and subscription name.");
         }
-        name_string_t checked;
-        bool ok = checked.assign_value(sub_name);
+
+        name_string_t sub_name;
+        bool ok = sub_name.assign_value(sub_name_str);
         rcheck(ok, base_exc_t::LOGIC,
                strprintf("Subscription name `%s` invalid (%s).",
-                         sub_name.c_str(),
+                         sub_name_str.c_str(),
                          name_string_t::valid_char_msg));
 
-        ql::datum_object_builder_t res;
-        res.overwrite("name", datum_t(datum_string_t(checked.str())));
-        res.overwrite("state", datum_t(datum_string_t("unknown")));
-        res.overwrite("message",
-                      datum_t(datum_string_t(
-                          "CDC term not yet wired to backend")));
-        return new_val(std::move(res).to_datum());
+        admin_err_t error;
+        ql::subscription_config_t config;
+        if (!env->env->reql_cluster_interface()->subscription_status(
+                db, table_name, sub_name,
+                env->env->interruptor, &error, &config)) {
+            REQL_RETHROW(error);
+        }
+        return new_val(subscription_config_to_datum(config));
     }
     virtual const char *name() const { return "subscription_status"; }
 };
@@ -444,21 +472,57 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
-        std::string sub_name;
+
+        counted_t<const db_t> db;
+        name_string_t table_name;
+        std::string sub_name_str;
+
         if (args->num_args() == 2) {
             counted_t<table_t> table = args->arg(env, 0)->as_table();
-            (void)table;
-            sub_name = args->arg(env, 1)->as_str().to_std();
+            db = table->db;
+            table_name = name_string_t::guarantee_valid(table->name.c_str());
+            sub_name_str = args->arg(env, 1)->as_str().to_std();
         } else {
-            sub_name = args->arg(env, 0)->as_str().to_std();
+            sub_name_str = args->arg(env, 0)->as_str().to_std();
+            rcheck(false, base_exc_t::LOGIC,
+                   "subscriptionDrop requires either a table scope "
+                   "(r.table('t').subscriptionDrop('name')) or both a table "
+                   "and subscription name.");
         }
-        name_string_t checked;
-        bool ok = checked.assign_value(sub_name);
+
+        name_string_t sub_name;
+        bool ok = sub_name.assign_value(sub_name_str);
         rcheck(ok, base_exc_t::LOGIC,
                strprintf("Subscription name `%s` invalid (%s).",
-                         sub_name.c_str(),
+                         sub_name_str.c_str(),
                          name_string_t::valid_char_msg));
-        return new_val(stub_dropped_response(checked.str()));
+
+        /* Resolve subscription by name to get its subscription_id for the
+        Raft drop command. */
+        admin_err_t error;
+        ql::subscription_config_t config;
+        if (!env->env->reql_cluster_interface()->subscription_status(
+                db, table_name, sub_name,
+                env->env->interruptor, &error, &config)) {
+            REQL_RETHROW(error);
+        }
+
+        if (!env->env->reql_cluster_interface()->subscription_drop(
+                env->env->get_user_context(),
+                db,
+                table_name,
+                config.subscription_id,
+                sub_name,
+                env->env->interruptor,
+                &error)) {
+            REQL_RETHROW(error);
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("dropped", datum_t::boolean(true));
+        res.overwrite("subscription",
+                      datum_t(datum_string_t(sub_name.str())));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "subscription_drop"; }
 };
