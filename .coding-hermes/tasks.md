@@ -180,3 +180,7 @@
 - [x] **SPEC — Phase 3 design documents (v3.0 roadmap specs)** — all 5 complete (`fae6aec36c`)
 - [x] **BUILD — Fix `make test` target: web-assets dependency broken** (`2072d2a40c`)
 - [x] **TEST — Investigate RDBBtree.SindexPostConstruct OOM (pre-existing) — INVESTIGATED 2026-07-16**
+
+## [ ] NEVER-DONE — Run 11-point audit next tick
+- **Priority:** high
+- **Trigger:** Board needs self-improvement scan. Foreman must load `coding-hermes-never-done` skill and run full 11-point audit on next tick (spec alignment, doc coverage, test gaps, deps, pitfalls, perf, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring).
