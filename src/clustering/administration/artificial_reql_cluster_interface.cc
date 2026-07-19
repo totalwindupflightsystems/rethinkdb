@@ -668,6 +668,58 @@ bool artificial_reql_cluster_interface_t::subscription_create(
         user_context, db, table, config, interruptor, error_out);
 }
 
+bool artificial_reql_cluster_interface_t::subscription_list(
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        signal_t *interruptor,
+        admin_err_t *error_out,
+        std::map<uuid_u, ql::subscription_config_t> *subscriptions_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        subscriptions_out->clear();
+        return true;
+    }
+    return next_or_error(error_out) && m_next->subscription_list(
+        db, table, interruptor, error_out, subscriptions_out);
+}
+
+bool artificial_reql_cluster_interface_t::subscription_status(
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        const name_string_t &subscription_name,
+        signal_t *interruptor,
+        admin_err_t *error_out,
+        ql::subscription_config_t *config_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            "The `rethinkdb` database has no subscriptions.",
+            query_state_t::FAILED};
+        return false;
+    }
+    return next_or_error(error_out) && m_next->subscription_status(
+        db, table, subscription_name, interruptor, error_out, config_out);
+}
+
+bool artificial_reql_cluster_interface_t::subscription_drop(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        const uuid_u &subscription_id,
+        const name_string_t &subscription_name,
+        signal_t *interruptor,
+        admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            strprintf("Database `%s` is special; you can't drop subscriptions "
+                      "on the tables in it.",
+                      artificial_reql_cluster_interface_t::database_name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    }
+    return next_or_error(error_out) && m_next->subscription_drop(
+        user_context, db, table, subscription_id, subscription_name,
+        interruptor, error_out);
+}
+
 bool artificial_reql_cluster_interface_t::publication_list(
         counted_t<const ql::db_t> db,
         const name_string_t &table,

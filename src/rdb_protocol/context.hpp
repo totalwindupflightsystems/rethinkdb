@@ -576,6 +576,36 @@ public:
             signal_t *interruptor,
             admin_err_t *error_out) = 0;
 
+    /* CDC-06b: list subscriptions on a table. Returns a map of
+    subscription_id → config. Returns true on success. */
+    virtual bool subscription_list(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            std::map<uuid_u, ql::subscription_config_t> *subscriptions_out) = 0;
+
+    /* CDC-06b: get status of a single subscription by name. Returns config in
+    *config_out on success. */
+    virtual bool subscription_status(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const name_string_t &subscription_name,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            ql::subscription_config_t *config_out) = 0;
+
+    /* CDC-06b: drop a subscription. The caller provides both subscription_id
+    and subscription_name for unambiguous Raft identification. */
+    virtual bool subscription_drop(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const uuid_u &subscription_id,
+            const name_string_t &subscription_name,
+            signal_t *interruptor,
+            admin_err_t *error_out) = 0;
+
 protected:
     virtual ~reql_cluster_interface_t() { }   // silence compiler warnings
 };

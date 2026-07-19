@@ -312,6 +312,30 @@ public:
             signal_t *interruptor,
             admin_err_t *error_out);
 
+    bool subscription_list(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            std::map<uuid_u, ql::subscription_config_t> *subscriptions_out);
+
+    bool subscription_status(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const name_string_t &subscription_name,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            ql::subscription_config_t *config_out);
+
+    bool subscription_drop(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const uuid_u &subscription_id,
+            const name_string_t &subscription_name,
+            signal_t *interruptor,
+            admin_err_t *error_out);
+
     void set_next_reql_cluster_interface(reql_cluster_interface_t *next);
 
     artificial_table_backend_t *get_table_backend(
