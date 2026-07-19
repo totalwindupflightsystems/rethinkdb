@@ -256,7 +256,7 @@
       - publicationDrop: resolve→drop lifecycle via Raft metadata
       - Test mocks: stub implementations in test_rdb_env_t::instance_t
     - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
-    - [ ] **CDC-06a: createSubscription Raft wiring** — wire createSubscription term to Raft metadata backend
+    - [x] **CDC-06a: createSubscription Raft wiring** — wire createSubscription term to Raft metadata backend (`b1e26aa34b`, `57e44abc90`)
       - Add subscription_create_t/drop_t variants to table_config_and_shards_change_t
       - Add subscriptions map to table_config_and_shards_t with v2_4+ serialization
       - Wire subscriptionCreate term eval_impl to commit Raft metadata (no more stub)
