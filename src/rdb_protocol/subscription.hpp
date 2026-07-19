@@ -322,10 +322,9 @@ inline const char *conflict_resolution_to_string(conflict_resolution_t policy) {
     }
 }
 
-// Defined in terms/cdc_subscription.cc — avoids pulling datum headers
-// into every compilation unit that includes this header.
-datum_t subscription_config_to_datum(
-        const subscription_config_t &config);
+// subscription_config_to_datum lives in subscription.cc because it depends
+// on the full datum_t definition.
+datum_t subscription_config_to_datum(const subscription_config_t &config);
 
 /* Look up a publication by name in a publications map. Returns true and
  * fills `out` on success. Used by CREATING→CONNECTING validation. */
