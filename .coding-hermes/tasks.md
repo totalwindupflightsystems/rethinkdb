@@ -255,7 +255,7 @@
       - publicationStatus: resolve by name, return full config datum
       - publicationDrop: resolve→drop lifecycle via Raft metadata
       - Test mocks: stub implementations in test_rdb_env_t::instance_t
-    - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
+    - [x] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
     - [x] **CDC-06a: createSubscription Raft wiring** — wire createSubscription term to Raft metadata backend (`b1e26aa34b`, `57e44abc90`)
       - Add subscription_create_t/drop_t variants to table_config_and_shards_change_t
       - Add subscriptions map to table_config_and_shards_t with v2_4+ serialization
@@ -272,9 +272,9 @@
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
     - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
     - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
-    - [x] **CDC-06e: Apply batch + reconnect/resync** (commits `e22df9552f`, `693053822c`)
-      - [x] Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
-      - [x] Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
+    - [x] **CDC-06e: Apply batch + reconnect/resync** — commits `e22df9552f`, `693053822c`
+    - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
+    - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
       - [x] Expanded tests — apply_batch dedup, ledger shard tracking, prune_before with batch flow (`6ca9aa8ec5`)
   - [ ] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.cc`
     - cdc_sink_driver_t abstract interface: connect/deliver/close (spec §6.5)
