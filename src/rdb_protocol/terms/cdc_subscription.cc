@@ -6,15 +6,19 @@
 #include <utility>
 #include <vector>
 
+#include "clustering/administration/admin_op_exc.hpp"
+#include "clustering/administration/tables/table_metadata.hpp"
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/op.hpp"
 #include "rdb_protocol/publication.hpp"
+#include "rdb_protocol/subscription.hpp"
 #include "rdb_protocol/terms/cdc_publication.hpp"
 #include "rdb_protocol/terms/terms.hpp"
 #include "rdb_protocol/val.hpp"
+#include "time.hpp"
 
 namespace ql {
 
@@ -274,27 +278,107 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
+        /* CDC-06a: scope must be a table (the publication's source table that
+        will hold the subscription in its `subscriptions` map). Database scope
+        is rejected because the subscription's Raft commit targets a single
+        table. */
+        counted_t<table_t> table;
         scoped_ptr_t<val_t> config_val;
         if (args->num_args() == 2) {
-            // Scope: table or database.
             scoped_ptr_t<val_t> scope = args->arg(env, 0);
-            bool ok = scope->get_type().is_convertible(val_t::type_t::TABLE)
-                || scope->get_type().is_convertible(val_t::type_t::DB);
-            rcheck(ok, base_exc_t::LOGIC,
-                   "createSubscription scope must be a table or database.");
-            if (scope->get_type().is_convertible(val_t::type_t::TABLE)) {
-                (void)scope->as_table();
-            } else {
-                (void)scope->as_db();
-            }
+            rcheck(scope->get_type().is_convertible(val_t::type_t::TABLE),
+                   base_exc_t::LOGIC,
+                   "createSubscription scope must be a table.");
+            table = scope->as_table();
             config_val = args->arg(env, 1);
         } else {
-            config_val = args->arg(env, 0);
+            rcheck(false, base_exc_t::LOGIC,
+                   "createSubscription requires a table scope and a config "
+                   "object.");
         }
         parsed_subscription_create_t cfg =
             parse_subscription_config_from_datum(config_val->as_datum(),
                                                  config_val.get());
-        return new_val(stub_created_response(cfg.name.str()));
+
+        /* CDC-06a: build the full subscription_config_t. We resolve target
+        database/table UUIDs from the user-supplied strings; if the user gave
+        a `publication` (name) reference, it must exist on the source table.
+        CDC-06a only commits the metadata — replication-slot allocation,
+        source-cluster connection setup, and target-table schema validation
+        happen in CDC-07+. */
+        subscription_config_t config;
+        config.subscription_id = generate_uuid();
+        config.name = cfg.name;
+        config.publication_name = cfg.publication_name;
+        config.conflict_policy = cfg.conflict_policy;
+        config.state = subscription_state_t::CREATING;
+        config.created_at = current_microtime();
+
+        /* Resolve target db/table UUIDs. CDC-06a uses the same permission
+        gating pattern as createPublication: the source table's db id is
+        already known from the scope; we resolve target via
+        env->reql_cluster_interface()->db_find / table_find. CDC-06b may
+        expand this to read the publication from the source table's
+        publications map. */
+        counted_t<const ql::db_t> target_db;
+        {
+            admin_err_t error;
+            name_string_t target_db_name;
+            bool ok = target_db_name.assign_value(cfg.target_db);
+            rcheck(ok, base_exc_t::LOGIC,
+                   strprintf("Target database name `%s` invalid (%s).",
+                             cfg.target_db.c_str(),
+                             name_string_t::valid_char_msg));
+            if (!env->env->reql_cluster_interface()->db_find(
+                    target_db_name,
+                    env->env->interruptor,
+                    &target_db, &error)) {
+                REQL_RETHROW(error);
+            }
+        }
+        config.target_database_id = target_db->id;
+
+        counted_t<base_table_t> target_table;
+        {
+            admin_err_t error;
+            name_string_t target_table_name;
+            bool ok = target_table_name.assign_value(cfg.target_table);
+            rcheck(ok, base_exc_t::LOGIC,
+                   strprintf("Target table name `%s` invalid (%s).",
+                             cfg.target_table.c_str(),
+                             name_string_t::valid_char_msg));
+            if (!env->env->reql_cluster_interface()->table_find(
+                    target_table_name,
+                    target_db,
+                    optional<admin_identifier_format_t>(admin_identifier_format_t::name),
+                    env->env->interruptor,
+                    &target_table, &error)) {
+                REQL_RETHROW(error);
+            }
+        }
+        config.target_table_id = target_table->get_id();
+
+        try {
+            admin_err_t error;
+            if (!env->env->reql_cluster_interface()->subscription_create(
+                    env->env->get_user_context(),
+                    table->db,
+                    name_string_t::guarantee_valid(table->name.c_str()),
+                    config,
+                    env->env->interruptor,
+                    &error)) {
+                REQL_RETHROW(error);
+            }
+        } catch (auth::permission_error_t const &permission_error) {
+            rfail(ql::base_exc_t::PERMISSION_ERROR, "%s",
+                  permission_error.what());
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("created", datum_t(1.0));
+        res.overwrite("subscription", datum_t(datum_string_t(config.name.str())));
+        res.overwrite("state", datum_t(datum_string_t("creating")));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "subscription_create"; }
 };

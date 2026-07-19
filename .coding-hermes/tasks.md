@@ -255,11 +255,24 @@
       - publicationStatus: resolve by name, return full config datum
       - publicationDrop: resolve→drop lifecycle via Raft metadata
       - Test mocks: stub implementations in test_rdb_env_t::instance_t
-    - [ ] **CDC-06: Subscription state machine**
-    - createSubscription: commit target metadata, verify source identity, TLS handshake, bind/create slot (spec §2.4)
+    - [ ] **CDC-06: Subscription state machine** — `src/rdb_protocol/subscription.cc`, `src/clustering/` (new `replication_mailbox.hpp/cc`)
+    - [ ] **CDC-06a: createSubscription Raft wiring** — wire createSubscription term to Raft metadata backend
+      - Add subscription_create_t/drop_t variants to table_config_and_shards_change_t
+      - Add subscriptions map to table_config_and_shards_t with v2_4+ serialization
+      - Wire subscriptionCreate term eval_impl to commit Raft metadata (no more stub)
+      - Add mock handlers to test_rdb_env_t::instance_t, artificial + real cluster interfaces
+      - Pattern: follow CDC-05a commit `03a3f421ac` (11 files, +317/-11)
+    - [ ] **CDC-06b: subscriptionList/Status/Drop wiring** — wire remaining terms to Raft backend
+      - subscriptionList: iterate table subscriptions from Raft metadata, return id/name/state array
+      - subscriptionStatus: resolve by name, return full config datum
+      - subscriptionDrop: resolve→drop lifecycle via Raft metadata
+      - Pattern: follow CDC-05b commits `e77c21e90d` + `14ee0d93ec` (7 files, +392/-53)
+    - [ ] **CDC-06c: State machine + snapshot orchestration**
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
-    - Replication RPC: dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
+    - [ ] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
+    - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
+    - [ ] **CDC-06e: Apply batch + reconnect/resync**
     - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
     - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
   - [ ] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.cc`

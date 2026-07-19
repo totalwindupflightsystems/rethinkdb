@@ -805,6 +805,19 @@ bool test_rdb_env_t::instance_t::publication_create(
     return false;
 }
 
+bool test_rdb_env_t::instance_t::subscription_create(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const ql::subscription_config_t &config,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support subscription_create()",
+        query_state_t::FAILED};
+    return false;
+}
+
 bool test_rdb_env_t::instance_t::publication_list(
         UNUSED counted_t<const ql::db_t> db,
         UNUSED const name_string_t &table,

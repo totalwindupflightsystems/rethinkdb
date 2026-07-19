@@ -33,6 +33,22 @@ struct subscription_config_t {
     subscription_state_t state = subscription_state_t::CREATING;
     uuid_u created_by_user_id;
     microtime_t created_at;
+
+    bool operator==(const subscription_config_t &other) const {
+        return subscription_id == other.subscription_id
+            && name == other.name
+            && target_database_id == other.target_database_id
+            && target_table_id == other.target_table_id
+            && publication_name == other.publication_name
+            && source_cluster_id == other.source_cluster_id
+            && conflict_policy == other.conflict_policy
+            && state == other.state
+            && created_by_user_id == other.created_by_user_id
+            && created_at == other.created_at;
+    }
+    bool operator!=(const subscription_config_t &other) const {
+        return !(*this == other);
+    }
 };
 
 }  // namespace ql
