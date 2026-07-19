@@ -31,31 +31,8 @@ struct applied_change_t {
     microtime_t applied_at;
 };
 
-// subscription_applier_t uses std::set with custom comparator —
-// deferred serialization pending CDC-02/CDC-03 integration.
-struct subscription_applier_t {
-    std::set<change_event_id_t, change_event_id_compare_by_lsn_t> applied_ledger;
-
-    void record_apply(const change_event_id_t &id) {
-        applied_ledger.insert(id);
-    }
-    bool already_applied(const change_event_id_t &id) const {
-        return applied_ledger.count(id) > 0;
-    }
-    void prune_before(const shard_lsn_t &horizon) {
-        // Seek to first element for the horizon shard
-        auto it = applied_ledger.begin();
-        while (it != applied_ledger.end() && it->shard_id != horizon.shard_id) {
-            ++it;
-        }
-        // Prune all entries for this shard with LSN < horizon
-        while (it != applied_ledger.end()
-               && it->shard_id == horizon.shard_id
-               && it->lsn < horizon.lsn) {
-            it = applied_ledger.erase(it);
-        }
-    }
-};
+// subscription_applier_t lives in subscription.hpp (spec §3.7).
+// The old placeholder struct was removed in CDC-06e.
 
 }  // namespace ql
 

@@ -15,7 +15,6 @@
 #include "containers/uuid.hpp"
 #include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/publication.hpp"
-#include "rdb_protocol/replication.hpp"
 #include "rdb_protocol/subscription.hpp"
 #include "rpc/mailbox/typed.hpp"
 #include "rpc/serialize_macros.hpp"
