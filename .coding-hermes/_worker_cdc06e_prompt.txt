@@ -1,0 +1,42 @@
+You are a RethinkDB C++ developer working on CDC-06e (Apply batch + reconnect/resync). Workdir: /home/kara/rethinkdb.
+
+CONTEXT: CDC streaming feature for RethinkDB. Previous tasks complete:
+- CDC-01: Data structures (change_record_t, publication_config_t, subscription_config_t, etc.)
+- CDC-02: ReQL surface (createPublication, createSubscription, etc.)
+- CDC-03: Write capture seam (store_t::write stages change_record_t)
+- CDC-04: Logical journal (append-only LSN-ordered journal per shard)
+- CDC-05: Publication lifecycle (create/list/status/drop via Raft)
+- CDC-06a/b: Subscription create/list/status/drop Raft wiring
+- CDC-06c: Subscription state machine (CREATING to STREAMING)
+- CDC-06d: Replication RPC mailbox service (TLS-authenticated framed protocol) — JUST COMPLETED
+
+TASK: CDC-06e — Apply batch + reconnect/resync
+Implement in src/clustering/replication_mailbox.cc and src/rdb_protocol/subscription.cc:
+
+1. APPLY BATCH: subscription_applier_t::apply_batch() — write target changes + ledger entries in ONE serializer transaction. Each change_record_t is written to the target table, then a ledger entry (applied_change_t) is written recording the event_id + LSN.
+
+2. DUPLICATE SUPPRESSION: Before applying any change_record_t, check if its event_id already exists in the apply ledger. If so, skip (idempotent). The ledger is a simple B-tree mapping event_id to applied LSN.
+
+3. RECONNECT: On connection loss, the subscription reconnects and replays from the last confirmed LSN. The confirmed LSN is the highest contiguous LSN that has been applied AND acknowledged by the sink.
+
+4. WAL GAP DETECTION: If the source WAL no longer has the requested starting LSN (retention advanced past it), transition subscription to RESYNC_REQUIRED state. This triggers a full re-snapshot.
+
+5. RESYNC: When in RESYNC_REQUIRED, discard all partial apply state, request a fresh snapshot barrier from the source, and replay from the new barrier LSN.
+
+6. IDEMPOTENCY: The same change_record_t applied twice must produce the same target state. Use event_id as the idempotency key.
+
+Key files to modify:
+- src/clustering/replication_mailbox.cc — add apply_batch RPC handler, reconnect logic, WAL-gap detection
+- src/rdb_protocol/subscription.cc — subscription_applier_t methods, apply ledger management
+- src/rdb_protocol/subscription.hpp — add method declarations
+- src/rdb_protocol/cdc_types.hpp — may need applied_change_t ledger type
+
+Design doc: .coding-hermes/specs/phase3-cdc-streaming.md
+
+CRITICAL: 
+- Use existing RethinkDB patterns (serializer transactions, B-tree operations, mailbox RPC)
+- Follow the code style: braces for all control structures, DISABLE_COPYING, etc.
+- Builds must pass: make -j4
+- Commit with 'feat(CDC-06e): apply batch + reconnect/resync with duplicate suppression'
+- Mark CDC-06e complete in .gitreins/tasks.yaml after commit
+- Push to origin

@@ -34,7 +34,7 @@ From a Cygwin shell:
 ```
 ./configure
 
-make -j$(nproc)
+make -j4
 ```
 
 Will first download and build the libraries that RethinkDB needs, then
