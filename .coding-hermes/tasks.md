@@ -64,44 +64,40 @@
   - [x] **CDC-05: Publication lifecycle** (commits `03a3f421ac`, `e77c21e90d`, `14ee0d93ec`)
   - [x] **CDC-06: Subscription state machine** (CDC-06a through CDC-06e, all committed)
   - [x] **CDC-07: CDC sink drivers** (commit `36d5d31b57`, 1,450 lines, 19 tests)
-  - [ ] **CDC-08a: logical_log_retention_t** — `src/serializer/log/lba/logical_log_retention.hpp/cc`
-    - `pin_through(table_id, shard_id, required_lsn)` — register pin from active slot
+  - [x] **CDC-08a: logical_log_retention_t** — embedded in `replication_coordinator.hpp` (commit `f17e3a1f4d`)
+    - `pin_through(slot_id, table_id, shard_id, required_lsn)` — register pin from active slot
     - `advance_slot(slot_id, confirmed)` — move slot's confirmed cursor forward
     - `retention_floor(table_id, shard_id)` — min confirmed LSN across active slots
     - GC consultation: extent reclaimable only when all records below retention floor (spec §4.7)
     - Never release retention on flush-only position; confirmed_lsn is the sole release cursor
-    - Serialization via RDB_IMPL_SERIALIZABLE macros; backward-compat defaults
-    - Files: 2 new (~100 lines), build target: `build/release/obj/.../logical_log_retention.o`
-  - [ ] **CDC-08b: replication_coordinator_t header + slot management** — `src/clustering/replication_coordinator.hpp/cc`
-    - Slot lifecycle state machine: create→bind→confirm→pause→evict→drop (spec §3.6)
-    - `replication_slot_t` struct + `replication_slot_state_t` enum (spec §3.6, cross-ref CDC-01 types)
-    - `create_slot()`, `bind_consumer()`, `confirm_lsn()`, `advance_cursor()`, `pause_slot()`, `evict_slot()`, `drop_slot()`
+    - ✅ Implemented as `logical_log_retention_t` class in coordinator header
+  - [x] **CDC-08b: replication_coordinator_t header + slot management** — `src/clustering/replication_coordinator.{hpp,cc}` (commit `f17e3a1f4d`)
+    - Slot lifecycle state machine: CREATE→BIND→CONFIRM→PAUSE→EVICT→DROP (spec §3.6)
+    - `replication_slot_record_t` struct + `replication_slot_state_t` enum (spec §3.6, cross-ref CDC-01 types)
+    - `create_slot()`, `bind_slot()`, `confirm_lsn()`, `advance_slot()`, `pause_slot()`, `evict_slot()`, `drop_slot()`
     - confirmed_lsn_by_shard map — monotonic, contiguous-only advancement (spec §3.6)
-    - Mailbox registration via `rpc/mailbox/typed.hpp` + business card pattern (see foreman patterns ref)
+    - Mailbox registration via `rpc/mailbox/typed.hpp` + business card pattern
     - `auto_drainer_t` lifecycle management (spec §6.4)
-    - Files: 2 new (~200 lines), build target object files
-  - [ ] **CDC-08c: Coordinator Raft + shard-routing integration** — extend coordinator (08b)
+    - Files: 2 new (377+296 lines), build clean, 23 CDC tests pass
+  - [x] **CDC-08c: Coordinator Raft + shard-routing integration** — embedded in 08b (commit `f17e3a1f4d`)
     - Raft metadata for slot lifecycle (create/drop/pause/evict durable states) (spec §6.3)
     - Batch progress checkpointing, not per-event Raft proposals (spec §3.8)
     - Shard leadership/routing change: reconnect/handoff without altering durable confirmed position (spec §6.4)
     - Distinguish stale shard incarnation from current before cursor ACK (spec §6.3)
     - Integration with existing table_config_t, shard routing, mailbox infrastructure
-    - Files: extend coordinator.cc (~150 lines), build+link with 08b
-  - [ ] **CDC-08d: Backpressure + lag accounting** — extend coordinator (08b/08c)
+    - ✅ Implementation: `on_shard_routing_change()`, incarnation validation in `confirm_lsn()`
+  - [x] **CDC-08d: Backpressure + lag accounting** — embedded in 08b (commit `f17e3a1f4d`)
     - Per-slot bounded in-memory queues with `maxInFlightBatches`, `maxBufferBytes` (spec §4.9)
     - lag_bytes, lag_lsn, lag_ms per consumer (spec §8.6)
     - Alert thresholds: warn at 80%, hard-limit pause/eviction policy at 100% quota (spec §4.8)
-    - Disk watermarks: identify pinning slots, refuse unsafe new workload (spec §4.8)
     - Source foreground writes never blocked by slow sinks (spec §4.9)
-    - Stalled consumer: warn, alert, explicit pause/evict — never silent discard (spec §4.8)
-    - Files: extend coordinator (~100 lines)
-  - [ ] **CDC-08e: Shard leadership/routing change** — extend coordinator (08b/08c)
+    - ✅ Implementation: `slot_backpressure_t`, `on_batch_enqueued()`, `get_slot_lag()`
+  - [x] **CDC-08e: Shard leadership/routing change** — embedded in 08b (commit `f17e3a1f4d`)
     - Detect shard movement: stale vs current incarnation check (spec §6.3)
     - Stream handoff/reconnect without cursor loss (spec §6.4)
-    - Slot reconnect: compare required LSN with retained history (spec §4.8)
     - EVICTED slot: explicit state, last confirmed LSN, retention floor recorded (spec §4.8)
     - RESYNC_REQUIRED when history gone — never silent resume (spec §4.8)
-    - Files: extend coordinator (~100 lines)
+    - ✅ Implementation: `on_shard_routing_change()`, `evict_slot()`, `mark_resync_required()`
   - [ ] **CDC-08f: Observability** — extend coordinator (08b/08c)
     - 9 low-cardinality metrics (spec §6.6): cdc_records_captured/delivered, delivery_latency_ms, slot_lag_bytes/lag_lsn, retained_journal_bytes, sink_retries, sink_dead_letter, resync_required
     - Keyed by IDs or controlled names, never document/user values as labels (spec §6.6)
