@@ -1,7 +1,6 @@
 tasks:
-- id: CDC-05b
-  title: "CDC-05b: publicationList, publicationStatus, publicationDrop \u2014 wired\
-    \ to Raft metadata"
+- completed_at: '2026-07-18T22:07:54.563750+00:00'
+  created_at: '2026-07-18T22:04:41.801651+00:00'
   criteria:
   - publicationList returns publications from table_config_and_shards_t.publications
     map
@@ -15,12 +14,12 @@ tasks:
   - Publication list returns structured datum array with id/name/state per publication
   - Publication drop resolves publication_id via publication_status before Raft call
   - Build passes clean
+  id: CDC-05b
   status: complete
-  created_at: '2026-07-18T22:04:41.801651+00:00'
-  completed_at: '2026-07-18T22:07:54.563750+00:00'
-- id: CDC-06d
-  title: "CDC-06d: Replication RPC mailbox service \u2014 TLS-authenticated framed\
-    \ protocol"
+  title: "CDC-05b: publicationList, publicationStatus, publicationDrop \u2014 wired\
+    \ to Raft metadata"
+- completed_at: '2026-07-19T13:29:32.793131+00:00'
+  created_at: '2026-07-19T06:46:46.402674+00:00'
   criteria:
   - replication_mailbox.hpp defines mailbox_addr_t, replication_frame_t, replication_mailbox_business_card_t
   - replication_mailbox.cc implements TLS-authenticated mailbox_service_t with framed
@@ -31,11 +30,12 @@ tasks:
   - SERIALIZABLE macros for all business card + frame types
   - 'Files: src/clustering/replication_mailbox.hpp/cc (new)'
   - Build passes clean
+  id: CDC-06d
   status: complete
-  created_at: '2026-07-19T06:46:46.402674+00:00'
-  completed_at: '2026-07-19T13:29:32.793131+00:00'
-- id: CDC-06e
-  title: "CDC-06e: Apply batch + reconnect/resync \u2014 subscription apply path"
+  title: "CDC-06d: Replication RPC mailbox service \u2014 TLS-authenticated framed\
+    \ protocol"
+- completed_at: '2026-07-19T13:56:14.828117+00:00'
+  created_at: '2026-07-19T13:30:39.214773+00:00'
   criteria:
   - "Apply batch: write target changes + ledger entries in one transaction (spec \xA7\
     3.7)"
@@ -44,6 +44,6 @@ tasks:
   - "Resync: WAL gap detection \u2192 RESYNC_REQUIRED state transition"
   - 'Files: src/rdb_protocol/subscription.cc, src/rdb_protocol/subscription.hpp'
   - Build passes clean
+  id: CDC-06e
   status: complete
-  created_at: '2026-07-19T13:30:39.214773+00:00'
-  completed_at: '2026-07-19T13:56:14.828117+00:00'
+  title: "CDC-06e: Apply batch + reconnect/resync \u2014 subscription apply path"
