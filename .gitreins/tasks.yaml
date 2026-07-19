@@ -16,7 +16,7 @@ tasks:
   - Build passes clean
   id: CDC-05b
   status: complete
-  title: "CDC-05b: publicationList, publicationStatus, publicationDrop \u2014 wired\
+  title: "CDC-05b: publicationList, publicationStatus, publicationDrop — wired\
     \ to Raft metadata"
 - completed_at: '2026-07-19T13:29:32.793131+00:00'
   created_at: '2026-07-19T06:46:46.402674+00:00'
@@ -24,7 +24,7 @@ tasks:
   - replication_mailbox.hpp defines mailbox_addr_t, replication_frame_t, replication_mailbox_business_card_t
   - replication_mailbox.cc implements TLS-authenticated mailbox_service_t with framed
     protocol
-  - "Version negotiation in connection handshake (spec \xA75.1-5.3)"
+  - "Version negotiation in connection handshake (spec §5.1-5.3)"
   - Typed mailbox with typed_addr_t pattern matching existing cluster mailbox conventions
   - 'Frame header: length, type (DATA/SNAPSHOT_BARRIER/ACK/NACK/KEEPALIVE), flags'
   - SERIALIZABLE macros for all business card + frame types
@@ -32,18 +32,36 @@ tasks:
   - Build passes clean
   id: CDC-06d
   status: complete
-  title: "CDC-06d: Replication RPC mailbox service \u2014 TLS-authenticated framed\
+  title: "CDC-06d: Replication RPC mailbox service — TLS-authenticated framed\
     \ protocol"
 - completed_at: '2026-07-19T13:56:14.828117+00:00'
   created_at: '2026-07-19T13:30:39.214773+00:00'
   criteria:
-  - "Apply batch: write target changes + ledger entries in one transaction (spec \xA7\
+  - "Apply batch: write target changes + ledger entries in one transaction (spec §\
     3.7)"
   - Duplicate suppression via event_id in subscription_applier_t
   - 'Reconnect: replay from confirmed LSN after connection drop'
-  - "Resync: WAL gap detection \u2192 RESYNC_REQUIRED state transition"
+  - "Resync: WAL gap detection → RESYNC_REQUIRED state transition"
   - 'Files: src/rdb_protocol/subscription.cc, src/rdb_protocol/subscription.hpp'
   - Build passes clean
   id: CDC-06e
   status: complete
-  title: "CDC-06e: Apply batch + reconnect/resync \u2014 subscription apply path"
+  title: "CDC-06e: Apply batch + reconnect/resync — subscription apply path"
+- completed_at: '2026-07-19T14:15:00.000000+00:00'
+  created_at: '2026-07-19T13:58:00.000000+00:00'
+  criteria:
+  - "cdc_sink_driver_t abstract interface in cdc_sink.hpp: connect(), deliver(), close() — spec §6.5"
+  - "sink_delivery_result_t with outcome OK/RETRYABLE_ERROR/PERMANENT_ERROR + acknowledged LSN"
+  - "make_cdc_sink_driver(config) factory returning unique_ptr<cdc_sink_driver_t>"
+  - "Kafka driver: TLS/SASL param parsing, event IDs in key+header, broker outage retryable"
+  - "Webhook driver: HTTPS POST stub, Idempotency-Key, 2xx ACK, 429/5xx vs 4xx classification"
+  - "File/S3 driver: object finalization + manifest as ACK boundary"
+  - "Batching: validate_batching_config for maxRecords/maxInFlightBatches/flushIntervalMs/maxBufferBytes"
+  - "Dead-letter: DLQ record with original envelope; slot advances only after durable DLQ write"
+  - "Sink ACK mapping: contiguous LSN acknowledged only after durable external write — spec §5.6"
+  - "Files: src/rdb_protocol/cdc_sink.hpp/cc, src/unittest/cdc_sink_test.cc"
+  - Build passes clean: make -j4 UNIT_TESTS=1
+  - At least 6 unit tests covering driver interface, batching, retry classification
+  id: CDC-07
+  status: complete
+  title: "CDC-07: CDC sink drivers — Kafka, Webhook, File/S3 with batching, retry, dead-letter"
