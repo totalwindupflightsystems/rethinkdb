@@ -120,6 +120,40 @@
 - [ ] Foreign data wrapper support
 - [ ] WASM-based UDF sandbox (replace V8/QuickJS with WASM runtime)
 
+## Discovery Sweep Findings (2026-07-19 tick 3)
+
+- [ ] **TEST — ReplicationCoordinatorTest: 8/8 tests crash with SIGSEGV at get_num_threads()**
+  - Root cause: `replication_coordinator_t` constructor calls `get_num_threads()` (arch/runtime), which requires the RethinkDB thread pool to be initialized. Unit tests don't set up the runtime.
+  - All 8 tests fail before reaching their test body — crash is in the constructor call on line 30 of replication_coordinator_test.cc
+  - 32/32 other CDC tests pass clean (CdcTypes, Publication, Subscription, CdcSink, Replication — excluding Coordinator)
+  - Fix options: (a) mock/shim `get_num_threads()` for unit tests, (b) refactor coordinator to accept thread count as parameter, (c) suppress coordinator tests until runtime mock infra exists
+  - Priority: P2 — blocks CDC-08 test validation but doesn't block CDC-09/CDC-10 forward progress
+
+- [ ] **CDC-09 — Conflict Resolution: 4 sub-tasks proposed (needs review before worker dispatch)**
+  - Spec: `.coding-hermes/specs/phase3-cdc-streaming.md` §7 (lines 634-662)
+  - Scope: `src/rdb_protocol/conflict_resolver.{hpp,cc}` (new files, ~500-800 lines)
+  - No existing implementation — greenfield
+  - **CDC-09a: LWW resolver + tombstone versions** (~150 lines)
+    - `conflict_resolver_t` interface: `resolve(source_event, target_doc, target_meta) → conflict_result_t`
+    - LWW policy: deterministic tuple comparison `(commit_timestamp, cluster_uuid, shard_uuid, LSN)`
+    - Tombstone versions for deletes to prevent resurrection from old replays
+    - Replication metadata stored outside user JSON fields (§7.1)
+  - **CDC-09b: Primary-key merge** (~120 lines)
+    - Upsert-oriented: missing PK → insert, existing PK → shallow merge top-level fields
+    - Source delete only when target metadata not newer; PK type/value mismatch → permanent identity conflict
+    - No arrays/recursive merge/CRDT in Phase 3 (§7.3)
+  - **CDC-09c: Custom handler + validation** (~180 lines)
+    - Serialized deterministic restricted ReQL function (§7.4)
+    - Return validation: `{action: "apply"|"skip"|"replace"|"merge"|"conflict", value: ...}`
+    - Invalid returns/exceptions/resource limits → unresolved conflict, never silently default to apply
+    - No table/network/random/time access in handler
+  - **CDC-09d: Conflict log + operator actions** (~150 lines)
+    - Durable record per unresolved conflict: subscription_id, event_id, source envelope, target version, policy, reason, retry_count, timestamps (§7.5)
+    - Operator actions: retry, skip, resolve
+    - Slot may not ACK past blocked record without durable skip/dead-letter
+  - Total: ~600 lines across 2 new files + ~100 lines wiring into subscription apply path
+  - Next: Bane review decomposition before worker dispatch
+
 ## Discovery Sweep Findings (2026-07-19)
 
 - [x] **CDC-08 DECOMPOSED — 4 WIP stashes, repeated worker failure pattern**
