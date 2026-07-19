@@ -3,20 +3,20 @@
 
 #include <utility>
 
+#include "arch/runtime/runtime.hpp"
 #include "containers/archive/archive.hpp"
+#include "containers/archive/optional.hpp"
 #include "containers/archive/stl_types.hpp"
 #include "containers/archive/versioned.hpp"
 #include "errors.hpp"
 #include "rpc/mailbox/mailbox.hpp"
 #include "utils.hpp"
 
-/* ── Serialization implementations ─────────────────────────────────────
+/* ── Serialization implementations ───────────────────────────────────────
  *
- * These mirror the struct definitions in `replication_mailbox.hpp`. We
- * use the `_SINCE_v2_4` variants because CDC (Change Data Capture) is a
- * new wire format introduced after 2.4; downstream code that needs
- * cross-version compatibility will explicit-instantiate against the
- * matching cluster version. */
+ * _SINCE_v2_4 variants — CDC is a new wire format introduced after v2.4.
+ * The business card uses RDB_MAKE_ME_SERIALIZABLE_2 inline in the header,
+ * so it is NOT repeated here. */
 
 RDB_IMPL_SERIALIZABLE_5_SINCE_v2_4(
     ql::replication_frame_header_t,
@@ -48,57 +48,53 @@ RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(
     ql::replication_error_payload_t,
     code, message, occurred_at);
 
-RDB_IMPL_SERIALIZABLE_2_SINCE_v2_4(
-    ql::replication_mailbox_business_card_t,
-    frame_mailbox, push_mailbox);
-
 namespace ql {
 
-/* ── replication_mailbox_service_t ──────────────────────────────────── */
+/* ── replication_mailbox_service_t ───────────────────────────────────── */
 
 replication_mailbox_service_t::replication_mailbox_service_t(
-    mailbox_manager_t *mailbox_manager,
-    const uuid_u &stream_id,
-    uint32_t protocol_version)
+        mailbox_manager_t *mailbox_manager,
+        const uuid_u &stream_id,
+        uint32_t protocol_version)
     : home_thread_mixin_t(get_thread_id()),
       mailbox_manager_(mailbox_manager),
       stream_id_(stream_id),
       requested_protocol_version_(protocol_version),
       negotiated_protocol_version_(protocol_version),
       connected_(false),
-      frame_mailbox(
-        mailbox_manager,
-        std::bind(&replication_mailbox_service_t::on_frame,
-                  this, ph::_1, ph::_2)),
-      push_mailbox(
-        mailbox_manager,
-        std::bind(&replication_mailbox_service_t::on_push,
-                  this, ph::_1, ph::_2)) { }
+      frame_mailbox(mailbox_manager,
+          std::bind(&replication_mailbox_service_t::on_frame,
+                    this, ph::_1, ph::_2)),
+      push_mailbox(mailbox_manager,
+          std::bind(&replication_mailbox_service_t::on_push,
+                    this, ph::_1, ph::_2)) { }
 
 replication_mailbox_service_t::~replication_mailbox_service_t() {
-    /* Drain all in-flight coroutines before destructing the mailboxes.
-     * The mailboxes' readers are bound to `drainer_` indirectly via
-     * the lifetime of `this`; pulsing the drainer (via its destructor
-     * chain) ensures any callback coroutines have unwound. */
-    auto_drainer_t::lock_t keepalive(&drainer_);
-    /* Suppress unused-warning if no coroutine has ever taken a lock. */
-    static_cast<void>(keepalive);
+    assert_thread();
+    drainer_.begin_draining();
+    frame_mailbox.begin_shutdown();
+    push_mailbox.begin_shutdown();
+    drainer_.drain();
 }
 
+/* ── Callback stubs ────────────────────────────────────────────────────
+ *
+ * These are invoked by the mailbox infrastructure when frames arrive.
+ * CDC-06d provides the structural skeleton; full protocol logic will be
+ * implemented in later CDC tasks. */
+
 void replication_mailbox_service_t::on_frame(
-    UNUSED signal_t *interruptor,
-    UNUSED const replication_frame_t &frame) {
-    /* Stub for CDC-06d. CDC-07 wires up the dispatch table keyed on
-     * `frame.header.frame_type` and runs the protocol state machine. */
-    assert_thread();
+        signal_t * /*interruptor*/,
+        const replication_frame_t & /*frame*/) {
+    /* Stub: dispatch on frame_type, validate protocol version, route to
+     * typed handlers (handshake, ack, heartbeat, close, ...). */
 }
 
 void replication_mailbox_service_t::on_push(
-    UNUSED signal_t *interruptor,
-    UNUSED const replication_frame_t &frame) {
-    /* Stub for CDC-06d. Push channel is used for snapshot/change batches
-     * that don't have a synchronous reply address. */
-    assert_thread();
+        signal_t * /*interruptor*/,
+        const replication_frame_t & /*frame*/) {
+    /* Stub: handle pushed frames (snapshot rows, change batches) from
+     * the source side. */
 }
 
 }  // namespace ql
