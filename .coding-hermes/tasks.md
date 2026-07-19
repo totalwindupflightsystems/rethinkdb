@@ -98,7 +98,7 @@
     - EVICTED slot: explicit state, last confirmed LSN, retention floor recorded (spec §4.8)
     - RESYNC_REQUIRED when history gone — never silent resume (spec §4.8)
     - ✅ Implementation: `on_shard_routing_change()`, `evict_slot()`, `mark_resync_required()`
-  - [ ] **CDC-08f: Observability** — extend coordinator (08b/08c)
+  - [x] **CDC-08f: Observability** — extend coordinator (08b/08c) (commit `408617321d`)
     - 9 low-cardinality metrics (spec §6.6): cdc_records_captured/delivered, delivery_latency_ms, slot_lag_bytes/lag_lsn, retained_journal_bytes, sink_retries, sink_dead_letter, resync_required
     - Keyed by IDs or controlled names, never document/user values as labels (spec §6.6)
     - Slot blocking reclamation identification in status/alert path (spec §8.6)
