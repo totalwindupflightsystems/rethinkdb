@@ -43,15 +43,6 @@ name_string_t parse_sub_name(rcheckable_t *target, const datum_t &name_d,
     return name;
 }
 
-datum_t stub_dropped_response(const std::string &name) {
-    ql::datum_object_builder_t res;
-    res.overwrite("dropped", datum_t::boolean(true));
-    res.overwrite("subscription", datum_t(datum_string_t(name)));
-    res.overwrite("message",
-                  datum_t(datum_string_t("CDC term not yet wired to backend")));
-    return std::move(res).to_datum();
-}
-
 class meta_op_term_base_t : public op_term_t {
 public:
     meta_op_term_base_t(compile_env_t *env, const raw_term_t &term,
