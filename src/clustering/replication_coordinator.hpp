@@ -55,7 +55,8 @@ struct slot_lag_t {
 
 class replication_coordinator_t {
 public:
-    explicit replication_coordinator_t(logical_log_retention_t *r);
+    explicit replication_coordinator_t(logical_log_retention_t *r,
+                                       int num_threads = 1);
 
     // Slot lifecycle
     void create_slot(const uuid_u &sid, const uuid_u &pid,
@@ -98,6 +99,10 @@ public:
     void record_resync_required();
 
 private:
+    void advance_slot_nolock(const uuid_u &sid, const shard_lsn_t &lsn,
+                             uint64_t inc);
+    void pause_slot_nolock(const uuid_u &sid);
+
     perfmon_collection_t cdc_perfmon_collection;
     perfmon_membership_t cdc_perfmon_membership;
     perfmon_membership_t cdc_records_captured_membership;

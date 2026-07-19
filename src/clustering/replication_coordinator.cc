@@ -3,7 +3,7 @@
 namespace ql {
 
 replication_coordinator_t::replication_coordinator_t(
-    logical_log_retention_t *r) :
+    logical_log_retention_t *r, int num_threads) :
     cdc_perfmon_collection(),
     cdc_perfmon_membership(&get_global_perfmon_collection(),
                            &cdc_perfmon_collection, "cdc"),
@@ -34,15 +34,15 @@ replication_coordinator_t::replication_coordinator_t(
     cdc_resync_required_membership(&cdc_perfmon_collection,
                                    &cdc_resync_required_total,
                                    "resync_required_total"),
-    cdc_records_captured_total(get_num_threads()),
-    cdc_records_delivered_total(get_num_threads()),
-    cdc_delivery_latency_ms(get_num_threads()),
-    cdc_slot_lag_bytes(get_num_threads()),
-    cdc_slot_lag_lsn(get_num_threads()),
-    cdc_retained_journal_bytes(get_num_threads()),
-    cdc_sink_retries_total(get_num_threads()),
-    cdc_sink_dead_letter_total(get_num_threads()),
-    cdc_resync_required_total(get_num_threads()),
+    cdc_records_captured_total(num_threads),
+    cdc_records_delivered_total(num_threads),
+    cdc_delivery_latency_ms(num_threads),
+    cdc_slot_lag_bytes(num_threads),
+    cdc_slot_lag_lsn(num_threads),
+    cdc_retained_journal_bytes(num_threads),
+    cdc_sink_retries_total(num_threads),
+    cdc_sink_dead_letter_total(num_threads),
+    cdc_resync_required_total(num_threads),
     retention_(r) {}
 
 void replication_coordinator_t::create_slot(
@@ -64,7 +64,7 @@ void replication_coordinator_t::bind_slot(
     publications_[pub.publication_id] = pub;
     for (auto &kv : base) {
         it->second.confirmed_lsn_by_shard[kv.first] = kv.second;
-        retention_->pin_through(pub.table_id, kv.first, kv.second);
+        retention_->pin_through(sid, pub.table_id, kv.first, kv.second);
     }
     it->second.state = replication_slot_state_t::SNAPSHOTTING;
 }
@@ -77,9 +77,8 @@ replication_coordinator_t::get_slot_state(const uuid_u &sid) const {
                               : std::optional(it->second);
 }
 
-void replication_coordinator_t::advance_slot(
+void replication_coordinator_t::advance_slot_nolock(
     const uuid_u &sid, const shard_lsn_t &lsn, uint64_t inc) {
-    std::lock_guard<std::mutex> lk(mutex_);
     auto it = slots_.find(sid);
     if (it == slots_.end()) return;
     it->second.confirmed_lsn_by_shard[lsn.shard_id] = lsn.lsn;
@@ -87,6 +86,12 @@ void replication_coordinator_t::advance_slot(
     retention_->advance_slot(sid, lsn);
     if (it->second.state == replication_slot_state_t::SNAPSHOTTING)
         it->second.state = replication_slot_state_t::STREAMING;
+}
+
+void replication_coordinator_t::advance_slot(
+    const uuid_u &sid, const shard_lsn_t &lsn, uint64_t inc) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    advance_slot_nolock(sid, lsn, inc);
 }
 
 bool replication_coordinator_t::note_flush_lsn(
@@ -113,15 +118,19 @@ bool replication_coordinator_t::confirm_lsn(
     auto &fl = it->second.flush_lsn_by_shard;
     auto fl_it = fl.find(lsn.shard_id);
     if (fl_it != fl.end() && lsn.lsn.value > fl_it->second.value) return false;
-    advance_slot(sid, lsn, inc);
+    advance_slot_nolock(sid, lsn, inc);
     return true;
+}
+
+void replication_coordinator_t::pause_slot_nolock(const uuid_u &sid) {
+    auto it = slots_.find(sid);
+    if (it != slots_.end())
+        it->second.state = replication_slot_state_t::PAUSED;
 }
 
 void replication_coordinator_t::pause_slot(const uuid_u &sid) {
     std::lock_guard<std::mutex> lk(mutex_);
-    auto it = slots_.find(sid);
-    if (it != slots_.end())
-        it->second.state = replication_slot_state_t::PAUSED;
+    pause_slot_nolock(sid);
 }
 
 void replication_coordinator_t::resume_slot(const uuid_u &sid) {
@@ -159,11 +168,15 @@ bool replication_coordinator_t::on_batch_enqueued(
     auto &st = bp_state_[sid];
     auto ci = bp_cfg_.find(sid);
     if (ci == bp_cfg_.end()) return true;
+    // If already paused, reject without counting
+    if (st.source_paused) return false;
     auto [mf, mb] = ci->second;
-    if (st.in_flight_batches >= mf || st.buffered_bytes + b > mb) {
+    st.in_flight_batches++;
+    st.buffered_bytes += b;
+    if (st.in_flight_batches >= mf || st.buffered_bytes > mb) {
         st.source_paused = true; return false;
     }
-    st.in_flight_batches++; st.buffered_bytes += b; return true;
+    return true;
 }
 
 void replication_coordinator_t::on_batch_dequeued(
@@ -219,7 +232,7 @@ std::optional<slot_lag_t> replication_coordinator_t::get_slot_lag(
     cdc_slot_lag_bytes += lag.lag_bytes;
     cdc_slot_lag_lsn += lag.lag_lsn;
     if (lag.hard_threshold_breached)
-        const_cast<replication_coordinator_t*>(this)->pause_slot(sid);
+        const_cast<replication_coordinator_t*>(this)->pause_slot_nolock(sid);
     return lag;
 }
 
