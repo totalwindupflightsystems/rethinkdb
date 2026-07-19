@@ -276,7 +276,7 @@
     - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
     - Reconnect/resync: replay from confirmed LSN; WAL gap → RESYNC_REQUIRED (spec §5.7, §8.2)
       - [x] Expanded tests — apply_batch dedup, ledger shard tracking, prune_before with batch flow (`6ca9aa8ec5`)
-  - [x] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.cc`
+  - [x] **CDC-07: CDC sink drivers** — `src/rdb_protocol/cdc_sink.hpp/cc` (commit `36d5d31b57`, 1,450 lines, 19 tests pass)
     - cdc_sink_driver_t abstract interface: connect/deliver/close (spec §6.5)
     - Kafka driver: TLS/SASL, event IDs in key/header, batch flush, broker outage retry (spec §2.5, §5.6)
     - Webhook driver: HTTPS POST, Idempotency-Key header, 2xx ACK, retry classification (spec §2.5)
