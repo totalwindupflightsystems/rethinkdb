@@ -128,6 +128,22 @@ public:
         return size == 1;
     }
 
+    result_type operator()(
+            const subscription_create_t &subscription_create) const {
+        auto pair = table_config_and_shards->subscriptions.insert(
+            std::make_pair(
+                subscription_create.config.subscription_id,
+                subscription_create.config));
+        return pair.second;
+    }
+
+    result_type operator()(
+            const subscription_drop_t &subscription_drop) const {
+        auto size = table_config_and_shards->subscriptions.erase(
+            subscription_drop.subscription_id);
+        return size == 1;
+    }
+
 private:
     table_config_and_shards_t *table_config_and_shards;
 };
@@ -293,8 +309,9 @@ RDB_IMPL_EQUALITY_COMPARABLE_7(table_config_t,
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);
 
-RDB_IMPL_EQUALITY_COMPARABLE_4(table_config_and_shards_t,
-                               config, shard_scheme, server_names, publications);
+RDB_IMPL_EQUALITY_COMPARABLE_5(table_config_and_shards_t,
+                               config, shard_scheme, server_names,
+                               publications, subscriptions);
 
 template <cluster_version_t W>
 void serialize(write_message_t *wm, const table_config_and_shards_t &tcas) {
@@ -306,6 +323,11 @@ void serialize(write_message_t *wm, const table_config_and_shards_t &tcas) {
     is empty on tables that have never had a publication created. */
     std::map<uuid_u, ql::publication_config_t> publications = tcas.publications;
     serialize<W>(wm, publications);
+    /* CDC-06a: subscriptions map is only serialized in v2_4+. Older protocol
+    versions were fixed before CDC-06; older nodes see an empty map. The map
+    is empty on tables that have no subscriptions. */
+    std::map<uuid_u, ql::subscription_config_t> subscriptions = tcas.subscriptions;
+    serialize<W>(wm, subscriptions);
 }
 
 INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(table_config_and_shards_t);
@@ -355,10 +377,15 @@ archive_result_t deserialize(
     res = deserialize<W>(s, &publications);
     if (bad(res)) { return res; }
 
+    std::map<uuid_u, ql::subscription_config_t> subscriptions;
+    res = deserialize<W>(s, &subscriptions);
+    if (bad(res)) { return res; }
+
     tcas->config = std::move(config);
     tcas->shard_scheme = std::move(shard_scheme);
     tcas->server_names = std::move(server_names);
     tcas->publications = std::move(publications);
+    tcas->subscriptions = std::move(subscriptions);
 
     return res;
 }
@@ -407,6 +434,13 @@ RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     table_config_and_shards_change_t::publication_drop_t,
     publication_id, name);
+
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
+    table_config_and_shards_change_t::subscription_create_t,
+    table_uuid, config);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    table_config_and_shards_change_t::subscription_drop_t,
+    table_uuid, subscription_id, name);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(database_semilattice_metadata_t, name);
 RDB_IMPL_SEMILATTICE_JOINABLE_1(database_semilattice_metadata_t, name);

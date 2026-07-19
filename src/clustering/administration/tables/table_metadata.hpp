@@ -17,6 +17,7 @@
 #include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/publication.hpp"  // publication_config_t for publications map
+#include "rdb_protocol/subscription.hpp"  // subscription_config_t for subscriptions map
 #include "rpc/connectivity/server_id.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
 #include "rpc/serialize_macros.hpp"
@@ -112,6 +113,12 @@ public:
     Committed through Raft via table_config_and_shards_change_t::publication_create_t /
     publication_drop_t. The map is empty on tables that have no publications. */
     std::map<uuid_u, ql::publication_config_t> publications;
+
+    /* CDC subscriptions attached to this table's publications. CDC-06a: keyed
+    by subscription_id. Committed through Raft via
+    table_config_and_shards_change_t::subscription_create_t / subscription_drop_t.
+    The map is empty on tables that have no subscriptions. */
+    std::map<uuid_u, ql::subscription_config_t> subscriptions;
 };
 
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_t);
@@ -184,6 +191,33 @@ public:
         name_string_t name;
     };
 
+    /* CDC-06a: register a subscription against a publication on this table.
+    Replaces the stub createSubscription backend with a real Raft-propagated
+    metadata change. `table_uuid` identifies the publication's source table
+    (the table whose `table_config_and_shards_t::subscriptions` map will hold
+    the entry); it must match the receiver's table_id, since subscriptions are
+    scoped to the publication's source table. The subscription is inserted
+    keyed by `config.subscription_id`; apply_change returns false if a
+    subscription with that id already exists. CDC-06a only commits the
+    metadata — replication-slot allocation and sink routing are CDC-07+. */
+    class subscription_create_t {
+    public:
+        uuid_u table_uuid;
+        ql::subscription_config_t config;
+    };
+
+    /* CDC-06a counterpart: drop a subscription by id. `name` is echoed in
+    audit logs and is required by the change's wire contract but is not
+    consulted by apply_change — the map is keyed by subscription_id.
+    apply_change returns false if the subscription does not exist (idempotent
+    re-drop is rejected here; callers should re-read config to confirm). */
+    class subscription_drop_t {
+    public:
+        uuid_u table_uuid;
+        uuid_u subscription_id;
+        name_string_t name;
+    };
+
     table_config_and_shards_change_t() { }
 
     explicit table_config_and_shards_change_t(set_table_config_and_shards_t &&_change)
@@ -203,6 +237,10 @@ public:
     explicit table_config_and_shards_change_t(publication_create_t &&_change)
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(publication_drop_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(subscription_create_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(subscription_drop_t &&_change)
         : change(std::move(_change)) { }
 
 
@@ -224,7 +262,9 @@ private:
         write_hook_drop_t,
         set_partition_config_t,
         publication_create_t,
-        publication_drop_t> change;
+        publication_drop_t,
+        subscription_create_t,
+        subscription_drop_t> change;
 
     class apply_change_visitor_t;
 };
@@ -238,5 +278,7 @@ RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_rename_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::set_partition_config_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_drop_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_create_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_drop_t);
 
 #endif // CLUSTERING_ADMINISTRATION_TABLES_TABLE_METADATA_HPP_

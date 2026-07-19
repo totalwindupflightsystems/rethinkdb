@@ -649,6 +649,25 @@ bool artificial_reql_cluster_interface_t::publication_create(
         user_context, db, table, config, interruptor, error_out);
 }
 
+bool artificial_reql_cluster_interface_t::subscription_create(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        const ql::subscription_config_t &config,
+        signal_t *interruptor,
+        admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            strprintf("Database `%s` is special; you can't create subscriptions "
+                      "on the tables in it.",
+                      artificial_reql_cluster_interface_t::database_name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    }
+    return next_or_error(error_out) && m_next->subscription_create(
+        user_context, db, table, config, interruptor, error_out);
+}
+
 bool artificial_reql_cluster_interface_t::publication_list(
         counted_t<const ql::db_t> db,
         const name_string_t &table,
