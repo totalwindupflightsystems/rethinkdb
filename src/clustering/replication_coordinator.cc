@@ -3,7 +3,47 @@
 namespace ql {
 
 replication_coordinator_t::replication_coordinator_t(
-    logical_log_retention_t *r) : retention_(r) {}
+    logical_log_retention_t *r) :
+    cdc_perfmon_collection(),
+    cdc_perfmon_membership(&get_global_perfmon_collection(),
+                           &cdc_perfmon_collection, "cdc"),
+    cdc_records_captured_membership(&cdc_perfmon_collection,
+                                    &cdc_records_captured_total,
+                                    "records_captured_total"),
+    cdc_records_delivered_membership(&cdc_perfmon_collection,
+                                     &cdc_records_delivered_total,
+                                     "records_delivered_total"),
+    cdc_delivery_latency_membership(&cdc_perfmon_collection,
+                                    &cdc_delivery_latency_ms,
+                                    "delivery_latency_ms"),
+    cdc_slot_lag_bytes_membership(&cdc_perfmon_collection,
+                                  &cdc_slot_lag_bytes,
+                                  "slot_lag_bytes"),
+    cdc_slot_lag_lsn_membership(&cdc_perfmon_collection,
+                                &cdc_slot_lag_lsn,
+                                "slot_lag_lsn"),
+    cdc_retained_journal_bytes_membership(&cdc_perfmon_collection,
+                                          &cdc_retained_journal_bytes,
+                                          "retained_journal_bytes"),
+    cdc_sink_retries_membership(&cdc_perfmon_collection,
+                                &cdc_sink_retries_total,
+                                "sink_retries_total"),
+    cdc_sink_dead_letter_membership(&cdc_perfmon_collection,
+                                    &cdc_sink_dead_letter_total,
+                                    "sink_dead_letter_total"),
+    cdc_resync_required_membership(&cdc_perfmon_collection,
+                                   &cdc_resync_required_total,
+                                   "resync_required_total"),
+    cdc_records_captured_total(get_num_threads()),
+    cdc_records_delivered_total(get_num_threads()),
+    cdc_delivery_latency_ms(get_num_threads()),
+    cdc_slot_lag_bytes(get_num_threads()),
+    cdc_slot_lag_lsn(get_num_threads()),
+    cdc_retained_journal_bytes(get_num_threads()),
+    cdc_sink_retries_total(get_num_threads()),
+    cdc_sink_dead_letter_total(get_num_threads()),
+    cdc_resync_required_total(get_num_threads()),
+    retention_(r) {}
 
 void replication_coordinator_t::create_slot(
     const uuid_u &sid, const uuid_u &pid,
@@ -104,6 +144,7 @@ void replication_coordinator_t::evict_slot(
     if (it == slots_.end()) return;
     it->second.state = replication_slot_state_t::EVICTED;
     retention_->release_slot(sid);
+    ++cdc_resync_required_total;
 }
 
 void replication_coordinator_t::configure_backpressure(
@@ -165,11 +206,18 @@ std::optional<slot_lag_t> replication_coordinator_t::get_slot_lag(
         auto hi = journal_hw_.find({pi->second.table_id, kv.first});
         if (hi == journal_hw_.end()) continue;
         if (hi->second.bytes > lag.lag_bytes) lag.lag_bytes = hi->second.bytes;
+        if (hi->second.lsn.value > kv.second.value) {
+            uint64_t lsn_lag = hi->second.lsn.value - kv.second.value;
+            if (lsn_lag > lag.lag_lsn) lag.lag_lsn = lsn_lag;
+        }
     }
     lag.warn_threshold_breached =
         lag.lag_bytes >= pi->second.max_slot_lag_bytes * 80 / 100;
     lag.hard_threshold_breached =
         lag.lag_bytes >= pi->second.max_slot_lag_bytes;
+    // CDC-08f: cumulative lag tracking — counters increase with observed lag
+    cdc_slot_lag_bytes += lag.lag_bytes;
+    cdc_slot_lag_lsn += lag.lag_lsn;
     if (lag.hard_threshold_breached)
         const_cast<replication_coordinator_t*>(this)->pause_slot(sid);
     return lag;
@@ -181,6 +229,30 @@ void replication_coordinator_t::on_shard_routing_change(
     auto [shid, inc, maxr] = ch; (void)maxr;
     for (auto &kv : slots_)
         kv.second.shard_incarnation_by_shard[shid] = inc;
+}
+
+void replication_coordinator_t::record_captured(uint64_t count) {
+    cdc_records_captured_total += count;
+}
+
+void replication_coordinator_t::record_delivered(uint64_t count) {
+    cdc_records_delivered_total += count;
+}
+
+void replication_coordinator_t::record_delivery_latency(uint64_t ms) {
+    cdc_delivery_latency_ms += ms;
+}
+
+void replication_coordinator_t::record_sink_retry() {
+    ++cdc_sink_retries_total;
+}
+
+void replication_coordinator_t::record_sink_dead_letter() {
+    ++cdc_sink_dead_letter_total;
+}
+
+void replication_coordinator_t::record_resync_required() {
+    ++cdc_resync_required_total;
 }
 
 }  // namespace ql

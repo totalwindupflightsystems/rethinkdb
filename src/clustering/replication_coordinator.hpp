@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "containers/uuid.hpp"
+#include "perfmon/perfmon.hpp"
 #include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/publication.hpp"
 #include "serializer/log/lba/logical_log_retention.hpp"
@@ -87,7 +88,38 @@ public:
     void on_shard_routing_change(const uuid_u &pid,
                                  std::tuple<uuid_u, uint64_t, uint64_t> ch);
 
+    // Observability (CDC-08f) — low-cardinality counters, names are the only
+    // labels. Never inject user data / table names / URLs as labels.
+    void record_captured(uint64_t count = 1);
+    void record_delivered(uint64_t count = 1);
+    void record_delivery_latency(uint64_t ms);
+    void record_sink_retry();
+    void record_sink_dead_letter();
+    void record_resync_required();
+
 private:
+    perfmon_collection_t cdc_perfmon_collection;
+    perfmon_membership_t cdc_perfmon_membership;
+    perfmon_membership_t cdc_records_captured_membership;
+    perfmon_membership_t cdc_records_delivered_membership;
+    perfmon_membership_t cdc_delivery_latency_membership;
+    perfmon_membership_t cdc_slot_lag_bytes_membership;
+    perfmon_membership_t cdc_slot_lag_lsn_membership;
+    perfmon_membership_t cdc_retained_journal_bytes_membership;
+    perfmon_membership_t cdc_sink_retries_membership;
+    perfmon_membership_t cdc_sink_dead_letter_membership;
+    perfmon_membership_t cdc_resync_required_membership;
+
+    perfmon_counter_t cdc_records_captured_total;
+    perfmon_counter_t cdc_records_delivered_total;
+    perfmon_counter_t cdc_delivery_latency_ms;
+    mutable perfmon_counter_t cdc_slot_lag_bytes;
+    mutable perfmon_counter_t cdc_slot_lag_lsn;
+    perfmon_counter_t cdc_retained_journal_bytes;
+    perfmon_counter_t cdc_sink_retries_total;
+    perfmon_counter_t cdc_sink_dead_letter_total;
+    perfmon_counter_t cdc_resync_required_total;
+
     logical_log_retention_t *retention_;
     mutable std::mutex mutex_;
     std::map<uuid_u, replication_slot_info_t> slots_;
