@@ -33,7 +33,7 @@ pipeline:
 
         - id: build
           type: script
-          run: "make -j$(nproc)"
+          run: "make -j4"
           on_fail: block
 
         - id: tests
@@ -47,6 +47,7 @@ pipeline:
       on: [pre-eval]
       condition: "true"
       max_iterations: 50
+      max_input_tokens: "1M"
       tools: [read_file, run_command, search_pattern, read_diff, sandbox]
 
     # Stage 3: C++ deep static analysis (post-commit, informational)
@@ -64,7 +65,7 @@ pipeline:
               --suppress=noExplicitConstructor \
               --inline-suppr \
               --error-exitcode=0 \
-              -j$(nproc) \
+              -j4 \\
               src/ 2>&1 | head -100
             echo "cppcheck done (informational only)"
           on_fail: continue
@@ -78,12 +79,12 @@ pipeline:
               echo "clang-tidy not found — skipping"
             elif [ -f compile_commands.json ]; then
               find src/ -name '*.cc' | head -50 | \
-                xargs -P$(nproc) -I{} $CLANG_TIDY {} \
+                xargs -P4 -I{} $CLANG_TIDY {} \\
                   -p . \
                   -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' \
                   -quiet 2>&1 | head -100
             else
-              echo "No compile_commands.json — install bear and run: bear -- make -j\$(nproc)"
+              echo "No compile_commands.json — install bear and run: bear -- make -j4"
             fi
             echo "clang-tidy done (informational only)"
           on_fail: continue
