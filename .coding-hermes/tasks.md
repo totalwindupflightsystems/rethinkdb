@@ -267,7 +267,7 @@
       - subscriptionStatus: resolve by name, return full config datum
       - subscriptionDrop: resolve→drop lifecycle via Raft metadata
       - Pattern: followed CDC-05b commits `e77c21e90d` + `14ee0d93ec` (9 files, +445/-33)
-    - [ ] **CDC-06c: State machine + snapshot orchestration**
+    - [x] **CDC-06c: State machine + snapshot orchestration** — commit `3593a61022`
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
     - [ ] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
