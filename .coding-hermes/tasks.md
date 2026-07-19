@@ -42,7 +42,7 @@
     - `fts_tokenizer_t` class: text → lowercased tokens with Porter stemming (Porter 1980)
     - Configurable: min_token_length (default 2), stop_words (SMART list), language
     - re2 regex tokenization (`\w+`), stop-word filter, self-contained Porter stemmer (steps 1a-5)
-    - Builds clean with `make -j$(nproc)`
+    - Builds clean with `make -j4`
   - [x] **FTS-2: GIN-type sindex support**
   - [x] Add `sindex_fts_bool_t` enum alongside `sindex_multi_bool_t` / `sindex_geo_bool_t` (committed)
   - [x] Add `fts` field to `sindex_config_t` and `sindex_disk_info_t` (committed)
@@ -270,7 +270,7 @@
     - [x] **CDC-06c: State machine + snapshot orchestration** — commit `3593a61022`
     - State machine: CREATING → CONNECTING → SNAPSHOTTING → CATCHING_UP → STREAMING (spec §3.3)
     - Snapshot-orchestration: consistent read at snapshot barriers, partitioned by source shard (spec §4.6)
-    - [ ] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc`
+    - [x] **CDC-06d: Replication RPC mailbox service** — `src/clustering/replication_mailbox.hpp/cc` (commit `429ce6a380`)
     - Dedicated TLS-authenticated mailbox service, framed protocol, version negotiation (spec §5.1–5.3)
     - [ ] **CDC-06e: Apply batch + reconnect/resync**
     - Apply batch: write target changes + ledger entries in one transaction; duplicate suppression via event_id (spec §3.7)
