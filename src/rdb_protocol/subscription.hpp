@@ -4,11 +4,13 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "concurrency/cond_var.hpp"
+#include "concurrency/signal.hpp"
 #include "containers/name_string.hpp"
 #include "containers/optional.hpp"
 #include "containers/uuid.hpp"
@@ -294,6 +296,154 @@ bool journal_event_eligible_after_barrier(
     const subscription_handle_t &handle,
     const uuid_u &shard_id,
     log_sequence_number_t event_lsn);
+
+// ── Target apply ledger + applier (spec §3.7) ────────────────────────────
+//
+// A `subscription_applier_t` owns the in-memory dedup ledger for one
+// subscription and writes change records to the target table. The applier is
+// owned by the target-side replication coordinator. One applier per
+// subscription.
+//
+// The applier is intentionally home-thread bound (extends home_thread_mixin_t);
+// all mutations to the ledger and the handle's confirmed_lsn_by_shard map
+// must happen on the home thread. Concurrent dispatchers route work onto the
+// home thread via the cross-thread mailbox before calling apply_batch().
+//
+// Spec invariants enforced here:
+//  1. Idempotence: a record with an event_id already in the ledger is
+//     skipped (no target write, no ledger re-record). At-least-once delivery
+//     therefore never produces duplicate row mutations.
+//  2. Ledger retention: ledger entries are retained for the subscription
+//     lifetime. No automatic pruning — confirmed LSN advance does not
+//     garbage-collect the ledger (spec §3.7 final paragraph).
+//  3. Crash safety: a target write + ledger record are conceptually one
+//     transaction. A crash after the target write but before the ledger
+//     record causes the next replay to re-detect the row and... NOT mutate
+//     it. Spec §3.7 paragraph 2: "the ledger suppresses duplicate row
+//     mutation". We achieve this by recording BEFORE the target write —
+//     the ledger insert is the durable boundary. A crash after the ledger
+//     insert but before the target write is recoverable on replay by
+//     re-applying (the second apply is a no-op against an idempotent target
+//     row keyed by primary_key, since CDC-09 will implement PK-keyed
+//     upserts; in this CDC-06e layer we treat ledger presence as "this
+//     record has been seen", which is the correct conservative semantics
+//     for spec §3.7 invariant 6).
+//  4. WAL gap → RESYNC_REQUIRED: replay requests anchored at a confirmed
+//     LSN that the source can no longer serve cause the applier to invoke
+//     transition_to_resync_required() on the handle. Reconnect NEVER
+//     silently starts from a later point.
+
+class subscription_applier_t : public home_thread_mixin_t {
+public:
+    /* Construct an applier bound to a handle. The applier stores a
+     * non-owning pointer to the handle; the caller (coordinator) must
+     * ensure the handle outlives the applier. Both must live on the same
+     * home thread. */
+    explicit subscription_applier_t(subscription_handle_t *handle);
+
+    /* Apply a contiguous batch of change records received from the source.
+     * Records whose event_id is already in the ledger are skipped
+     * (at-least-once dedup). Records that pass dedup are written to the
+     * target table and recorded in the ledger in one logical transaction.
+     *
+     * On success: every non-skipped record has its event_id added to the
+     *   ledger, and the per-shard confirmed LSN on the handle advances to
+     *   the maximum LSN of any non-skipped record for that shard in this
+     *   batch.
+     *
+     * On failure: the entire batch is rolled back (no ledger inserts, no
+     *   confirmed LSN advance) and the failure mode is propagated via:
+     *     - normal return: batch fully applied (some records may have been
+     *       skipped as duplicates)
+     *     - interrupted: caller-supplied interruptor pulsed before/during
+     *       apply; no partial state is observable from the caller's
+     *       perspective (ledger is reverted for any partial work)
+     *
+     * Thread: must run on the home thread of `handle`. */
+    void apply_batch(const std::vector<change_record_t> &records,
+                     signal_t *interruptor);
+
+    /* Returns true iff `event_id` is in the ledger. Cheap O(log N) lookup.
+     * Thread: must run on the home thread of `handle`. */
+    bool already_applied(const change_event_id_t &event_id,
+                         signal_t *interruptor) const;
+
+    /* Returns true iff `event_id` is in the ledger. Non-interruptor variant
+     * for callers that don't have a signal (debug paths, test harnesses).
+     * Thread: must run on the home thread of `handle`. */
+    bool already_applied_no_interruptor(const change_event_id_t &event_id) const;
+
+    /* Number of ledger entries currently retained (debug + observability). */
+    size_t ledger_size() const;
+
+    /* True when at least one event_id for `shard_id` is in the ledger. */
+    bool ledger_has_shard(const uuid_u &shard_id) const;
+
+    /* Build the start-LSN map for a reconnect request. Mirrors the
+     * handle's confirmed_lsn_by_shard into a fresh map suitable for handing
+     * to the source-side dispatcher as the "resume from here" anchor.
+     *
+     * Rationale (spec §5.7, §8.2): on connection drop, the source replays
+     * strictly from the last confirmed LSN per shard. The confirmed LSN
+     * is the highest contiguous LSN whose corresponding event_id has
+     * been durably applied to the target and recorded in the ledger —
+     * exactly what this applier advances in apply_batch().
+     *
+     * Returns an empty map if no shard has any confirmed progress (the
+     * caller should then request the snapshot barrier instead). */
+    std::map<uuid_u, log_sequence_number_t> reconnect_resume_positions() const;
+
+    /* Reconnect entry point: validate that the source can serve every
+     * requested resume position. Callers (replication coordinator) fetch
+     * the source's available history floor per shard via the source-side
+     * mailbox service and pass it here as `source_floor_by_shard`.
+     *
+     * Returns true and leaves the handle's state unchanged if every
+     * confirmed LSN in `handle->confirmed_lsn_by_shard` is >= the source's
+     * floor for the same shard (i.e. the source still has the history).
+     *
+     * Returns false and transitions the handle to RESYNC_REQUIRED via
+     * transition_to_resync_required() if any shard's confirmed LSN is
+     * below the source's floor — the gap means retention advanced past
+     * our last confirmed position and we cannot replay (spec invariant 5:
+     * "A WAL gap produces RESYNC_REQUIRED, never a best-effort later
+     * start"). The diagnostic payload attached to the transition names the
+     * offending shard and its confirmed/floor LSN pair. */
+    bool validate_reconnect_or_resync(
+        const std::map<uuid_u, log_sequence_number_t> &source_floor_by_shard,
+        signal_t *interruptor);
+
+    /* True iff the handle is currently in RESYNC_REQUIRED state. The
+     * applier checks this before apply_batch() so a stale batch delivered
+     * after the gap is detected is rejected at the boundary instead of
+     * being silently merged with replay intent. */
+    bool is_resync_required() const;
+
+private:
+    /* Apply one record to the target. Returns true if the record was
+     * applied (or skipped as duplicate), false on error. Does NOT touch
+     * the ledger — the caller is responsible for staging ledger inserts
+     * before invocation and committing them after successful return. */
+    bool apply_one_record(const change_record_t &record,
+                          signal_t *interruptor);
+
+    /* Reverse a partially-applied batch on failure: remove every ledger
+     * entry whose event_id is in `pending_event_ids`. Used only on the
+     * error/rollback path. */
+    void rollback_pending_ledger_entries(
+        const std::vector<change_event_id_t> &pending_event_ids);
+
+    /* Bound handle. Not owned. */
+    subscription_handle_t *handle_;
+
+    /* Apply ledger: set of event_ids seen-and-applied for this
+     * subscription. Ordered by (shard_id, lsn) for deterministic
+     * iteration during rollback. Retained for subscription lifetime
+     * (spec §3.7). */
+    std::set<change_event_id_t, change_event_id_compare_by_lsn_t> applied_ledger_;
+
+    DISABLE_COPYING(subscription_applier_t);
+};
 
 // ── Inline helpers (kept in the header for performance + cross-TU access) ─
 

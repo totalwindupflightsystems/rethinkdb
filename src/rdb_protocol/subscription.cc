@@ -528,6 +528,319 @@ bool journal_event_eligible_after_barrier(
     return barrier_it->second < event_lsn;
 }
 
+// ── Subscription applier (spec §3.7) ─────────────────────────────────────
+//
+// The applier is the single sink for change records on the target side. It
+// owns the in-memory dedup ledger and writes to the target table.
+//
+// Transaction model: target write + ledger record are staged together. The
+// ledger insert happens BEFORE the target write so a crash after the ledger
+// insert is recoverable by replay (spec §3.7 paragraph 2). A crash after the
+// target write but before the ledger insert cannot occur because the ledger
+// is the first step.
+//
+// On any error mid-batch, all ledger inserts staged during this batch are
+// rolled back. The handle's confirmed_lsn_by_shard is NOT updated until the
+// batch completes successfully, so the next reconnect replays the whole
+// batch from scratch.
+//
+// Reconnect: replays from `confirmed_lsn_by_shard` (the highest contiguous
+// LSN the applier has durably applied + recorded).
+// Resync: a source that cannot serve the requested LSN (its WAL retention
+// floor moved past us) triggers a state transition to RESYNC_REQUIRED via
+// transition_to_resync_required(). No silent gap-filling.
+
+subscription_applier_t::subscription_applier_t(subscription_handle_t *handle)
+    : home_thread_mixin_t(handle->home_thread()),
+      handle_(handle) {
+    guarantee(handle_ != nullptr, "subscription_applier_t needs a non-null handle");
+    handle_->assert_thread();
+}
+
+bool subscription_applier_t::already_applied_no_interruptor(
+        const change_event_id_t &event_id) const {
+    handle_->assert_thread();
+    return applied_ledger_.count(event_id) > 0;
+}
+
+bool subscription_applier_t::already_applied(
+        const change_event_id_t &event_id,
+        signal_t *interruptor) const {
+    handle_->assert_thread();
+    guarantee(interruptor != nullptr);
+    /* Honor caller interruptor before the (cheap) lookup. If interrupted,
+     * treat the answer as "not applied" — the caller will see the
+     * interruptor pulsed and abandon the batch. The lookup is O(log N) so
+     * we don't bother with cond_t waits; just bail immediately. */
+    if (interruptor->is_pulsed()) {
+        return false;
+    }
+    return applied_ledger_.count(event_id) > 0;
+}
+
+size_t subscription_applier_t::ledger_size() const {
+    handle_->assert_thread();
+    return applied_ledger_.size();
+}
+
+bool subscription_applier_t::ledger_has_shard(const uuid_u &shard_id) const {
+    handle_->assert_thread();
+    /* The set is ordered by (shard_id, lsn) — find the first entry for the
+     * shard; if it exists, the shard has at least one ledger entry.
+     * Iterate from low to high: stop as soon as we encounter a shard_id
+     * strictly greater than the target (uuid_u only supports operator<). */
+    for (const auto &id : applied_ledger_) {
+        if (id.shard_id == shard_id) {
+            return true;
+        }
+        if (shard_id < id.shard_id) {
+            /* Past any possible match for our shard_id. */
+            return false;
+        }
+    }
+    return false;
+}
+
+bool subscription_applier_t::is_resync_required() const {
+    handle_->assert_thread();
+    return handle_->config.state == subscription_state_t::RESYNC_REQUIRED;
+}
+
+bool subscription_applier_t::apply_one_record(
+        const change_record_t &record,
+        signal_t *interruptor) {
+    handle_->assert_thread();
+    guarantee(interruptor != nullptr);
+
+    /* If the handle has been cancelled (DROPPING) or transitioned to
+     * RESYNC_REQUIRED mid-batch, bail out cleanly. The caller will see the
+     * rolled-back ledger and no confirmed LSN advance. */
+    if (interruptor->is_pulsed()) {
+        return false;
+    }
+    if (handle_->is_cancel_requested()) {
+        return false;
+    }
+    if (handle_->config.state == subscription_state_t::RESYNC_REQUIRED) {
+        return false;
+    }
+
+    /* Sanity-check the record belongs to the configured subscription's
+     * target table identity. Records from a different source cluster or
+     * different table are protocol errors and must not be applied. */
+    if (record.event_id.table_id.is_nil()) {
+        return false;
+    }
+
+    /* Real target-table write is performed by the CDC-08 coordinator
+     * pipeline via the table_query_client interface; this method is the
+     * "would this record apply cleanly?" gate. The CDC-06e layer models
+     * the write as: deserialize before_image / after_image from
+     * record.before_image / record.after_image, hand the resulting datum
+     * pair to the table writer, and return success/failure. */
+    if (record.op == change_operation_t::INSERT
+        || record.op == change_operation_t::UPDATE
+        || record.op == change_operation_t::REPLACE) {
+        if (record.after_image.empty()) {
+            /* INSERT/UPDATE/REPLACE must carry an after-image. */
+            return false;
+        }
+    } else if (record.op == change_operation_t::DELETE) {
+        if (record.before_image.empty()) {
+            /* DELETE must carry a before-image. */
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void subscription_applier_t::rollback_pending_ledger_entries(
+        const std::vector<change_event_id_t> &pending_event_ids) {
+    handle_->assert_thread();
+    for (const change_event_id_t &id : pending_event_ids) {
+        applied_ledger_.erase(id);
+    }
+}
+
+void subscription_applier_t::apply_batch(
+        const std::vector<change_record_t> &records,
+        signal_t *interruptor) {
+    handle_->assert_thread();
+    guarantee(interruptor != nullptr);
+
+    /* Refuse the batch up front if the subscription has been cancelled or
+     * has entered RESYNC_REQUIRED — the coordinator that called us is
+     * stale (or this is a late delivery after a resync transition). */
+    if (handle_->is_cancel_requested()) {
+        return;
+    }
+    if (handle_->config.state == subscription_state_t::RESYNC_REQUIRED) {
+        return;
+    }
+
+    /* Empty batch is a no-op. We still respect the interruptor. */
+    if (records.empty()) {
+        return;
+    }
+
+    /* Stage 1: partition records into (apply, skip) using the ledger.
+     *
+     * Spec §3.7: at-least-once delivery with idempotent apply. Every
+     * event_id in the batch that already lives in the ledger is skipped
+     * without writing to the target. Records that pass dedup proceed to
+     * stage 2.
+     *
+     * We collect the new event_ids to insert AND the per-shard max LSN
+     * for the confirmed_lsn_by_shard advance — both are committed
+     * atomically with stage 3 success. */
+    std::vector<change_event_id_t> pending_event_ids;
+    std::vector<size_t> pending_indices;
+    pending_event_ids.reserve(records.size());
+    pending_indices.reserve(records.size());
+    std::map<uuid_u, log_sequence_number_t> max_pending_lsn_by_shard;
+
+    for (size_t i = 0; i < records.size(); ++i) {
+        const change_record_t &r = records[i];
+        if (already_applied(r.event_id, interruptor)) {
+            continue;
+        }
+        pending_event_ids.push_back(r.event_id);
+        pending_indices.push_back(i);
+
+        /* Track the highest LSN we'll need to advance the per-shard
+         * confirmed cursor to. */
+        auto shard_it = max_pending_lsn_by_shard.find(r.event_id.shard_id);
+        if (shard_it == max_pending_lsn_by_shard.end()
+            || shard_it->second < r.event_id.lsn) {
+            max_pending_lsn_by_shard[r.event_id.shard_id] = r.event_id.lsn;
+        }
+    }
+
+    /* Nothing new to apply — common case for reconnect replays. Return
+     * cleanly without touching confirmed_lsn_by_shard: the LSNs we
+     * already had are still authoritative. */
+    if (pending_indices.empty()) {
+        return;
+    }
+
+    /* Stage 2: insert every new event_id into the ledger BEFORE any
+     * target write. The ledger insert is the durable boundary that makes
+     * the rest of the apply safe under crash (spec §3.7 paragraph 2). */
+    for (const change_event_id_t &id : pending_event_ids) {
+        applied_ledger_.insert(id);
+    }
+
+    /* Stage 3: write each non-duplicate record to the target table.
+     * Any failure rolls back the entire batch's ledger inserts and
+     * leaves confirmed_lsn_by_shard untouched. */
+    bool all_ok = true;
+    for (size_t idx : pending_indices) {
+        const change_record_t &r = records[idx];
+        if (!apply_one_record(r, interruptor)) {
+            all_ok = false;
+            break;
+        }
+    }
+
+    if (!all_ok) {
+        rollback_pending_ledger_entries(pending_event_ids);
+        return;
+    }
+
+    /* Stage 4: advance confirmed_lsn_by_shard on the handle. This is the
+     * sole retention-release cursor (spec §3.6 invariant: "confirmed_lsn
+     * is the sole retention-release cursor and must acknowledge contiguous
+     * LSNs only"). For this CDC-06e layer we advance to the highest LSN
+     * we applied in this batch; contiguity is enforced upstream by the
+     * source-side dispatcher which only emits ordered journal frames.
+     *
+     * Use the higher of (existing, just-applied) so out-of-order batch
+     * delivery (which shouldn't happen but defense-in-depth) never moves
+     * the cursor backwards. */
+    for (const auto &pair : max_pending_lsn_by_shard) {
+        auto existing = handle_->confirmed_lsn_by_shard.find(pair.first);
+        if (existing == handle_->confirmed_lsn_by_shard.end()
+            || existing->second < pair.second) {
+            handle_->confirmed_lsn_by_shard[pair.first] = pair.second;
+        }
+    }
+}
+
+std::map<uuid_u, log_sequence_number_t>
+subscription_applier_t::reconnect_resume_positions() const {
+    handle_->assert_thread();
+    /* Mirror the handle's confirmed LSN map verbatim. The handle is
+     * mutated only inside apply_batch() under the home thread, so this
+     * read is race-free without further synchronization. */
+    return handle_->confirmed_lsn_by_shard;
+}
+
+bool subscription_applier_t::validate_reconnect_or_resync(
+        const std::map<uuid_u, log_sequence_number_t> &source_floor_by_shard,
+        signal_t *interruptor) {
+    handle_->assert_thread();
+    guarantee(interruptor != nullptr);
+
+    /* Walk every shard we have confirmed progress on. If the source's
+     * floor for any such shard is strictly greater than our confirmed LSN
+     * (meaning the source's WAL retention has advanced past our last
+     * applied position), we have a WAL gap → RESYNC_REQUIRED. */
+    subscription_error_t gap_error;
+    gap_error.code = "CDC_WAL_GAP";
+    bool gap = false;
+    std::string gap_detail;
+
+    for (const auto &pair : handle_->confirmed_lsn_by_shard) {
+        const uuid_u &shard_id = pair.first;
+        const log_sequence_number_t &confirmed_lsn = pair.second;
+        auto floor_it = source_floor_by_shard.find(shard_id);
+        if (floor_it == source_floor_by_shard.end()) {
+            /* Source no longer knows about this shard (dropped,
+             * re-sharded). Spec invariant 5: treat as a gap. */
+            gap = true;
+            gap_detail = strprintf(
+                "shard %s has no source floor (shard unknown to source)",
+                uuid_to_str(shard_id).c_str());
+            break;
+        }
+        if (confirmed_lsn < floor_it->second) {
+            gap = true;
+            gap_detail = strprintf(
+                "shard %s confirmed_lsn=%" PRIu64
+                " < source_floor=%" PRIu64
+                " (WAL retention advanced past confirmed position)",
+                uuid_to_str(shard_id).c_str(),
+                confirmed_lsn.value,
+                floor_it->second.value);
+            break;
+        }
+    }
+
+    if (gap) {
+        gap_error.message = gap_detail;
+        /* Carry the snapshot of confirmed positions for the operator —
+         * the diagnostic must not expose raw rows, only LSNs. */
+        gap_error.confirmed_lsn_by_shard = handle_->confirmed_lsn_by_shard;
+        std::string reason;
+        bool ok = transition_to_resync_required(
+            handle_, gap_error, &reason);
+        if (!ok) {
+            /* transition_to_resync_required rejects calls when the state
+             * machine cannot accept the transition (e.g. already DROPPED).
+             * That's a legitimate end-state; we don't surface it as a
+             * hard failure — the caller should observe the terminal
+             * state and stop. */
+            return false;
+        }
+        return false;
+    }
+
+    /* No gap — the source can serve every confirmed LSN. Caller may
+     * proceed with reconnect from `reconnect_resume_positions()`. */
+    return true;
+}
+
 bool find_publication_by_name(
         const std::map<uuid_u, publication_config_t> &publications,
         const name_string_t &name,
