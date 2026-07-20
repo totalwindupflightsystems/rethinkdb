@@ -242,4 +242,27 @@
 
 Next: Bane review of CDC-09 decomposition. Idle tick #1 (was never-done tick — productive: CI fix committed).
 
+## Discovery Sweep Findings (2026-07-20 tick 6 — 11-point audit, idle tick #2)
+
+- [x] **CI — Manually triggered workflow for cpplint-fix HEAD (09623fd46)** — CI now in_progress. Fork push events still won't auto-trigger (GitHub Actions disabled on fork).
+
+**Audit summary (11/11 checks):**
+| Check | Finding |
+|-------|---------|
+| 1. SPEC | 10 Phase 3 specs present. CDC-09/10 still open. No new gaps |
+| 2. DOC | All key docs present. AGENTS.md at v2.5 |
+| 3. TEST | 62 dirs with zero tests — pre-existing upstream, documented ticks 4-5. 41 unit test files + 248 integration scripts. No new untested code |
+| 4. DEPS | OpenSSL 3.0.17, QuickJS 0.15.1 (CVE-2023-48184 fixed). re2 2015-11-01 + gtest 1.8.1 pre-existing upstream. No new CVEs |
+| 5. PITFALL | 285 TODO/FIXME — all pre-existing upstream. Gitleaks clean (no *.md/specs/docs in allowlist). 0 untracked files |
+| 6. PERF | 4 benchmark functions (3 vector + 1 coroutine). PERF task BLOCKED on CDC-09 — already on board |
+| 7. ENDPOINT | Binary: rethinkdb 2.4.5-221-g5d0389 (GCC 15.2.0). Links and runs |
+| 8. CI | **ACTION**: Manually triggered workflow for current HEAD. Prior run (179d4b492) was pre-cpplint-fix failure. Fork auto-trigger still disabled |
+| 9. DUCKBRAIN | 18 entries in rethinkdb namespace. Sync current |
+| 10. QUALITY | 0 untracked files. .gitignore covers build artifacts |
+| 11. MIDDLE-OUT | Binary links. CDC-08 wired (42/42 tests). CDC-09 blocked on Bane review |
+
+**Idle tick #2 — CDC-09 remains blocked on Bane review. All other tasks depend on CDC-09 or need specs first. No new tasks created.**
+
+Next: Bane review of CDC-09 decomposition unblocks Phase 3 pipeline.
+
 ## [ ] NEVER-DONE — Run 11-point audit next tick
