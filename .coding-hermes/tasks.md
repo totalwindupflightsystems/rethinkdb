@@ -211,6 +211,35 @@
 - [x] **MIDDLE-OUT — Binary builds clean (make -j4). CDC-08 coordinator wired, tested (42/42 CDC tests pass).**
 - [x] **ENDPOINT — rethinkdb binary links and builds. CDC ReQL surface has 12 TermType entries. No HTTP endpoints to verify (database, not web service).**
 
+## Discovery Sweep Findings (2026-07-20 tick 5 — 11-point audit)
+
+- [x] **CI — cpplint preflight: 20 errors blocking all CI jobs** — FIXED `cff5548556`
+  - 20 cpplint errors in 11 files from CDC/partition/vector code
+  - Missing newlines at EOF (4 files), bad header guards (2), namespace comment (1)
+  - `unsigned long long`/`long long` → `uint64_t`/`int64_t` (10 lines in cdc_sink.cc, logical_journal.cc)
+  - `using namespace` → `using`-declarations (partition_config.cc)
+  - `ASSERT_TRUE(a==b)` → `ASSERT_EQ`, `ASSERT_TRUE(a>=b)` → `ASSERT_GE` (2 test files)
+  - cpplint: 0 errors. Build: clean. 89/89 CDC+vector+partition tests pass
+- [x] **CI — Single CI run on SHA 179d4b492: preflight cpplint FAIL, all 9 subsequent jobs skipped**
+  - Root cause fixed. Fork push events still won't auto-trigger (GitHub Actions disabled on fork)
+  - Need to re-trigger CI after this push to verify all jobs go green
+- [x] **BUILD — Binary links and runs: rethinkdb 2.4.5-221-g5d0389, no "dirty" suffix**
+
+**Audit summary (11/11 checks):**
+| Check | Finding |
+|-------|---------|
+| 1. SPEC | 10 Phase 3 specs present. CDC-09/10 still open. No new gaps |
+| 2. DOC | All key docs present. AGENTS.md updated to v2.5 |
+| 3. TEST | 63 directories with zero tests — pre-existing upstream, already documented |
+| 4. DEPS | OpenSSL 3.0.17, QuickJS 0.15.1, gtest 1.8.1. re2 old but pre-existing upstream |
+| 5. PITFALL | 275 TODO/FIXME — all pre-existing upstream. Gitleaks allowlist clean |
+| 6. PERF | 4 benchmark functions in 2 test files. PERF task BLOCKED on CDC-09 |
+| 7. BUILD | Binary builds and links. --version works |
+| 8. CI | **FIXED this tick**: cpplint errors resolved. Fork push events still need manual trigger |
+| 9. DUCKBRAIN | 17 memories in rethinkdb namespace. Sync current |
+| 10. QUALITY | No untracked files. .gitignore covers build artifacts |
+| 11. MIDDLE-OUT | Binary links. CDC-09 conflict_resolver not yet created. CDC-08 wired |
+
+Next: Bane review of CDC-09 decomposition. Idle tick #1 (was never-done tick — productive: CI fix committed).
+
 ## [ ] NEVER-DONE — Run 11-point audit next tick
-- **Priority:** high
-- **Trigger:** Board needs self-improvement scan. Foreman must load `coding-hermes-never-done` skill and run full 11-point audit on next tick (spec alignment, doc coverage, test gaps, deps, pitfalls, perf, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring).
