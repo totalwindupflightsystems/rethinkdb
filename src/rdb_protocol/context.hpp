@@ -44,7 +44,7 @@ class streamspec_t;
 }
 struct publication_config_t;
 struct subscription_config_t;
-}
+}  // namespace ql
 
 struct admin_err_t;
 

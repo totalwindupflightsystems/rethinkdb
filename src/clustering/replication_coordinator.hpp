@@ -137,4 +137,4 @@ private:
 
 }  // namespace ql
 
-#endif
+#endif  // CLUSTERING_REPLICATION_COORDINATOR_HPP_
