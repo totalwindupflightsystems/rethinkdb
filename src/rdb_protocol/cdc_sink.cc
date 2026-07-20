@@ -132,8 +132,8 @@ std::string build_manifest(const std::string &object_path,
         "object=%s shard=%s first_lsn=%llu last_lsn=%llu count=%zu",
         object_path.c_str(),
         uuid_to_str(first.shard_id).c_str(),
-        static_cast<unsigned long long>(first.lsn.value),
-        static_cast<unsigned long long>(last.lsn.value),
+        static_cast<uint64_t>(first.lsn.value),
+        static_cast<uint64_t>(last.lsn.value),
         batch.size());
 }
 
@@ -167,7 +167,7 @@ bool validate_batching_config(const cdc_batching_config_t &cfg,
         if (error_out != nullptr) {
             *error_out = strprintf(
                 "max_records out of range [1, 10000]: %llu",
-                static_cast<unsigned long long>(cfg.max_records));
+                static_cast<uint64_t>(cfg.max_records));
         }
         return false;
     }
@@ -175,7 +175,7 @@ bool validate_batching_config(const cdc_batching_config_t &cfg,
         if (error_out != nullptr) {
             *error_out = strprintf(
                 "max_in_flight_batches out of range [1, 64]: %llu",
-                static_cast<unsigned long long>(cfg.max_in_flight_batches));
+                static_cast<uint64_t>(cfg.max_in_flight_batches));
         }
         return false;
     }
@@ -183,7 +183,7 @@ bool validate_batching_config(const cdc_batching_config_t &cfg,
         if (error_out != nullptr) {
             *error_out = strprintf(
                 "flush_interval_ms out of range [1, 60000]: %llu",
-                static_cast<unsigned long long>(cfg.flush_interval_ms));
+                static_cast<uint64_t>(cfg.flush_interval_ms));
         }
         return false;
     }
@@ -193,7 +193,7 @@ bool validate_batching_config(const cdc_batching_config_t &cfg,
         if (error_out != nullptr) {
             *error_out = strprintf(
                 "max_buffer_bytes out of range [1MiB, 1GiB]: %llu",
-                static_cast<unsigned long long>(cfg.max_buffer_bytes));
+                static_cast<uint64_t>(cfg.max_buffer_bytes));
         }
         return false;
     }
@@ -262,7 +262,7 @@ std::string format_event_id(const change_event_id_t &id) {
                      uuid_to_str(id.source_cluster_id).c_str(),
                      uuid_to_str(id.table_id).c_str(),
                      uuid_to_str(id.shard_id).c_str(),
-                     static_cast<unsigned long long>(id.lsn.value));
+                     static_cast<uint64_t>(id.lsn.value));
 }
 
 void parse_kafka_connection_params(const std::string &connection_string,
@@ -604,7 +604,7 @@ sink_delivery_result_t file_sink_driver_t::deliver(
         "%s/batch-%s-%llu.cdc",
         path_.c_str(),
         uuid_to_str(shard).c_str(),
-        static_cast<unsigned long long>(max_lsn.value));
+        static_cast<uint64_t>(max_lsn.value));
     (void)envelope;
 
     if (inject_finalize_fail_) {
@@ -698,7 +698,7 @@ sink_delivery_result_t s3_sink_driver_t::deliver(
         bucket_.c_str(),
         normalized_prefix.c_str(),
         uuid_to_str(shard).c_str(),
-        static_cast<unsigned long long>(max_lsn.value));
+        static_cast<uint64_t>(max_lsn.value));
     (void)envelope;
 
     if (inject_finalize_fail_) {

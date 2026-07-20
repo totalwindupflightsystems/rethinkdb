@@ -153,7 +153,11 @@ bool partition_config_t::is_partitioned() const {
     return type != partition_type_t::NONE;
 }
 
-using namespace partition_error_code;
+using partition_error_code::config_invalid;
+using partition_error_code::hash_invalid;
+using partition_error_code::list_invalid;
+using partition_error_code::range_invalid;
+using partition_error_code::raise_logic;
 
 void partition_config_t::validate_or_throw() const {
     if (type == partition_type_t::NONE) {

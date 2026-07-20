@@ -143,7 +143,7 @@ TEST(PartitionReplayTest, IdempotentReplayDelete) {
         &rows, make_mod("k", 1.0, 1)));
     EXPECT_TRUE(partition_replay_t::apply_modification_idempotent(
         &rows, make_delete_mod("k", 2)));
-    ASSERT_TRUE(rows.count(store_key_t("k")) == 1);
+    ASSERT_EQ(1, rows.count(store_key_t("k")));
     EXPECT_EQ(ql::datum_t::R_NULL, rows[store_key_t("k")].value.get_type());
     /* Older write after delete is skipped. */
     EXPECT_FALSE(partition_replay_t::apply_modification_idempotent(

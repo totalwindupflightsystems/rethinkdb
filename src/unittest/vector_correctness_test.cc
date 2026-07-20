@@ -287,7 +287,7 @@ TEST(VectorCorrectnessTest, IVFFlatRecallOnSmallDataset) {
         auto exact = brute_force_knn(dataset, query, k);
         ASSERT_EQ(k, exact.size());
         auto approx = ivf.search_knn(query.data(), static_cast<int>(k), 3);
-        ASSERT_TRUE(approx.size() >= 1);
+        ASSERT_GE(approx.size(), 1);
         total_recall += recall_at_k(approx, exact);
     }
     double avg_recall = total_recall / static_cast<double>(kQueries);

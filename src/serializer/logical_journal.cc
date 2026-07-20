@@ -314,7 +314,7 @@ void logical_journal_t::create(UNUSED signal_t *interruptor) {
         if (index_exists) {
             if (st.st_size > 0 && st.st_size < static_cast<off_t>(INDEX_HEADER_SIZE)) {
                 crash("logical_journal_t::create: index file %s is truncated (size=%lld)",
-                      idx_path_.c_str(), static_cast<long long>(st.st_size));
+                      idx_path_.c_str(), static_cast<int64_t>(st.st_size));
             }
         } else {
             int err = 0;

@@ -35,4 +35,4 @@ private:
 };
 
 }  // namespace ql
-#endif
+#endif  // SERIALIZER_LOG_LBA_LOGICAL_LOG_RETENTION_HPP_
