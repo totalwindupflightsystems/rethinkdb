@@ -265,4 +265,29 @@ Next: Bane review of CDC-09 decomposition. Idle tick #1 (was never-done tick —
 
 Next: Bane review of CDC-09 decomposition unblocks Phase 3 pipeline.
 
+## Discovery Sweep Findings (2026-07-20 tick 7 — 11-point audit, idle tick #3)
+
+- [x] **CI — Workflow still queued 38+ minutes after manual trigger (ID 29787738248)** — fork Actions likely rate-limited or disabled for push events. No change from prior ticks.
+- [x] **BUILD — Binary: rethinkdb 2.4.5-221-g5d0389 (GCC 15.2.0). Links and runs. Current with last source change (Jul 19).** — Full rebuild times out at 120s (366K LOC), binary from prior build is up to date.
+- [x] **GITLEAKS — 0 leaks across 65.69 MB scanned.**
+
+**Audit summary (11/11 checks):**
+| Check | Finding |
+|-------|---------|
+| 1. SPEC | 10 Phase 3 specs present (778-1,531 lines each). CDC-09/10 still open. No new gaps |
+| 2. DOC | All key docs present. AGENTS.md at v2.5 |
+| 3. TEST | 94 unit test files + 251 integration scripts. CDC tests: 4 files (types, sink, coordinator, disk_conflict). Prior run: 42/42 CDC tests pass. Tests not re-run this tick (binary current) |
+| 4. DEPS | OpenSSL 3.0.17, QuickJS 0.15.1 (CVE-2023-48184 fixed), Boost 1.85. re2 2015-11-01 + gtest 1.8.1 pre-existing upstream |
+| 5. PITFALL | 255 TODO/FIXME — all pre-existing upstream. Gitleaks clean (0 leaks). 0 untracked files |
+| 6. PERF | 4 benchmark functions (3 vector + 1 coroutine). PERF task BLOCKED on CDC-09 — already on board |
+| 7. ENDPOINT | Binary: rethinkdb 2.4.5-221-g5d0389. Links and runs |
+| 8. CI | Workflow triggered (ID 29787738248) but queued 38+ min. Fork Actions auto-trigger disabled. Pending result |
+| 9. DUCKBRAIN | 18 entries in rethinkdb namespace. Sync current |
+| 10. QUALITY | 0 untracked files. .gitignore covers build artifacts |
+| 11. MIDDLE-OUT | Binary links. CDC-08 wired (42/42 tests). CDC-09 not yet created |
+
+**Idle tick #3 — CDC-09 remains blocked on Bane review. Cooldown set to 12h (43200s).**
+
+Next: Bane review of CDC-09 decomposition unblocks Phase 3 pipeline.
+
 ## [ ] NEVER-DONE — Run 11-point audit next tick
