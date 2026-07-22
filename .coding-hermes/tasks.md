@@ -77,4 +77,34 @@
 
 **Board health:** All non-blocked tasks complete. No new actionable gaps found in 7 consecutive audit sweeps. Cooldown at maximum (12h). If Bane wishes to proceed, the scheduler will fire at 12h intervals naturally.
 
+## Idle Tick #8 — 2026-07-21 20:37 UTC
+
+**11-Point Audit (Quick Check):**
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | LICENSE, README, CONTRIBUTING, STYLE present (unchanged) |
+| 3 | TEST GAPS | PASS | Binary builds and links: `2.4.5-228-g9cbef4 (GCC 15.2.0)` — 345MB |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
+| 5 | PITFALL HUNT | PASS | No new upstream TODO/FIXME; stale count unchanged |
+| 6 | PERFORMANCE | PASS | PERF-BENCH task on board; no benchmark binaries |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary runs; `--version` returns `2.4.5-228-g9cbef4` |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; prior 2 runs failed (infra, not code) |
+| 9 | DUCKBRAIN SYNC | UPDATED | Idle tick counter written to DuckBrain (tick #8) |
+| 10 | CODE QUALITY | PASS | .gitignore VFS entries correct; gitleaks clean (0 leaks); working tree clean |
+| 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; all modules compiled into single daemon binary |
+
+**Hilo:** 17,831 edges across 2,934 files — Hilo=useful  
+**Cooldown:** 43200s (12h) — maintained from tick #6  
+**Actions:** DuckBrain idle counter update (#8), board update  
+**Commit:** Board-only (`.coding-hermes/` gitignored — no code changes)
+
+### Status: Escalation Already Sent (Tick #7)
+
+CDC-09 conflict resolution remains blocked on Bane review of the prior CDC-08
+implementation and design specs. Escalation for 7+ idle ticks was sent in
+tick #7. No new work can proceed until Bane signs off. Cooldown at maximum
+(12h) — the scheduler will fire at 12h intervals automatically.
+
 ## [ ] NEVER-DONE — Run 11-point audit next tick
