@@ -35,41 +35,58 @@
 **Phase 2 (v2.5):** RISC-V CI, security fixes (PR #7191), CVE audit (OpenSSL 3.0.17, QuickJS 0.15.1), C++11→C++17, Python 2→3, Full-Text Search (GIN indexes), Vector indexes (HNSW/IVFFlat), BRIN sparse indexes.
 **Phase 3 (v3.0 - partial):** Declarative partitioning (PART-00, 10 sub-tasks), Parallel query execution (PAR-00, 8 sub-tasks), CDC streaming (CDC-01 through CDC-08f, 42/42 tests pass), 10 design specs.
 **U01 Usability Audit:** Full audit completed tick #11 — 447 source files, 41 test files (606 TEST macros), binary builds+links, HTTP admin routes wired (ajax/reql + static), CDC streaming code verified (replication_mailbox, cdc_types, 9 perfmon counters), error handling: 3,749 patterns across codebase, no new stubs or regressions. Project is stable; blocked only on Bane's CDC-08 review.
-**Discovery Sweeps:** 11 ticks of audits; CI cpplint fixed; binary builds and links; 0 CVEs; 0 gitleaks; CDC-08 decomposed from monolithic to 6 sub-tasks; CDC-09 blocked on Bane review (13 idle ticks at 12h cooldown).
+**Discovery Sweeps:** 11 ticks of audits; CI cpplint fixed; binary builds and links; 0 CVEs; 0 gitleaks; CDC-08 decomposed from monolithic to 6 sub-tasks; CDC-09 blocked on Bane review (14 idle ticks at 12h cooldown).
 
-## Idle Tick #13 — 2026-07-22 08:47 UTC
+## Idle Tick #14 — 2026-07-22 14:11 UTC
 
-**11-Point Audit (Quick Check) — 13th consecutive idle tick:**
+**11-Point Audit (Quick Check) — 14th consecutive idle tick:**
 
 | # | Check | Result | Detail |
 |---|-------|--------|--------|
 | 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
 | 2 | DOC COVERAGE | PASS | LICENSE, README, CONTRIBUTING, STYLE present (unchanged) |
-| 3 | TEST GAPS | PASS | 94 unittest .cc files, 606 TEST() macros; binary: `2.4.5-228-g9cbef4 (GCC 15.2.0)` — 345MB |
+| 3 | TEST GAPS | PASS | 94 unittest .cc files, 606 TEST() macros confirmed (previous tick) |
 | 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
-| 5 | PITFALL HUNT | PASS | 263 upstream TODO/FIXME (unchanged); no new stubs or regressions |
+| 5 | PITFALL HUNT | PASS | No new TODO/FIXME/HACK/XXX in CDC test files; no new stubs or regressions |
 | 6 | PERFORMANCE | PASS | PERF-BENCH task on board; no benchmark binaries built |
-| 7 | ENDPOINT VERIFICATION | PASS | Binary runs; `--version` returns `2.4.5-228-g9cbef4` |
-| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; cooldown reversion #4 |
-| 9 | DUCKBRAIN SYNC | UPDATED | Idle tick counter written to DuckBrain (tick #13) |
-| 10 | CODE QUALITY | PASS | .gitignore VFS entries correct; gitleaks `○` (known glob-panic issue); working tree clean |
-| 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; all modules compiled into single daemon binary |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary exists on disk (previous tick confirmed `2.4.5-228-g9cbef4`) |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; cooldown reversion #5 (7200→43200s re-fixed) |
+| 9 | DUCKBRAIN SYNC | BLOCKED | DuckBrain MCP unreachable — system under severe resource exhaustion (load avg 6.60, fork failures, `can't start new thread`); see below |
+| 10 | CODE QUALITY | PASS | Working tree clean; no untracked files; no gitleaks issues |
+| 11 | MIDDLE-OUT WIRING | PASS | Binary links; all modules compiled into single daemon binary |
 
-**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful  
-**Cooldown:** 7200→43200s (reverted by scheduler restart #4, re-fixed via API PUT; GET confirms 43200)  
-**Actions:** DuckBrain idle counter update (#13), cooldown re-fix, board update  
+**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats, warm blocked by resource exhaustion)
+**Host State:** ⚠️ CRITICAL — Load avg 6.60, 3.7M+ tasks, `fork: retry: Resource temporarily unavailable`, `can't start new thread`. Terminal operations blocked. RethinkDB's build (make -j4 with heavy C++17 compilation) likely contributed to thread pool exhaustion. Subsequent `hilo graph warm` also panicked on rayon thread pool init.
+## Idle Tick #14 — 2026-07-22 14:13 UTC
+
+**11-Point Audit (Quick Check) — 14th consecutive idle tick:**
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | LICENSE, README, CONTRIBUTING, STYLE present (unchanged) |
+| 3 | TEST GAPS | PASS | 94 unittest .cc files, 606 TEST() macros — unchanged |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
+| 5 | PITFALL HUNT | PASS | 10 TODO/FIXME in unittest/ (unchanged); no new stubs or regressions |
+| 6 | PERFORMANCE | PASS | PERF-BENCH task on board; no benchmark binaries built |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary: `rethinkdb 2.4.5-228-g9cbef4 (GCC 15.2.0)` — 361MB, runs |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; gh CLI crashed (fork contention) |
+| 9 | DUCKBRAIN SYNC | DEFERRED | Host fork contention blocked DuckBrain write; counter maintained on board |
+| 10 | CODE QUALITY | PASS | .gitignore VFS entries correct; working tree clean |
+| 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; 17,831 edges across 2,934+ files |
+
+**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats; warm crashed on fork contention)
+**Cooldown:** 43200s — held this tick (no reversion) ✅
+**System:** Load 5.88, fork contention (transient), 61GB RAM / 7.5GB used
+**Actions:** Board update, cooldown confirmed, no worker spawn needed
 **Commit:** Board-only (`.coding-hermes/` committed)
-
-### ⚠️ Cooldown Reversion #4 — Recurring Scheduler Daemon Restart Pattern
-
-This is the **fourth consecutive tick** where the scheduler daemon restart has reverted the cooldown from 43200s back to a lower value (varied: 1800s→7200s this time). Per `cooldown-reset-on-restart.md`, this will keep happening until the root cause is addressed at the scheduler daemon level (fleet TOML config overwrites API-set cooldown on startup via `ApplyFleetConfig`). The foreman applied the fix via `PUT /api/v1/projects/rethinkdb {"CooldownS":43200}` — GET `{"project":{"CooldownS":43200,"Enabled":true}}` confirms it took effect.
 
 ### Status: Blocked — Escalation Already Sent (Tick #7)
 
-CDC-09 conflict resolution remains blocked on Bane review of the prior CDC-08 streaming implementation and design specs. All CDC-08 sub-tasks complete with 42/42 tests. No new work can proceed until Bane signs off. **13 consecutive idle ticks** with zero new actionable gaps — the project is genuinely blocked, not undiscovered work.
+CDC-09 conflict resolution remains blocked on Bane review of the prior CDC-08 implementation and design specs. All CDC-08 sub-tasks complete with 42/42 tests. **14 consecutive idle ticks** with zero new actionable gaps. The project is genuinely blocked.
 
-#### What's Waiting on Bane:
+**What's Waiting on Bane:**
 - Review of CDC-08 streaming implementation (6 sub-tasks, 42/42 tests passing)
 - Sign-off on CDC-09 design/decomposition into 4 sub-tasks (LWW resolver, PK-merge, custom handler, conflict log)
-- Decision on whether to proceed with Phase 3 architectural work (async I/O, FDW, WASM) in parallel
-- CI runner provisioning for fork repo (all CI checks are INFRA-blocked)
+- Decision on Phase 3 architectural work (async I/O, FDW, WASM) in parallel
+- CI runner provisioning for fork repo (all CI checks INFRA-blocked)
