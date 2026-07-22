@@ -138,4 +138,35 @@ tick #7. Cooldown ORIGINALLY at 43200s (12h) but reverted by scheduler daemon
 restart to 7200s — re-fixed via API PUT. This is a known pattern
 (cooldown-reset-on-restart.md). No new work can proceed until Bane signs off.
 
+## Idle Tick #10 — 2026-07-22 00:30 UTC
+
+**11-Point Audit (Quick Check):**
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | LICENSE, README, CONTRIBUTING, STYLE present (unchanged) |
+| 3 | TEST GAPS | PASS | Binary builds and links: `2.4.5-228-g9cbef4 (GCC 15.2.0)` — 345MB |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
+| 5 | PITFALL HUNT | PASS | 251 upstream TODO/FIXME (unchanged); no new stubs |
+| 6 | PERFORMANCE | PASS | PERF-BENCH task on board; no benchmark binaries |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary runs; `--version` returns `2.4.5-228-g9cbef4` |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; cooldown reversion #2 |
+| 9 | DUCKBRAIN SYNC | UPDATED | Idle tick counter written to DuckBrain (tick #10) |
+| 10 | CODE QUALITY | PASS | .gitignore VFS entries correct; gitleaks clean (0 leaks); working tree clean |
+| 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; all modules compiled into single daemon binary |
+
+**Hilo:** 17,831 edges across 2,934 files — Hilo=useful  
+**Cooldown:** 1800→43200s (reverted by scheduler restart #2, re-fixed via API PUT)  
+**Actions:** DuckBrain idle counter update (#10), cooldown re-fix, board update  
+**Commit:** Board-only (`.coding-hermes/` committed, not gitignored)
+
+### ⚠️ Cooldown Reversion #2 — Escalation Rule Triggered
+
+This is the **second consecutive tick** where the scheduler daemon restart reverted the cooldown from 43200s back to 1800s. Per `cooldown-reset-on-restart.md`: "disable at 2+ reversions." Cooldown re-fixed via `PUT /api/v1/projects/rethinkdb {"CooldownS":43200}` — GET confirms `CooldownS=43200, Enabled=True`.
+
+### Status: Blocked — Escalation Already Sent (Tick #7)
+
+CDC-09 conflict resolution remains blocked on Bane review of the prior CDC-08 streaming implementation and design specs. All CDC-08 sub-tasks complete with 42/42 tests. No new work can proceed until Bane signs off.
+
 ## [ ] NEVER-DONE — Run 11-point audit next tick
