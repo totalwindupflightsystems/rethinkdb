@@ -57,9 +57,9 @@
 
 **Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats, warm blocked by resource exhaustion)
 **Host State:** ⚠️ CRITICAL — Load avg 6.60, 3.7M+ tasks, `fork: retry: Resource temporarily unavailable`, `can't start new thread`. Terminal operations blocked. RethinkDB's build (make -j4 with heavy C++17 compilation) likely contributed to thread pool exhaustion. Subsequent `hilo graph warm` also panicked on rayon thread pool init.
-## Idle Tick #14 — 2026-07-22 14:13 UTC
+## Idle Tick #15 — 2026-07-22 20:37 UTC
 
-**11-Point Audit (Quick Check) — 14th consecutive idle tick:**
+**11-Point Audit (Quick Check) — 15th consecutive idle tick:**
 
 | # | Check | Result | Detail |
 |---|-------|--------|--------|
@@ -70,23 +70,23 @@
 | 5 | PITFALL HUNT | PASS | 10 TODO/FIXME in unittest/ (unchanged); no new stubs or regressions |
 | 6 | PERFORMANCE | PASS | PERF-BENCH task on board; no benchmark binaries built |
 | 7 | ENDPOINT VERIFICATION | PASS | Binary: `rethinkdb 2.4.5-228-g9cbef4 (GCC 15.2.0)` — 361MB, runs |
-| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; gh CLI crashed (fork contention) |
-| 9 | DUCKBRAIN SYNC | DEFERRED | Host fork contention blocked DuckBrain write; counter maintained on board |
-| 10 | CODE QUALITY | PASS | .gitignore VFS entries correct; working tree clean |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; no gh CLI (remote is local) |
+| 9 | DUCKBRAIN SYNC | PASS | DuckBrain MCP available; 19 keys in namespace; `list_keys` confirmed; wrote idle tick #15 |
+| 10 | CODE QUALITY | PASS | Working tree clean; gitleaks: 0 leaks (65.69MB scanned in 4.32s) |
 | 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; 17,831 edges across 2,934+ files |
 
-**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats; warm crashed on fork contention)
-**Cooldown:** 43200s — held this tick (no reversion) ✅
-**System:** Load 5.88, fork contention (transient), 61GB RAM / 7.5GB used
-**Actions:** Board update, cooldown confirmed, no worker spawn needed
+**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats)
+**Cooldown:** 43200s — re-fixed (7200→43200s, 6th reversion — scheduler restart reset) ✅
+**System:** Load 21.18 (high), 7.0Gi/59Gi RAM, 130 threads, no fork contention
+**Actions:** Cooldown re-fixed via API PUT, board update, DuckBrain write, no worker spawn needed
 **Commit:** Board-only (`.coding-hermes/` committed)
 
 ### Status: Blocked — Escalation Already Sent (Tick #7)
 
-CDC-09 conflict resolution remains blocked on Bane review of the prior CDC-08 implementation and design specs. All CDC-08 sub-tasks complete with 42/42 tests. **14 consecutive idle ticks** with zero new actionable gaps. The project is genuinely blocked.
+CDC-09 conflict resolution remains blocked on Bane review. All CDC-08 sub-tasks complete (42/42 tests). **15 consecutive idle ticks** — project genuinely blocked.
 
 **What's Waiting on Bane:**
 - Review of CDC-08 streaming implementation (6 sub-tasks, 42/42 tests passing)
-- Sign-off on CDC-09 design/decomposition into 4 sub-tasks (LWW resolver, PK-merge, custom handler, conflict log)
+- Sign-off on CDC-09 design/decomposition into 4 sub-tasks
 - Decision on Phase 3 architectural work (async I/O, FDW, WASM) in parallel
 - CI runner provisioning for fork repo (all CI checks INFRA-blocked)
