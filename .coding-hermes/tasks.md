@@ -12,6 +12,14 @@
 | CDC-09c | Custom handler + validation | Medium | 5 | CDC-09a | ++code-generation, ++security, +concurrency | GLM-5.2 | ~180 lines; restricted ReQL evaluation; security boundary | DeepSeek V4 Pro |
 | CDC-09d | Conflict log + operator actions | Medium | 4 | CDC-09c | ++code-generation, +testing | DeepSeek V4 Pro | ~150 lines; durable log + operator retry/skip/resolve | GLM-5.2 |
 | CDC-10 | CDC comprehensive tests | High | 6 | CDC-09 | +++testing, ++debugging, +concurrency | DeepSeek V4 Pro | Unit, integration, failure, durability, performance, compatibility tests | GLM-5.2 |
+| INT-01 | Integration test harness + fixtures + server lifecycle | Critical | 3 | — | ++testing, ++infrastructure | DeepSeek V4 Pro | Python harness, server start/stop/restart, fixture infrastructure | GLM-5.2 |
+| INT-02 | Basic CRUD integration suite (5 tests) | Critical | 2 | INT-01 | ++testing | GLM-5.2 | insert/get/update/delete/count/filter through ReQL driver | DeepSeek V4 Pro |
+| INT-03 | Changefeed CDC path suite (5 tests) | Critical | 3 | INT-01 | ++testing, ++streaming | DeepSeek V4 Pro | changes() with include_initial, old_val/new_val, update delivery | GLM-5.2 |
+| INT-04 | Index + durability suite (10 tests) | High | 3 | INT-02 | ++testing, ++durability | DeepSeek V4 Pro | index_create/wait, between, server restart durability | GLM-5.2 |
+| INT-05 | Bulk + edge case suite (5 tests) | High | 2 | INT-02 | ++testing, ++performance | GLM-5.2 | 500-doc batches, bulk updates, empty ops, edge cases | DeepSeek V4 Pro |
+| INT-06 | CDC end-to-end (publications, subscriptions) | Critical | 5 | CDC-10 | ++testing, ++distributed-systems | DeepSeek V4 Pro | publication_create, subscription_create, cdc_sink_create, cross-node replication | GLM-5.2 |
+| INT-07 | Vector/FTS/BRIN query tests (15 tests) | High | 4 | INT-01 | ++testing, ++search | DeepSeek V4 Pro | Vector index querying, FTS match, BRIN pruning through server | GLM-5.2 |
+| INT-08 | CI integration — integration tests on every commit | High | 3 | INT-01 | ++infrastructure, ++testing | DeepSeek V4 Flash | GitHub Actions workflow, pip install rethinkdb, automated run | MiniMax M3 |
 | PHASE3-ASYNC | Async I/O subsystem (PG18-style) | Medium | 9 (architectural) | None | +++architecture, +++concurrency, +++performance | GPT-5.6 Sol | System-wide redesign; requires deep architectural planning | — |
 | PHASE3-VEC | Generated/virtual columns | Low | 4 | PHASE3-ASYNC | ++code-generation, +architecture | GLM-5.2 | Moderate feature with clear scope | DeepSeek V4 Pro |
 | PHASE3-MERGE | MERGE/UPSERT complex conditions | Low | 5 | None | ++code-generation, +architecture | GLM-5.2 | ReQL surface extension | DeepSeek V4 Pro |
