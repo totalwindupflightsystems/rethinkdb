@@ -1,6 +1,8 @@
 // Copyright 2026 RethinkDB, all rights reserved.
 #include "rdb_protocol/conflict_resolver.hpp"
 
+#include "rdb_protocol/datum.hpp"
+
 namespace ql {
 
 conflict_resolver_t::conflict_resolver_t(conflict_resolution_policy_t policy)
@@ -98,6 +100,89 @@ conflict_resolution_result_t conflict_resolver_t::resolve(
     }
 
     return result;
+}
+
+datum_t conflict_resolver_t::apply_merge(
+        const change_record_t &resolved,
+        const datum_t &target_current,
+        bool target_exists) const {
+    // DELETE: return null datum (caller drops the row)
+    if (resolved.op == change_operation_t::DELETE) {
+        return datum_t();
+    }
+
+    // Tombstone (_cdc_tombstone in before_image): treat as DELETE
+    if (!resolved.before_image.empty()) {
+        datum_t before = deserialize_datum_from_vector(resolved.before_image);
+        if (before.has() && before.get_type() == datum_t::R_OBJECT) {
+            datum_t tombstone = before.get_field("_cdc_tombstone", NOTHROW);
+            if (tombstone.has()) {
+                return datum_t();
+            }
+        }
+    }
+
+    datum_t after = deserialize_datum_from_vector(resolved.after_image);
+
+    switch (resolved.op) {
+    case change_operation_t::INSERT:
+        if (target_exists) {
+            // Merge: take source's new fields, keep target's existing
+            // fields that source doesn't touch
+            return target_current.merge(after);
+        }
+        return after;
+
+    case change_operation_t::UPDATE:
+        if (target_exists) {
+            // Deep merge: after_image overwrites matching keys in
+            // target_current; target-only keys survive
+            return target_current.merge(after);
+        }
+        // Target doesn't exist: treat as INSERT
+        return after;
+
+    case change_operation_t::REPLACE:
+        // Full replacement unconditionally
+        return after;
+
+    case change_operation_t::DELETE:
+        // Already handled above, but keep for completeness
+        return datum_t();
+    }
+
+    return datum_t();
+}
+
+bool conflict_resolver_t::detect_conflict(
+        const change_record_t &source,
+        const change_record_t &target) const {
+    // Different table → different PK, no conflict
+    if (source.event_id.table_id != target.event_id.table_id) {
+        return false;
+    }
+
+    // Determine row identity: for INSERT use after_image,
+    // for UPDATE/DELETE/REPLACE use before_image
+    const std::vector<char> &source_row_id = (source.op == change_operation_t::INSERT)
+        ? source.after_image : source.before_image;
+    const std::vector<char> &target_row_id = (target.op == change_operation_t::INSERT)
+        ? target.after_image : target.before_image;
+
+    // Different PK → no conflict
+    if (source_row_id != target_row_id) {
+        return false;
+    }
+
+    // Same PK, same op, same after_image → no conflict (idempotent)
+    if (source.op == target.op
+            && source.after_image == target.after_image) {
+        return false;
+    }
+
+    // Same PK + different op → conflict
+    // Same PK + same op + different after_image → conflict
+    return true;
 }
 
 }  // namespace ql

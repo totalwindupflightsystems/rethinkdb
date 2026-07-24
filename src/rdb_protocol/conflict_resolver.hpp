@@ -36,6 +36,21 @@ public:
     void set_custom_handler(std::function<conflict_resolution_result_t(
         const change_record_t&, const change_record_t&)> handler);
 
+    // Apply a resolved change to target datum, handling PK-merge semantics.
+    // Called AFTER resolve() has picked the winning record.
+    // Returns the merged datum_t, or null datum_t for DELETE.
+    datum_t apply_merge(
+        const change_record_t &resolved,
+        const datum_t &target_current,
+        bool target_exists) const;
+
+    // Detect if source and target conflict on the same row.
+    // Returns true if the changes touch the same primary key and the
+    // operations could produce a different final state.
+    bool detect_conflict(
+        const change_record_t &source,
+        const change_record_t &target) const;
+
     conflict_resolution_policy_t policy() const;
 
 private:
