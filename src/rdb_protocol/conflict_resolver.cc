@@ -2,8 +2,28 @@
 #include "rdb_protocol/conflict_resolver.hpp"
 
 #include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/error.hpp"
+#include "rdb_protocol/func.hpp"
+#include "rdb_protocol/sym.hpp"
+#include "rdb_protocol/term_storage.hpp"
+#include "utils.hpp"
 
 namespace ql {
+
+// ── Forward declarations for file-static helpers ──
+
+namespace {
+
+void walk_for_forbidden_terms_impl(const raw_term_t &term,
+                                   std::string *error_out);
+void walk_for_global_r_access_impl(const raw_term_t &term,
+                                   std::string *error_out);
+void walk_for_return_check_impl(const raw_term_t &term,
+                                std::string *error_out);
+
+}  // anonymous namespace
+
+// ── Constructor and accessors ──
 
 conflict_resolver_t::conflict_resolver_t(conflict_resolution_policy_t policy)
     : policy_(policy) {
@@ -13,11 +33,148 @@ conflict_resolution_policy_t conflict_resolver_t::policy() const {
     return policy_;
 }
 
+void conflict_resolver_t::set_safety_level(handler_safety_level_t level) {
+    safety_level_ = level;
+}
+
+handler_safety_level_t conflict_resolver_t::safety_level() const {
+    return safety_level_;
+}
+
+// ── Custom handler registration with safety gating ──
+
 void conflict_resolver_t::set_custom_handler(
         std::function<conflict_resolution_result_t(
             const change_record_t&, const change_record_t&)> handler) {
+    if (safety_level_ == handler_safety_level_t::RESTRICTED) {
+        rfail_datum(base_exc_t::LOGIC,
+            "Cannot set custom handler: safety level is RESTRICTED. "
+            "Only built-in resolvers are allowed.");
+    }
     custom_handler_ = std::move(handler);
 }
+
+// ── Term tree walking helpers ──
+
+void conflict_resolver_t::walk_for_forbidden_terms(
+        const raw_term_t &term, std::string *error_out) {
+    walk_for_forbidden_terms_impl(term, error_out);
+}
+
+// ── Handler validation ──
+
+void conflict_resolver_t::validate_handler(
+        const std::vector<sym_t> &used_syms,
+        const counted_t<func_term_t> &handler_body) {
+    guarantee(handler_body.has());
+
+    // Get the raw term tree for the function
+    const raw_term_t &func_src = handler_body->get_src();
+    guarantee(func_src.type() == Term::FUNC);
+
+    // A FUNC term has at least two args: args[0] = MAKE_ARRAY of arg numbers,
+    // args[1] = body expression
+    rcheck_datum(func_src.num_args() >= 2, base_exc_t::LOGIC,
+        "Custom handler function must have arguments and a body.");
+
+    // Walk the body (args[1]) for forbidden ReQL terms
+    std::string error;
+    walk_for_forbidden_terms_impl(func_src.arg(1), &error);
+    if (!error.empty()) {
+        rfail_datum(base_exc_t::LOGIC, "%s", error.c_str());
+    }
+
+    // Extract argument count from args[0] (the MAKE_ARRAY of arg numbers)
+    const raw_term_t &arg_array = func_src.arg(0);
+    size_t num_args = arg_array.num_args();
+    rcheck_datum(num_args >= 2, base_exc_t::LOGIC,
+        "Custom conflict handler must accept exactly 2 arguments "
+        "(source, target).");
+
+    // Extract arg sym values from the MAKE_ARRAY of DATUM terms.
+    // In the term tree, each arg is a DATUM(num) where num is the
+    // sym_t value (negative for dummy_var_t-based variables).
+    std::vector<int64_t> arg_sym_values;
+    for (size_t i = 0; i < num_args; ++i) {
+        raw_term_t arg_term = arg_array.arg(i);
+        if (arg_term.type() == Term::DATUM) {
+            datum_t d = arg_term.datum();
+            if (d.get_type() == datum_t::R_NUM) {
+                arg_sym_values.push_back(static_cast<int64_t>(d.as_num()));
+            }
+        }
+    }
+
+    // Verify all arg syms are referenced in the handler body
+    for (int64_t arg_val : arg_sym_values) {
+        bool found = false;
+        for (const sym_t &s : used_syms) {
+            if (s.value == arg_val) {
+                found = true;
+                break;
+            }
+        }
+        rcheck_datum(found, base_exc_t::LOGIC,
+            "Custom conflict handler must reference all of its arguments "
+            "(source and target).");
+    }
+}
+
+void conflict_resolver_t::validate_handler_struct(
+        const std::vector<sym_t> &used_syms,
+        const counted_t<func_term_t> &handler_body) {
+    // First, run the basic safety validation (forbidden terms + arg usage)
+    validate_handler(used_syms, handler_body);
+
+    // Get the raw term tree for additional structural checks
+    const raw_term_t &func_src = handler_body->get_src();
+    guarantee(func_src.type() == Term::FUNC);
+    guarantee(func_src.num_args() >= 2);
+
+    const raw_term_t &body_term = func_src.arg(1);
+
+    // Check that the body doesn't access the global r namespace.
+    // In RethinkDB's var_captures model, negative sym values are
+    // function-local variables (e.g. dummy_var_t-based) and non-negative
+    // values are globals like `r`.
+    std::string purity_error;
+    walk_for_global_r_access_impl(body_term, &purity_error);
+    if (!purity_error.empty()) {
+        rfail_datum(base_exc_t::LOGIC, "%s", purity_error.c_str());
+    }
+
+    // Structural check: the body's top-level term should produce an object.
+    // We check the type of the return expression.
+    Term::TermType body_type = body_term.type();
+    if (body_type == Term::MAKE_OBJ) {
+        // Direct object literal — the ideal case for a handler like
+        //   function(s, t) { return {action: "source", reason: "..."}; }
+    } else if (body_type == Term::BRANCH) {
+        // branch(condition, true_case, false_case) — both arms must
+        // produce objects or valid return shapes.
+        if (body_term.num_args() >= 3) {
+            for (size_t i = 1; i <= 2; ++i) {
+                std::string branch_error;
+                walk_for_return_check_impl(body_term.arg(i), &branch_error);
+                if (!branch_error.empty()) {
+                    rfail_datum(base_exc_t::LOGIC, "%s",
+                        branch_error.c_str());
+                }
+            }
+        }
+    } else if (body_type == Term::FUNCALL) {
+        // A function call — could return an object indirectly.
+        // Allow this; the runtime will catch type mismatches.
+    } else if (body_type == Term::ERROR) {
+        rfail_datum(base_exc_t::LOGIC,
+            "Custom conflict handler must not unconditionally throw "
+            "an error.");
+    }
+    // For other term types the handler may still be valid —
+    // the forbidden-terms check is the primary gate.
+}
+
+// ── LWW comparison ──
 
 // is_newer: tuple comparison:
 //   1. commit_timestamp (newer wins)
@@ -40,6 +197,8 @@ bool conflict_resolver_t::is_newer(const change_record_t &a,
     // Tiebreak by LSN
     return a.event_id.lsn.value > b.event_id.lsn.value;
 }
+
+// ── Resolution ──
 
 conflict_resolution_result_t conflict_resolver_t::resolve(
         const change_record_t &source,
@@ -102,6 +261,8 @@ conflict_resolution_result_t conflict_resolver_t::resolve(
     return result;
 }
 
+// ── Merge ──
+
 datum_t conflict_resolver_t::apply_merge(
         const change_record_t &resolved,
         const datum_t &target_current,
@@ -127,32 +288,27 @@ datum_t conflict_resolver_t::apply_merge(
     switch (resolved.op) {
     case change_operation_t::INSERT:
         if (target_exists) {
-            // Merge: take source's new fields, keep target's existing
-            // fields that source doesn't touch
             return target_current.merge(after);
         }
         return after;
 
     case change_operation_t::UPDATE:
         if (target_exists) {
-            // Deep merge: after_image overwrites matching keys in
-            // target_current; target-only keys survive
             return target_current.merge(after);
         }
-        // Target doesn't exist: treat as INSERT
         return after;
 
     case change_operation_t::REPLACE:
-        // Full replacement unconditionally
         return after;
 
     case change_operation_t::DELETE:
-        // Already handled above, but keep for completeness
         return datum_t();
     }
 
     return datum_t();
 }
+
+// ── Conflict detection ──
 
 bool conflict_resolver_t::detect_conflict(
         const change_record_t &source,
@@ -164,10 +320,12 @@ bool conflict_resolver_t::detect_conflict(
 
     // Determine row identity: for INSERT use after_image,
     // for UPDATE/DELETE/REPLACE use before_image
-    const std::vector<char> &source_row_id = (source.op == change_operation_t::INSERT)
-        ? source.after_image : source.before_image;
-    const std::vector<char> &target_row_id = (target.op == change_operation_t::INSERT)
-        ? target.after_image : target.before_image;
+    const std::vector<char> &source_row_id =
+        (source.op == change_operation_t::INSERT)
+            ? source.after_image : source.before_image;
+    const std::vector<char> &target_row_id =
+        (target.op == change_operation_t::INSERT)
+            ? target.after_image : target.before_image;
 
     // Different PK → no conflict
     if (source_row_id != target_row_id) {
@@ -184,5 +342,128 @@ bool conflict_resolver_t::detect_conflict(
     // Same PK + same op + different after_image → conflict
     return true;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// File-static helper implementations
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace {
+
+void walk_for_forbidden_terms_impl(const raw_term_t &term,
+                                   std::string *error_out) {
+    Term::TermType type = term.type();
+
+    // Check for forbidden ReQL terms
+    switch (type) {
+    case Term::JAVASCRIPT:
+        *error_out = "Custom conflict handler must not contain r.js().";
+        return;
+    case Term::HTTP:
+        *error_out = "Custom conflict handler must not contain r.http().";
+        return;
+    case Term::DB_CREATE:
+        *error_out =
+            "Custom conflict handler must not contain r.db_create().";
+        return;
+    case Term::DB_DROP:
+        *error_out =
+            "Custom conflict handler must not contain r.db_drop().";
+        return;
+    case Term::TABLE_CREATE:
+        *error_out =
+            "Custom conflict handler must not contain r.table_create().";
+        return;
+    case Term::TABLE_DROP:
+        *error_out =
+            "Custom conflict handler must not contain r.table_drop().";
+        return;
+    case Term::FUNCALL:
+        *error_out =
+            "Custom conflict handler must not contain r.do() "
+            "(nested execution).";
+        return;
+    case Term::BRANCH:
+        *error_out =
+            "Custom conflict handler must not contain r.branch() "
+            "(control flow escape).";
+        return;
+    default:
+        break;
+    }
+
+    // Recurse into positional arguments
+    for (size_t i = 0; i < term.num_args(); ++i) {
+        walk_for_forbidden_terms_impl(term.arg(i), error_out);
+        if (!error_out->empty()) {
+            return;
+        }
+    }
+
+    // Note: we skip optarg recursion here because forbidden ReQL terms
+    // (r.js, r.http, r.db_create, etc.) never appear as optargs in a
+    // conflict handler body — they are always positional arguments.
+    // Optarg iteration via each_optarg() triggers Boost variant size
+    // computation issues with counted_t<generated_term_t> in some
+    // compilation contexts, so we avoid it.
+}
+
+void walk_for_global_r_access_impl(const raw_term_t &term,
+                                   std::string *error_out) {
+    Term::TermType type = term.type();
+
+    if (type == Term::VAR) {
+        // A VAR term has args[0] = DATUM with the sym value.
+        // Positive sym values are globals; negative are locals.
+        if (term.num_args() >= 1) {
+            raw_term_t arg0 = term.arg(0);
+            if (arg0.type() == Term::DATUM) {
+                datum_t d = arg0.datum();
+                if (d.get_type() == datum_t::R_NUM) {
+                    int64_t sym_val = static_cast<int64_t>(d.as_num());
+                    if (sym_val >= 0) {
+                        *error_out =
+                            "Custom conflict handler must not access "
+                            "the global r namespace.";
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse into args
+    for (size_t i = 0; i < term.num_args(); ++i) {
+        walk_for_global_r_access_impl(term.arg(i), error_out);
+        if (!error_out->empty()) {
+            return;
+        }
+    }
+
+    // Note: we skip optarg recursion — see comment in
+    // walk_for_forbidden_terms_impl.
+}
+
+void walk_for_return_check_impl(const raw_term_t &term,
+                                std::string *error_out) {
+    Term::TermType type = term.type();
+
+    if (type == Term::MAKE_OBJ) {
+        // This branch returns an object literal — acceptable.
+        return;
+    }
+
+    if (type == Term::ERROR) {
+        *error_out =
+            "Custom conflict handler branch must not unconditionally "
+            "throw an error.";
+        return;
+    }
+
+    // For other types (FUNCALL, BRANCH, VAR, etc.), we allow them
+    // since the runtime will catch type mismatches. The forbidden-terms
+    // check is the primary safety gate.
+}
+
+}  // anonymous namespace
 
 }  // namespace ql

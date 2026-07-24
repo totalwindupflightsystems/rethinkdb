@@ -5,6 +5,12 @@
 #include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/conflict_resolver.hpp"
 #include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/env.hpp"
+#include "rdb_protocol/func.hpp"
+#include "rdb_protocol/rdb_backtrace.hpp"
+#include "rdb_protocol/sym.hpp"
+#include "rdb_protocol/term.hpp"
+#include "rdb_protocol/term_storage.hpp"
 
 namespace unittest {
 namespace {
@@ -371,6 +377,144 @@ TEST(ConflictResolverTest, NoConflictDiffPK) {
 
     // Different PK → no conflict
     EXPECT_FALSE(resolver.detect_conflict(source, target));
+}
+
+// ── CDC-09c: Custom handler validation + safety levels ──
+
+TEST(ConflictResolverTest, RestrictedRejectsCustomHandler) {
+    conflict_resolver_t resolver(conflict_resolution_policy_t::CUSTOM_HANDLER);
+    resolver.set_safety_level(handler_safety_level_t::RESTRICTED);
+
+    EXPECT_ANY_THROW(
+        resolver.set_custom_handler(
+            [](const change_record_t &s, const change_record_t &)
+                -> conflict_resolution_result_t {
+                conflict_resolution_result_t r;
+                r.resolved = s;
+                return r;
+            }));
+}
+
+TEST(ConflictResolverTest, PermissiveAllowsCustomHandler) {
+    conflict_resolver_t resolver(conflict_resolution_policy_t::CUSTOM_HANDLER);
+    EXPECT_EQ(resolver.safety_level(), handler_safety_level_t::PERMISSIVE);
+
+    // Should not throw at PERMISSIVE level
+    bool handler_called = false;
+    resolver.set_custom_handler(
+        [&handler_called](const change_record_t &s, const change_record_t &)
+            -> conflict_resolution_result_t {
+            handler_called = true;
+            conflict_resolution_result_t r;
+            r.resolved = s;
+            r.reason = "custom handler";
+            return r;
+        });
+
+    // Verify the handler actually works
+    uuid_u cluster = generate_uuid();
+    uuid_u shard = generate_uuid();
+    change_record_t source = make_record(
+        change_operation_t::UPDATE, 1000, cluster, shard, 1);
+    change_record_t target = make_record(
+        change_operation_t::UPDATE, 2000, cluster, shard, 2);
+
+    auto result = resolver.resolve(source, target);
+    EXPECT_TRUE(handler_called);
+    EXPECT_EQ(result.reason, "custom handler");
+}
+
+TEST(ConflictResolverTest, ValidateHandlerRejectsJs) {
+    // Build a term tree for: function(source, target) { return r.js("x"); }
+    // The body contains JAVASCRIPT which is forbidden.
+    backtrace_id_t bt = backtrace_id_t::empty();
+
+    // Arg syms: use two distinct dummy sym values (negative = function-local)
+    int64_t source_sym_val = -101;
+    int64_t target_sym_val = -102;
+
+    // Build MAKE_ARRAY([DATUM(source_sym_val), DATUM(target_sym_val)])
+    auto arg0 = make_counted<generated_term_t>(Term::DATUM, bt);
+    arg0->datum = datum_t(static_cast<double>(source_sym_val));
+    auto arg1 = make_counted<generated_term_t>(Term::DATUM, bt);
+    arg1->datum = datum_t(static_cast<double>(target_sym_val));
+    auto arg_array = make_counted<generated_term_t>(Term::MAKE_ARRAY, bt);
+    arg_array->args.push_back(arg0);
+    arg_array->args.push_back(arg1);
+
+    // Build JAVASCRIPT(DATUM("return 1;"))
+    auto js_code = make_counted<generated_term_t>(Term::DATUM, bt);
+    js_code->datum = datum_t(datum_string_t("return 1;"));
+    auto js_term = make_counted<generated_term_t>(Term::JAVASCRIPT, bt);
+    js_term->args.push_back(js_code);
+
+    // Build FUNC(arg_array, js_term)
+    auto func = make_counted<generated_term_t>(Term::FUNC, bt);
+    func->args.push_back(arg_array);
+    func->args.push_back(js_term);
+
+    // Compile into a func_term_t
+    compile_env_t compile_env((var_visibility_t()));
+    term_variant_t tv(func);
+    raw_term_t raw_func(tv);
+    counted_t<const term_t> compiled = compile_term(&compile_env, raw_func);
+
+    // Downcast: we know compile_term returns func_term_t for FUNC
+    const func_term_t *ftp =
+        static_cast<const func_term_t *>(compiled.get());
+    counted_t<func_term_t> func_term(const_cast<func_term_t *>(ftp));
+
+    // Provide used_syms containing both arg syms so we pass the
+    // arg-reference check and hit the forbidden-term check.
+    std::vector<sym_t> used_syms;
+    used_syms.push_back(sym_t(source_sym_val));
+    used_syms.push_back(sym_t(target_sym_val));
+
+    EXPECT_ANY_THROW(
+        conflict_resolver_t::validate_handler(used_syms, func_term));
+}
+
+TEST(ConflictResolverTest, ValidateHandlerRejectsDbCreate) {
+    // Build a term tree for: function(source, target) { return r.db_create("x"); }
+    backtrace_id_t bt = backtrace_id_t::empty();
+
+    int64_t source_sym_val = -201;
+    int64_t target_sym_val = -202;
+
+    auto arg0 = make_counted<generated_term_t>(Term::DATUM, bt);
+    arg0->datum = datum_t(static_cast<double>(source_sym_val));
+    auto arg1 = make_counted<generated_term_t>(Term::DATUM, bt);
+    arg1->datum = datum_t(static_cast<double>(target_sym_val));
+    auto arg_array = make_counted<generated_term_t>(Term::MAKE_ARRAY, bt);
+    arg_array->args.push_back(arg0);
+    arg_array->args.push_back(arg1);
+
+    // Build DB_CREATE(DATUM("test_db"))
+    auto db_name = make_counted<generated_term_t>(Term::DATUM, bt);
+    db_name->datum = datum_t(datum_string_t("test_db"));
+    auto db_create_term = make_counted<generated_term_t>(Term::DB_CREATE, bt);
+    db_create_term->args.push_back(db_name);
+
+    // Build FUNC(arg_array, db_create_term)
+    auto func = make_counted<generated_term_t>(Term::FUNC, bt);
+    func->args.push_back(arg_array);
+    func->args.push_back(db_create_term);
+
+    compile_env_t compile_env((var_visibility_t()));
+    term_variant_t tv(func);
+    raw_term_t raw_func(tv);
+    counted_t<const term_t> compiled = compile_term(&compile_env, raw_func);
+
+    const func_term_t *ftp =
+        static_cast<const func_term_t *>(compiled.get());
+    counted_t<func_term_t> func_term(const_cast<func_term_t *>(ftp));
+
+    std::vector<sym_t> used_syms;
+    used_syms.push_back(sym_t(source_sym_val));
+    used_syms.push_back(sym_t(target_sym_val));
+
+    EXPECT_ANY_THROW(
+        conflict_resolver_t::validate_handler(used_syms, func_term));
 }
 
 }  // namespace unittest
