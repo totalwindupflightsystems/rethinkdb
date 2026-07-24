@@ -1,6 +1,8 @@
 // Copyright 2026 RethinkDB, all rights reserved.
 #include "unittest/gtest.hpp"
 
+#include <thread>
+
 #include "containers/uuid.hpp"
 #include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/conflict_resolver.hpp"
@@ -515,6 +517,121 @@ TEST(ConflictResolverTest, ValidateHandlerRejectsDbCreate) {
 
     EXPECT_ANY_THROW(
         conflict_resolver_t::validate_handler(used_syms, func_term));
+}
+
+// ── CDC-09d: Conflict log + operator actions ──
+
+TEST(ConflictResolverTest, ConflictLogRecordsPending) {
+    // MANUAL policy conflict should be logged as PENDING
+    conflict_log_t log;
+    conflict_resolver_t resolver(conflict_resolution_policy_t::MANUAL);
+    resolver.set_conflict_log(&log);
+
+    uuid_u cluster = generate_uuid();
+    uuid_u shard = generate_uuid();
+    change_record_t source = make_record(
+        change_operation_t::UPDATE, 2000, cluster, shard, 1);
+    change_record_t target = make_record(
+        change_operation_t::UPDATE, 1000, cluster, shard, 2);
+
+    auto result = resolver.resolve(source, target);
+    EXPECT_TRUE(result.skipped);
+
+    // Log should have one entry
+    EXPECT_EQ(log.size(), 1u);
+    EXPECT_EQ(log.pending_count(), 1u);
+
+    auto all = log.get_all();
+    ASSERT_EQ(all.size(), 1u);
+    EXPECT_EQ(all[0].action, operator_action_t::PENDING);
+    EXPECT_EQ(all[0].resolution.reason, "manual intervention required");
+}
+
+TEST(ConflictResolverTest, ConflictLogResolveOperatorAction) {
+    // Operator RESOLVE updates the log entry
+    conflict_log_t log;
+
+    // Add an entry manually
+    conflict_log_entry_t entry;
+    entry.id = generate_uuid();
+    entry.occurred_at = current_microtime();
+    entry.action = operator_action_t::PENDING;
+    log.record(entry);
+
+    EXPECT_EQ(log.pending_count(), 1u);
+
+    // Operator resolves it
+    log.resolve(entry.id, operator_action_t::RESOLVE, "accepted by admin");
+
+    EXPECT_EQ(log.pending_count(), 0u);
+    EXPECT_EQ(log.size(), 1u);
+
+    auto all = log.get_all();
+    ASSERT_EQ(all.size(), 1u);
+    EXPECT_EQ(all[0].action, operator_action_t::RESOLVE);
+    EXPECT_EQ(all[0].operator_note, "accepted by admin");
+}
+
+TEST(ConflictResolverTest, ConflictLogGetPending) {
+    // get_pending() returns only unresolved conflicts
+    conflict_log_t log;
+
+    // Add two entries: one PENDING, one RESOLVE'd
+    conflict_log_entry_t e1;
+    e1.id = generate_uuid();
+    e1.occurred_at = current_microtime();
+    e1.action = operator_action_t::PENDING;
+    log.record(e1);
+
+    conflict_log_entry_t e2;
+    e2.id = generate_uuid();
+    e2.occurred_at = current_microtime();
+    e2.action = operator_action_t::SKIP;
+    log.record(e2);
+
+    // Add a third PENDING
+    conflict_log_entry_t e3;
+    e3.id = generate_uuid();
+    e3.occurred_at = current_microtime();
+    e3.action = operator_action_t::PENDING;
+    log.record(e3);
+
+    EXPECT_EQ(log.size(), 3u);
+    EXPECT_EQ(log.pending_count(), 2u);
+
+    auto pending = log.get_pending();
+    ASSERT_EQ(pending.size(), 2u);
+    EXPECT_EQ(pending[0].action, operator_action_t::PENDING);
+    EXPECT_EQ(pending[1].action, operator_action_t::PENDING);
+}
+
+TEST(ConflictResolverTest, ConflictLogThreadSafety) {
+    // Concurrent writes from multiple threads should not crash
+    conflict_log_t log;
+
+    const int num_threads = 4;
+    const int entries_per_thread = 50;
+    std::vector<std::thread> threads;
+
+    for (int t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&log, entries_per_thread]() {
+            for (int i = 0; i < entries_per_thread; ++i) {
+                conflict_log_entry_t entry;
+                entry.id = generate_uuid();
+                entry.occurred_at = current_microtime();
+                entry.action = operator_action_t::PENDING;
+                log.record(entry);
+            }
+        });
+    }
+
+    for (auto &th : threads) {
+        th.join();
+    }
+
+    // All entries should be recorded
+    EXPECT_EQ(log.size(), num_threads * entries_per_thread);
+    EXPECT_EQ(log.pending_count(), num_threads * entries_per_thread);
 }
 
 }  // namespace unittest

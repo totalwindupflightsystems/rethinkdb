@@ -1,11 +1,13 @@
 // Copyright 2026 RethinkDB, all rights reserved.
 #include "rdb_protocol/conflict_resolver.hpp"
 
+#include "containers/uuid.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/term_storage.hpp"
+#include "time.hpp"
 #include "utils.hpp"
 
 namespace ql {
@@ -39,6 +41,62 @@ void conflict_resolver_t::set_safety_level(handler_safety_level_t level) {
 
 handler_safety_level_t conflict_resolver_t::safety_level() const {
     return safety_level_;
+}
+
+// ── Conflict log operations ──
+
+void conflict_log_t::record(const conflict_log_entry_t &entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_.push_back(entry);
+}
+
+std::vector<conflict_log_entry_t> conflict_log_t::get_pending() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<conflict_log_entry_t> pending;
+    for (const auto &e : entries_) {
+        if (e.action == operator_action_t::PENDING) {
+            pending.push_back(e);
+        }
+    }
+    return pending;
+}
+
+std::vector<conflict_log_entry_t> conflict_log_t::get_all() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return entries_;
+}
+
+void conflict_log_t::resolve(const conflict_event_id_t &id,
+                             operator_action_t action,
+                             const std::string &note) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &e : entries_) {
+        if (e.id == id) {
+            e.action = action;
+            e.operator_note = note;
+            return;
+        }
+    }
+}
+
+size_t conflict_log_t::size() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return entries_.size();
+}
+
+size_t conflict_log_t::pending_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t count = 0;
+    for (const auto &e : entries_) {
+        if (e.action == operator_action_t::PENDING) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+void conflict_resolver_t::set_conflict_log(conflict_log_t *log) {
+    conflict_log_ = log;
 }
 
 // ── Custom handler registration with safety gating ──
@@ -256,6 +314,19 @@ conflict_resolution_result_t conflict_resolver_t::resolve(
         result.reason = "manual intervention required";
         break;
     }
+    }
+
+    // Auto-log conflict when skipped or MANUAL policy
+    if (conflict_log_ != nullptr
+            && (result.skipped || policy_ == conflict_resolution_policy_t::MANUAL)) {
+        conflict_log_entry_t entry;
+        entry.id = generate_uuid();
+        entry.occurred_at = current_microtime();
+        entry.source = source;
+        entry.target = target;
+        entry.resolution = result;
+        entry.action = operator_action_t::PENDING;
+        conflict_log_->record(entry);
     }
 
     return result;

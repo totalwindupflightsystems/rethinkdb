@@ -3,10 +3,12 @@
 #define RDB_PROTOCOL_CONFLICT_RESOLVER_HPP_
 
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include "containers/counted.hpp"
+#include "containers/uuid.hpp"
 #include "rdb_protocol/cdc_types.hpp"
 
 namespace ql {
@@ -28,10 +30,49 @@ enum class handler_safety_level_t {
     PERMISSIVE    // Custom handler allowed (admin-only)
 };
 
+enum class operator_action_t {
+    PENDING,    // awaiting operator decision
+    RETRY,      // operator chose to retry (re-apply resolution)
+    SKIP,       // operator chose to skip this conflict
+    RESOLVE,    // operator provided a manual resolution value
+    OVERRIDE    // operator overrode the resolver's decision
+};
+
 struct conflict_resolution_result_t {
     change_record_t resolved;
     bool skipped = false;
     std::string reason;
+    operator_action_t action = operator_action_t::PENDING;
+};
+
+// ── Conflict event ID (UUID) ──
+using conflict_event_id_t = uuid_u;
+
+// ── Conflict log entry ──
+
+struct conflict_log_entry_t {
+    conflict_event_id_t id;     // unique UUID for this conflict event
+    microtime_t occurred_at;    // when the conflict was detected
+    change_record_t source;
+    change_record_t target;
+    conflict_resolution_result_t resolution;
+    operator_action_t action = operator_action_t::PENDING;
+    std::string operator_note;  // operator can annotate resolution
+};
+
+// ── Conflict log ──
+
+class conflict_log_t {
+    std::vector<conflict_log_entry_t> entries_;
+    mutable std::mutex mutex_;
+public:
+    void record(const conflict_log_entry_t &entry);
+    std::vector<conflict_log_entry_t> get_pending() const;
+    std::vector<conflict_log_entry_t> get_all() const;
+    void resolve(const conflict_event_id_t &id, operator_action_t action,
+                 const std::string &note = "");
+    size_t size() const;
+    size_t pending_count() const;
 };
 
 class conflict_resolver_t {
@@ -69,6 +110,9 @@ public:
     void set_safety_level(handler_safety_level_t level);
     handler_safety_level_t safety_level() const;
 
+    // Wire the resolver to auto-log conflicts.
+    void set_conflict_log(conflict_log_t *log);
+
     // Validate that a custom conflict resolution handler is safe to execute.
     // Throws if the handler references disallowed ReQL terms (r.js, r.http,
     // r.db_create, r.db_drop, r.table_create, r.table_drop, r.do, r.branch)
@@ -89,6 +133,7 @@ public:
 private:
     conflict_resolution_policy_t policy_;
     handler_safety_level_t safety_level_ = handler_safety_level_t::PERMISSIVE;
+    conflict_log_t *conflict_log_ = nullptr;
     std::function<conflict_resolution_result_t(
         const change_record_t&, const change_record_t&)> custom_handler_;
 
