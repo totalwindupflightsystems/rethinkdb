@@ -19,7 +19,7 @@ std::string base64_encode(unsigned char const *data, size_t size) {
     encoded.reserve(((size / 3) + (size % 3 > 0)) * 4);
 
     int32_t buffer;
-    for (; size > 3; size -= 3) {
+    for (; size >= 3; size -= 3) {
         buffer = (*data++) << 16;
         buffer += (*data++) << 8;
         buffer += (*data++);

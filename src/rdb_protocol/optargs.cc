@@ -45,6 +45,7 @@ static const std::set<std::string> acceptable_optargs({
     "auth",
     "base",
     "binary_format",
+    "brin",
     "changefeed_queue_size",
     "conflict",
     "data",
@@ -59,6 +60,7 @@ static const std::set<std::string> acceptable_optargs({
     "final_emit",
     "first_batch_scaledown_factor",
     "float",
+    "fts",
     "geo",
     "geo_system",
     "group_format",
@@ -91,6 +93,7 @@ static const std::set<std::string> acceptable_optargs({
     "page_limit",
     "parallel",
     "params",
+    "partitions",
     "primary_key",
     "primary_replica_tag",
     "profile",
@@ -107,6 +110,7 @@ static const std::set<std::string> acceptable_optargs({
     "timeout",
     "unit",
     "use_outdated", // Only so we can detect it and error.
+    "vector",
     "verify",
     "wait_for",
 });
