@@ -37,6 +37,39 @@
 **U01 Usability Audit:** Full audit completed tick #11 — 447 source files, 41 test files (606 TEST macros), binary builds+links, HTTP admin routes wired (ajax/reql + static), CDC streaming code verified (replication_mailbox, cdc_types, 9 perfmon counters), error handling: 3,749 patterns across codebase, no new stubs or regressions. Project is stable; blocked only on Bane's CDC-08 review.
 **Discovery Sweeps:** 11 ticks of audits; CI cpplint fixed; binary builds and links; 0 CVEs; 0 gitleaks; CDC-08 decomposed from monolithic to 6 sub-tasks; CDC-09 blocked on Bane review (14 idle ticks at 12h cooldown).
 
+## Idle Tick #20 — 2026-07-23 20:37 UTC
+
+**11-Point Audit (Quick Check) — 20th consecutive idle tick:**
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | LICENSE, README, CONTRIBUTING, STYLE present (unchanged) |
+| 3 | TEST GAPS | PASS | 94 unittest .cc files, 606 TEST() macros — unchanged |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
+| 5 | PITFALL HUNT | PASS | 254 TODO/FIXME across src/ (stable); 7 HACK/XXX (unchanged); no new stubs or regressions |
+| 6 | PERFORMANCE | PASS | PERF-BENCH task on board; 0 benchmark files in src/benchmark/ |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary: `rethinkdb 2.4.5-228-g9cbef4 (GCC 15.2.0)` — 345MB, build/release/ |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; local-only |
+| 9 | DUCKBRAIN SYNC | PASS | DuckBrain MCP available; 22 keys in rethinkdb namespace; writing tick #20 |
+| 10 | CODE QUALITY | PASS | Working tree clean; gitleaks: 0 leaks (65.70MB scanned in 2.87s) |
+| 11 | MIDDLE-OUT WIRING | PASS | Binary links and runs; 17,831 edges across 2,934+ files |
+
+**Hilo:** 17,831 edges across 2,934+ files — Hilo=useful (cached stats, no warm)
+**Cooldown:** 43200s — re-fixed (7200→43200s, 11th reversion — scheduler restart reset) ✅
+**System:** Load 14.48, 10Gi/59Gi RAM, 49Gi available, 16 CPUs, 218 procs
+**Actions:** Cooldown re-fixed via API PUT (7200→43200s) with GET verification. DuckBrain write for idle #20. No worker spawn needed.
+
+### Status: Blocked — Escalation Already Sent (Tick #7)
+
+CDC-09 conflict resolution remains blocked on Bane review. All CDC-08 sub-tasks complete (42/42 tests). **20 consecutive idle ticks** — project genuinely blocked.
+
+**What's Waiting on Bane:**
+- Review of CDC-08 streaming implementation (6 sub-tasks, 42/42 tests passing)
+- Sign-off on CDC-09 design/decomposition into 4 sub-tasks
+- Decision on Phase 3 architectural work (async I/O, FDW, WASM) in parallel
+- CI runner provisioning for fork repo (all CI checks INFRA-blocked)
+
 ## Idle Tick #14 — 2026-07-22 14:11 UTC
 
 **11-Point Audit (Quick Check) — 14th consecutive idle tick:**
