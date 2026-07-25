@@ -313,11 +313,17 @@ TEST(CdcFailureTest, SplitBrainConflictingWrites) {
 }
 
 TEST(CdcFailureTest, SplitBrainDifferentClustersSameShard) {
-    // Two clusters with different cluster IDs but same shard_id
+    // Two clusters with different cluster IDs but same shard_id.
+    // Same timestamp → cluster_id tiebreak (UUID ordering determines winner).
+    // Make the test deterministic by ensuring cluster_a < cluster_b.
     conflict_resolver_t resolver(conflict_resolution_policy_t::LAST_WRITE_WINS);
 
     uuid_u cluster_a = generate_uuid();
     uuid_u cluster_b = generate_uuid();
+    // Ensure cluster_a < cluster_b so is_newer() picks target when timestamps equal
+    if (uuid_to_str(cluster_b) < uuid_to_str(cluster_a)) {
+        std::swap(cluster_a, cluster_b);
+    }
     uuid_u shard = generate_uuid();
 
     change_record_t source = make_record(
@@ -327,8 +333,9 @@ TEST(CdcFailureTest, SplitBrainDifferentClustersSameShard) {
 
     auto result = resolver.resolve(source, target);
     EXPECT_FALSE(result.skipped);
-    // Same timestamp → cluster_id tiebreak, then shard (same), then LSN
-    // Since shard is same, LSN decides → target has higher LSN (20 > 10)
+    // cluster_b > cluster_a in UUID ordering → is_newer() returns true for target
+    // → target wins with LSN 20
+    EXPECT_EQ(result.resolved.event_id.source_cluster_id, cluster_b);
     EXPECT_EQ(result.resolved.event_id.lsn.value, 20u);
 }
 
