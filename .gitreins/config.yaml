@@ -91,20 +91,17 @@ pipeline:
 
 # ── Evaluator Caps (v0.3.0+) ──
 evaluator:
-  max_iterations: 50
-  max_time: "15m"
-  max_input_tokens: "1M"         # 367K-line C++ codebase needs headroom
-  max_output_tokens: "384k"      # within DeepSeek's 393,216 ceiling
+  max_iterations: 100
+  max_time: 30m
+  max_input_tokens: 1M
+  max_output_tokens: 2M
   tool_call_weight: 0.1
-  compaction_threshold: 0.90
-  code_context_budget: 0.70
+  fast_track: auto
 
-# ── Defaults ──
 defaults:
   model: deepseek-v4-flash
-  max_iterations: 100
-  check_for_updates: true
-  update_check_ttl: "24h"
+  provider: deepseek-foreman
+  api_key_env: GITREINS_LLM_API_KEY
 
 history:
   enabled: true
