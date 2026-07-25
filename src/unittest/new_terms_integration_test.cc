@@ -3,6 +3,7 @@
 // Catches proto drift, missing terms, and numbering gaps.
 #include "unittest/gtest.hpp"
 
+#include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/ql2.pb.h"
 
 namespace unittest {
@@ -75,6 +76,55 @@ TEST(NewTermIntegration, VectorDatumType) {
     // VECTOR datum type = 8, added to Datum_DatumType enum
     EXPECT_EQ(8, Datum_DatumType_R_VECTOR);
     EXPECT_TRUE(Datum_DatumType_IsValid(8));
+}
+
+// ── CDC-10: CDC term enumeration guard ──
+
+TEST(NewTermIntegration, CdcSinkTermsPresent) {
+    // All CDC sink terms must exist in the compiled proto
+    EXPECT_TRUE(Term_TermType_IsValid(212));  // CDC_SINK_CREATE
+    EXPECT_TRUE(Term_TermType_IsValid(213));  // CDC_SINK_LIST
+    EXPECT_TRUE(Term_TermType_IsValid(214));  // CDC_SINK_STATUS
+    EXPECT_TRUE(Term_TermType_IsValid(215));  // CDC_SINK_DROP
+}
+
+TEST(NewTermIntegration, CdcSinkTermIdsFromCompiledProto) {
+    // Verify CDC sink term IDs against compiled proto
+    EXPECT_EQ(212, Term::CDC_SINK_CREATE);
+    EXPECT_EQ(213, Term::CDC_SINK_LIST);
+    EXPECT_EQ(214, Term::CDC_SINK_STATUS);
+    EXPECT_EQ(215, Term::CDC_SINK_DROP);
+}
+
+TEST(NewTermIntegration, PublicationTermsPresent) {
+    // All publication terms must exist
+    EXPECT_TRUE(Term_TermType_IsValid(204));  // PUBLICATION_CREATE
+    EXPECT_TRUE(Term_TermType_IsValid(205));  // PUBLICATION_LIST
+    EXPECT_TRUE(Term_TermType_IsValid(206));  // PUBLICATION_STATUS
+    EXPECT_TRUE(Term_TermType_IsValid(207));  // PUBLICATION_DROP
+}
+
+TEST(NewTermIntegration, SubscriptionTermsPresent) {
+    // All subscription terms must exist
+    EXPECT_TRUE(Term_TermType_IsValid(208));  // SUBSCRIPTION_CREATE
+    EXPECT_TRUE(Term_TermType_IsValid(211));  // SUBSCRIPTION_DROP
+}
+
+TEST(NewTermIntegration, CdcTermRangeNoGapsAbove198) {
+    // All Phase 3 terms (198-215) must be valid in compiled proto
+    for (int t = 198; t <= 215; t++) {
+        EXPECT_TRUE(Term_TermType_IsValid(t))
+            << "CDC term " << t << " not valid in compiled proto";
+    }
+}
+
+TEST(NewTermIntegration, CdcEnumSerializationBoundary) {
+    // Verify CDC-related enums have stable serialization boundaries
+    // These must not change to preserve wire compatibility
+    EXPECT_EQ(static_cast<int>(ql::change_operation_t::INSERT), 0);
+    EXPECT_EQ(static_cast<int>(ql::change_operation_t::UPDATE), 1);
+    EXPECT_EQ(static_cast<int>(ql::change_operation_t::DELETE), 2);
+    EXPECT_EQ(static_cast<int>(ql::change_operation_t::REPLACE), 3);
 }
 
 }  // namespace unittest
