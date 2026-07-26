@@ -393,6 +393,20 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::CEIL:
     case Term::ROUND:
     case Term::FORMAT:
+    case Term::PARTITION_INFO:
+    case Term::REPARTITION:
+    case Term::PUBLICATION_CREATE:
+    case Term::PUBLICATION_LIST:
+    case Term::PUBLICATION_STATUS:
+    case Term::PUBLICATION_DROP:
+    case Term::SUBSCRIPTION_CREATE:
+    case Term::SUBSCRIPTION_LIST:
+    case Term::SUBSCRIPTION_STATUS:
+    case Term::SUBSCRIPTION_DROP:
+    case Term::CDC_SINK_CREATE:
+    case Term::CDC_SINK_LIST:
+    case Term::CDC_SINK_STATUS:
+    case Term::CDC_SINK_DROP:
         return true;
     default:
         return false;
@@ -421,6 +435,18 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::INDEX_DROP:
     case Term::INDEX_WAIT:
     case Term::INDEX_RENAME:
+    case Term::PUBLICATION_CREATE:
+    case Term::PUBLICATION_LIST:
+    case Term::PUBLICATION_STATUS:
+    case Term::PUBLICATION_DROP:
+    case Term::SUBSCRIPTION_CREATE:
+    case Term::SUBSCRIPTION_LIST:
+    case Term::SUBSCRIPTION_STATUS:
+    case Term::SUBSCRIPTION_DROP:
+    case Term::CDC_SINK_CREATE:
+    case Term::CDC_SINK_LIST:
+    case Term::CDC_SINK_STATUS:
+    case Term::CDC_SINK_DROP:
         return true;
 
     case Term::DATUM:
@@ -787,6 +813,20 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::CEIL:
     case Term::ROUND:
     case Term::FORMAT:
+    case Term::PARTITION_INFO:
+    case Term::REPARTITION:
+    case Term::PUBLICATION_CREATE:
+    case Term::PUBLICATION_LIST:
+    case Term::PUBLICATION_STATUS:
+    case Term::PUBLICATION_DROP:
+    case Term::SUBSCRIPTION_CREATE:
+    case Term::SUBSCRIPTION_LIST:
+    case Term::SUBSCRIPTION_STATUS:
+    case Term::SUBSCRIPTION_DROP:
+    case Term::CDC_SINK_CREATE:
+    case Term::CDC_SINK_LIST:
+    case Term::CDC_SINK_STATUS:
+    case Term::CDC_SINK_DROP:
         return false;
     default: unreachable();
     }
