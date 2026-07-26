@@ -120,7 +120,7 @@ tasks:
   - 'Server lifecycle: start before tests, clean shutdown after'
   status: complete
   created_at: '2026-07-26T10:00:59.803344+00:00'
-  completed_at: '2026-07-26T12:02:35.880977+00:00'
+  completed_at: '2026-07-26T12:07:52.005928+00:00'
 - id: INT-06B
   title: Rebuild rethinkdb Python driver from local protobuf
   criteria:
