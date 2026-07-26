@@ -121,14 +121,17 @@ tasks:
   status: complete
   created_at: '2026-07-26T10:00:59.803344+00:00'
   completed_at: '2026-07-26T12:07:52.005928+00:00'
-- id: INT-06B
-  title: Rebuild rethinkdb Python driver from local protobuf
+- id: INT-07
+  title: 'INT-07: Vector/FTS/BRIN integration test suite (15+ tests through server)'
   criteria:
-  - ql2_pb2.py is regenerated from src/rdb_protocol/ql2.proto using protoc
-  - Regenerated ql2_pb2.py includes CDC TermType definitions (PUBLICATION_CREATE through
-    CDC_SINK_DROP, TermTypes 204-215)
-  - test/cdc_e2e_test.py runs with 11/11 PASS using the rebuilt driver
-  - The rebuilt driver is installed into /tmp/rethink_venv/lib/python3.11/site-packages/
-  - Build of rethinkdb binary still succeeds after driver rebuild
+  - test/vector_fts_brin_integration_test.py exists with at least 15 tests
+  - Tests cover vector index creation with L2/cosine/inner_product metrics
+  - Tests cover BRIN index creation with between queries through index
+  - Tests cover FTS match queries through tbl.match()
+  - Tests start a RethinkDB server instance and clean up on exit
+  - All tests pass with /tmp/rethink_venv/bin/python3 test/vector_fts_brin_integration_test.py
+  - "Server lifecycle managed same as cdc_integration_test.py (start\u2192run\u2192\
+    cleanup)"
+  - 'Tests cover edge cases: non-existent index, wrong metric dimension, empty tables'
   status: in_progress
-  created_at: '2026-07-26T11:58:23.353201+00:00'
+  created_at: '2026-07-26T12:52:30.241187+00:00'
