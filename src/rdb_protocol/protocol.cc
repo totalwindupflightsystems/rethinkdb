@@ -33,6 +33,7 @@
 #include "version.hpp"
 
 #include "debug.hpp"
+#include "logger.hpp"
 
 store_key_t key_max(sorting_t sorting) {
     return !reversed(sorting) ? store_key_t::max() : store_key_t::min();
@@ -384,6 +385,7 @@ void build_and_persist_hnsw_graph_for_sindex(
     index has no graph to search over. */
     if (cb.entries_.empty()) {
         sindex_sb->set_vector_graph_block_id(NULL_BLOCK_ID);
+        sindex_sb.reset();
         txn->commit();
         return;
     }
@@ -424,6 +426,8 @@ void build_and_persist_hnsw_graph_for_sindex(
     }
 
     sindex_sb->set_vector_graph_block_id(graph_block.block_id());
+    graph_block.reset_buf_lock();
+    sindex_sb.reset();
     txn->commit();
 }
 
@@ -459,6 +463,9 @@ public:
             static_cast<const rdb_value_t *>(keyvalue.value()),
             keyvalue.expose_buf());
 
+        logINF("BRIN_CB: handle_pair called, datum_type=%d",
+               static_cast<int>(indexed_datum.get_type()));
+
         /* Only orderable scalars enter BRIN summaries. Nulls, arrays, objects,
            geometry, and vectors are skipped. R_NUM covers both plain numbers and
            pseudo-types (e.g. time is stored as R_NUM + reql_type). */
@@ -470,6 +477,7 @@ public:
         if (t != ql::datum_t::R_NUM && t != ql::datum_t::R_STR
             && t != ql::datum_t::R_BOOL && t != ql::datum_t::R_BINARY) {
             ++null_count_;
+            logINF("BRIN_CB: Skipping non-orderable datum type=%d", static_cast<int>(t));
             return continue_bool_t::CONTINUE;
         }
 
@@ -489,6 +497,8 @@ void build_and_persist_brin_sidecar_for_sindex(
         signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t, archive_exc_t) {
 
+    logINF("BRIN: Entered build_and_persist_brin_sidecar_for_sindex");
+
     /* Acquire the primary superblock + sindex block. We need this to find the
     sindex's opaque_definition and its superblock. */
     write_token_t token;
@@ -502,41 +512,51 @@ void build_and_persist_brin_sidecar_for_sindex(
         &txn,
         &real_sb,
         interruptor);
+    logINF("BRIN: Acquired superblock for write");
 
     buf_lock_t sindex_block(real_sb->expose_buf(),
                             real_sb->get_sindex_block_id(),
                             access_t::write);
     real_sb->release();
+    logINF("BRIN: Got sindex block");
 
     secondary_index_t sindex;
     bool found = get_secondary_index(&sindex_block, sindex_id, &sindex);
     if (!found || sindex.being_deleted) {
+        logINF("BRIN: Sindex not found or being deleted, returning");
         sindex_block.reset_buf_lock();
         txn->commit();
         return;
     }
+    logINF("BRIN: Found sindex, opaque_definition size=%lu", static_cast<unsigned long>(sindex.opaque_definition.size()));
 
     /* Inspect the opaque_definition. If this is not a BRIN sindex, there is
     nothing to do. */
     sindex_disk_info_t disk_info;
     deserialize_sindex_info_or_crash(sindex.opaque_definition, &disk_info);
+    logINF("BRIN: brin=%d", static_cast<int>(disk_info.brin));
     if (disk_info.brin != sindex_brin_bool_t::BRIN) {
+        logINF("BRIN: Not a BRIN sindex, returning");
         sindex_block.reset_buf_lock();
         txn->commit();
         return;
     }
+    logINF("BRIN: Confirmed BRIN sindex, brin_range_size=%lu", static_cast<unsigned long>(disk_info.brin_range_size));
 
     /* Acquire the sindex superblock for write so we can store the sidecar
     block_id. */
     buf_lock_t sindex_sb_lock(buf_parent_t(&sindex_block),
                               sindex.superblock, access_t::write);
     sindex_block.reset_buf_lock();
+    logINF("BRIN: Acquired sindex superblock for write");
+    logINF("BRIN: Creating sindex_superblock_t");
     scoped_ptr_t<sindex_superblock_t> sindex_sb(
         new sindex_superblock_t(std::move(sindex_sb_lock)));
 
     /* Traverse the sindex B-tree to collect all (primary_key, indexed_datum) pairs.
     These will be sorted by primary_key to build summaries over primary-key ranges. */
     brin_build_helpers::collect_brin_entries_cb_t cb;
+    logINF("BRIN: Starting btree_depth_first_traversal");
     btree_depth_first_traversal(
         sindex_sb.get(),
         key_range_t::universe(),
@@ -545,11 +565,13 @@ void build_and_persist_brin_sidecar_for_sindex(
         direction_t::FORWARD,
         release_superblock_t::KEEP,
         interruptor);
+    logINF("BRIN: Traversal complete, entries=%lu", static_cast<unsigned long>(cb.entries_.size()));
 
     /* If we collected nothing, leave brin_summary_block as NULL_BLOCK_ID. An empty
     index has no summaries to build. */
     if (cb.entries_.empty()) {
         sindex_sb->set_brin_summary_block_id(NULL_BLOCK_ID);
+        sindex_sb.reset();
         txn->commit();
         return;
     }
@@ -643,6 +665,8 @@ void build_and_persist_brin_sidecar_for_sindex(
     }
 
     sindex_sb->set_brin_summary_block_id(sidecar_block.block_id());
+    sidecar_block.reset_buf_lock();
+    sindex_sb.reset();
     txn->commit();
 }
 

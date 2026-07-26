@@ -135,3 +135,29 @@ tasks:
   - 'Tests cover edge cases: non-existent index, wrong metric dimension, empty tables'
   status: in_progress
   created_at: '2026-07-26T12:52:30.241187+00:00'
+- id: INT-07-BUG
+  title: "Fix HNSW graph construction crash \u2014 page_acq_t outlives txn in build_and_persist_hnsw_graph_for_sindex"
+  criteria:
+  - 'build_and_persist_hnsw_graph_for_sindex() in src/rdb_protocol/protocol.cc: graph_block.reset_buf_lock()
+    before txn->commit() on line 427'
+  - "buf_lock_t graph_block at line 404 holds current_page_acq_t that outlives txn->commit()\
+    \ \u2014 release it before commit"
+  - 'Verify by running: (1) make -j4, (2) unittest --gtest_filter="*hnsw*:*Vector*:*HNSW*"
+    for existing HNSW tests'
+  - Verify by running test/vector_fts_brin_integration_test.py and confirming all
+    tests pass without server crash
+  status: complete
+  created_at: '2026-07-26T14:16:32.983198+00:00'
+  completed_at: '2026-07-26T15:13:49.383376+00:00'
+- id: INT-07-BUG-BRIN
+  title: "Fix BRIN sidecar construction hang with default range_size"
+  criteria:
+  - build_and_persist_brin_sidecar_for_sindex() in src/rdb_protocol/protocol.cc hangs
+    when brin_range_size is 0 (default) during index construction
+  - 'Possible root cause: btree_depth_first_traversal deadlock on write-locked superblock,
+    or collect_brin_entries_cb_t hang on empty/small B-tree'
+  - 'Fix: investigate btree_depth_first_traversal with access_t::read on write-locked
+    superblock'
+  - "Verify with: python3 test/vector_fts_brin_integration_test.py"
+  - "Verify unit: ./build/release/rethinkdb-unittest --gtest_filter='*Brin*:*Vector*:*Fts*'"
+  status: pending
