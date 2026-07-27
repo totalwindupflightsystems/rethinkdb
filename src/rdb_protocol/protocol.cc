@@ -452,19 +452,36 @@ block other post-construction work. */
 namespace brin_build_helpers {
 
 /* A depth-first traversal callback that collects (primary_key, indexed_datum) pairs
-   from the sindex B-tree. We skip entries whose indexed value is null or not an
-   orderable scalar — those rows don't contribute to BRIN summaries. */
+   from the PRIMARY B-tree. We read the full document, extract the BRIN column via
+   get_field(), and skip entries whose indexed value is null or not an orderable
+   scalar — those rows don't contribute to BRIN summaries.
+
+   Option A (INT-07-BUG-BRIN): Build BRIN sidecar from PRIMARY B-tree instead of
+   sindex B-tree. The sindex B-tree may be empty during post-construction, but the
+   primary B-tree is always populated with the actual data. */
 class collect_brin_entries_cb_t : public depth_first_traversal_callback_t {
 public:
+    explicit collect_brin_entries_cb_t(
+            const std::vector<std::string> &brin_columns)
+        : brin_columns_(brin_columns) { }
+
     continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
-        store_key_t key(keyvalue.key());
-        store_key_t primary_key = ql::datum_t::extract_primary(key);
-        ql::datum_t indexed_datum = get_data(
+        /* In the PRIMARY B-tree, keyvalue.key() is the primary key directly. */
+        store_key_t primary_key(keyvalue.key());
+
+        /* Get the full document datum. */
+        ql::datum_t doc = get_data(
             static_cast<const rdb_value_t *>(keyvalue.value()),
             keyvalue.expose_buf());
 
-        logINF("BRIN_CB: handle_pair called, datum_type=%d",
-               static_cast<int>(indexed_datum.get_type()));
+        /* Extract the BRIN column from the document.
+           Phase 1 BRIN only supports single-column indexes, so brin_columns_[0]. */
+        ql::datum_t indexed_datum;
+        if (doc.has() && doc.get_type() == ql::datum_t::R_OBJECT
+            && !brin_columns_.empty()) {
+            indexed_datum = doc.get_field(
+                brin_columns_[0].c_str(), ql::NOTHROW);
+        }
 
         /* Only orderable scalars enter BRIN summaries. Nulls, arrays, objects,
            geometry, and vectors are skipped. R_NUM covers both plain numbers and
@@ -477,7 +494,6 @@ public:
         if (t != ql::datum_t::R_NUM && t != ql::datum_t::R_STR
             && t != ql::datum_t::R_BOOL && t != ql::datum_t::R_BINARY) {
             ++null_count_;
-            logINF("BRIN_CB: Skipping non-orderable datum type=%d", static_cast<int>(t));
             return continue_bool_t::CONTINUE;
         }
 
@@ -487,6 +503,7 @@ public:
 
     std::vector<std::pair<store_key_t, ql::datum_t>> entries_;
     uint64_t null_count_ = 0;
+    std::vector<std::string> brin_columns_;
 };
 
 }  // namespace brin_build_helpers
@@ -513,6 +530,11 @@ void build_and_persist_brin_sidecar_for_sindex(
         &real_sb,
         interruptor);
     logINF("BRIN: Acquired superblock for write");
+
+    /* Save the primary superblock block_id before releasing it. We need it later
+       to re-acquire the primary superblock for a read traversal of the PRIMARY
+       B-tree (Option A fix for INT-07-BUG-BRIN). */
+    block_id_t primary_sb_block_id = real_sb->expose_buf().block_id();
 
     buf_lock_t sindex_block(real_sb->expose_buf(),
                             real_sb->get_sindex_block_id(),
@@ -543,39 +565,46 @@ void build_and_persist_brin_sidecar_for_sindex(
     }
     logINF("BRIN: Confirmed BRIN sindex, brin_range_size=%lu", static_cast<unsigned long>(disk_info.brin_range_size));
 
-    /* Acquire the sindex superblock for write so we can store the sidecar
-    block_id. */
-    buf_lock_t sindex_sb_lock(buf_parent_t(&sindex_block),
-                              sindex.superblock, access_t::write);
+    /* Release the sindex block before starting the primary B-tree traversal.
+       We no longer need it — all info we need (sindex ID, brin_columns,
+       brin_range_size, sindex.superblock) has been extracted. */
     sindex_block.reset_buf_lock();
-    logINF("BRIN: Acquired sindex superblock for write");
-    logINF("BRIN: Creating sindex_superblock_t");
-    scoped_ptr_t<sindex_superblock_t> sindex_sb(
-        new sindex_superblock_t(std::move(sindex_sb_lock)));
 
-    /* Traverse the sindex B-tree to collect all (primary_key, indexed_datum) pairs.
-    These will be sorted by primary_key to build summaries over primary-key ranges.
-    We release the superblock during traversal (release_superblock_t::RELEASE) to
-    avoid a page-cache deadlock: the write-locked superblock prevents eviction of
-    dirty pages that the read traversal needs to access. After the traversal, we
-    re-acquire the sindex superblock for write to store the summary block_id. */
-    brin_build_helpers::collect_brin_entries_cb_t cb;
-    logINF("BRIN: Starting btree_depth_first_traversal");
-    btree_depth_first_traversal(
-        sindex_sb.get(),
-        key_range_t::universe(),
-        &cb,
-        access_t::read,
-        direction_t::FORWARD,
-        release_superblock_t::RELEASE,
-        interruptor);
-    logINF("BRIN: Traversal complete, entries=%lu", static_cast<unsigned long>(cb.entries_.size()));
+    /* INT-07-BUG-BRIN Option A: Traverse the PRIMARY B-tree instead of the
+       sindex B-tree. The sindex B-tree may be empty during post-construction,
+       but the primary B-tree always has the data.
+
+       We use release_superblock_t::RELEASE during traversal to avoid a
+       page-cache deadlock: the write-locked superblock would prevent eviction
+       of dirty pages that the read traversal needs to access.
+
+       After traversal, we re-acquire the sindex superblock for write to store
+       the sidecar block_id. */
+    brin_build_helpers::collect_brin_entries_cb_t cb(disk_info.brin_columns);
+    logINF("BRIN: Starting primary B-tree depth_first_traversal");
+
+    {
+        buf_lock_t primary_sb_lock(
+            buf_parent_t(txn.get()),
+            primary_sb_block_id,
+            access_t::read);
+        real_superblock_t primary_sb(std::move(primary_sb_lock));
+
+        btree_depth_first_traversal(
+            &primary_sb,
+            key_range_t::universe(),
+            &cb,
+            access_t::read,
+            direction_t::FORWARD,
+            release_superblock_t::RELEASE,
+            interruptor);
+    }
+    logINF("BRIN: Primary B-tree traversal complete, entries=%lu", static_cast<unsigned long>(cb.entries_.size()));
 
     /* Re-acquire the sindex superblock for write so we can store the summary
-    block_id. The traversal released the original buf_lock; we must re-acquire
-    using the sindex.superblock block_id we saved earlier. We use the txn as
-    the parent (buf_parent_t from txn_t*) since the original sindex_block has
-    already been released. */
+    block_id. The traversal above released any buf_locks; we re-acquire using
+    the sindex.superblock block_id from earlier. */
+    scoped_ptr_t<sindex_superblock_t> sindex_sb;
     {
         buf_lock_t reacquire_sb(
             buf_parent_t(txn.get()),
@@ -585,8 +614,10 @@ void build_and_persist_brin_sidecar_for_sindex(
     }
     logINF("BRIN: Re-acquired sindex superblock for write");
 
-    /* If we collected nothing, leave brin_summary_block as NULL_BLOCK_ID. An empty
-    index has no summaries to build. */
+    /* If we collected nothing, leave brin_summary_block as NULL_BLOCK_ID.
+       An empty primary B-tree has no data to summarize — but the index
+       should still be marked as constructed (ready=True). The caller
+       (resume_construct_sindex) handles the ready transition. */
     if (cb.entries_.empty()) {
         sindex_sb->set_brin_summary_block_id(NULL_BLOCK_ID);
         sindex_sb.reset();
