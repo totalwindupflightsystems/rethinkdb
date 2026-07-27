@@ -534,7 +534,7 @@ void build_and_persist_brin_sidecar_for_sindex(
     /* Save the primary superblock block_id before releasing it. We need it later
        to re-acquire the primary superblock for a read traversal of the PRIMARY
        B-tree (Option A fix for INT-07-BUG-BRIN). */
-    block_id_t primary_sb_block_id = real_sb->expose_buf().block_id();
+    block_id_t primary_sb_block_id = real_sb->get()->block_id();
 
     buf_lock_t sindex_block(real_sb->expose_buf(),
                             real_sb->get_sindex_block_id(),
