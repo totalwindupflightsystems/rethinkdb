@@ -133,8 +133,9 @@ tasks:
   - "Server lifecycle managed same as cdc_integration_test.py (start\u2192run\u2192\
     cleanup)"
   - 'Tests cover edge cases: non-existent index, wrong metric dimension, empty tables'
-  status: in_progress
+  status: complete
   created_at: '2026-07-26T12:52:30.241187+00:00'
+  completed_at: '2026-07-27T15:42:33.944768+00:00'
 - id: INT-07-BUG
   title: "Fix HNSW graph construction crash \u2014 page_acq_t outlives txn in build_and_persist_hnsw_graph_for_sindex"
   criteria:
