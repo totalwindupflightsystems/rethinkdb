@@ -496,3 +496,65 @@ Vector and FTS indexes work correctly through the server (4/4 index types create
 **Cooldown:** 43200s (12h) — holding stable
 
 
+
+## Productive Tick #39 — 2026-07-27 11:42 UTC
+
+**14-Point Audit — 39th tick (INT-07 worker output committed, board synced, INT-07-BUG-BRIN pending):**
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, CONTRIBUTING.md, LICENSE all present |
+| 3 | TEST GAPS | PASS | **716 TEST() macros across 100 unit-test .cc files + 230 CDC/Conflict/Sink/Vector/HNSW/BRIN/FTS/Sindex unit (60728ms) + 29 integration (INT-01-05) + 24 CDC e2e + 42 Vector/FTS integration** |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged (gtest 1.8.1, openssl 3.0.17, quickjs 0.15.1, re2 2015) |
+| 5 | PITFALL HUNT | PASS | 749 TODO/FIXME/HACK/XXX/BUG in src/ (pre-existing, no regressions) |
+| 6 | PERFORMANCE | PASS | PERF-BENCH on board; test/performance/ exists; 4 benchmark functions |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary: 346MB ELF 64-bit, build 276 (11:05 UTC Jul 27), --version OK, runs clean |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner available; local-only |
+| 9 | DUCKBRAIN SYNC | PASS | Namespace rethinkdb exists; tick #39 entries written |
+| 10 | CODE QUALITY | PASS | Gitleaks: 0 leaks. Unit: 230/230 PASS (60728ms). Integration: 29/29 + 24/24 + 42/42 PASS |
+| 11 | MIDDLE-OUT WIRING | PASS | 20,769 edges across 3,423 files — Hilo=useful |
+| 12 | USABILITY | SKIP | Database engine — no browser/UI. Binary fresh, runs clean |
+| 13 | E2E TESTING | PASS | INT-07 Vector+FTS integration: 42/42 PASS. Worker output committed (was uncommitted from tick #38) |
+| 14 | GITREINS JUDGE | PASS | INT-07 complete, INT-07-BUG complete, INT-07-BUG-BRIN in_progress. Board + GitReins synced in commit 4382a15 |
+
+### Recovery: Worker Output From Tick #38 Committed
+
+Tick #38 dispatched INT-07-BUG-BRIN worker but the INT-07 test file (`test/vector_fts_integration_test.py`, 416 lines, 10 test functions, 42 assertions) was left uncommitted. Committed in this tick alongside board + GitReins state sync.
+
+### Integration Pipeline Status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01 (harness) | 29/29 | ✅ Complete |
+| INT-06 (CDC e2e) | 24/24 | ✅ Complete |
+| INT-07 (Vector+FTS) | 42/42 | ✅ Complete |
+| INT-07-BUG (HNSW crash) | Fixed (tick #34) | ✅ Complete |
+| INT-07-BUG-BRIN (ready-state) | Diagnosed (5 ticks) | 🔄 In Progress |
+| INT-08 (CI) | — | ⏳ Next |
+| CDC/Vector/HNSW/BRIN/FTS/Sindex unit | 230/230 | ✅ Stable |
+
+### Actions This Tick
+
+1. ✅ 14-point audit — all tests stable, no regressions
+2. ✅ Unit tests: 230/230 PASS (60728ms) — CDC, Conflict, Sink, Publication, HNSW, Vector, Brin, Fts, Sindex
+3. ✅ INT-01: 29/29 PASS, INT-06: 24/24 PASS, INT-07: 42/42 PASS
+4. ✅ Gitleaks: 0 leaks
+5. ✅ **Committed uncommitted worker output** — `test/vector_fts_integration_test.py` (416 lines, 10 tests, 42 assertions) from tick #38
+6. ✅ Board + GitReins state synced (INT-07 complete, INT-07-BUG complete)
+7. ✅ DuckBrain updated: tick #39
+8. ✅ Git commit: 4382a15
+
+**Hilo:** 20,769 edges across 3,423 files — Hilo=useful
+**System:** Load ~10.71, ~22Gi free RAM, 47Gi available, up 10d 23h
+**Cooldown:** 43200s (12h) — holding stable
+
+### Status: INT-07 complete, BRIN fix pending, INT-08 queued
+
+All integration test suites pass clean (29+24+42 = 95 assertions). The only remaining gap is INT-07-BUG-BRIN (sindex B-tree empty during sidecar construction — diagnosed across 5 ticks). INT-08 (CI GitHub Actions workflow) is next in queue.
+
+**Next tick:** Check INT-07-BUG-BRIN worker results. If none, dispatch INT-08 (CI) or escalate BRIN to architectural worker.
+
+**Execution order:** INT-01 ✅ → INT-06 ✅ → INT-07 ✅ → INT-07-BUG-BRIN 🔄 → INT-08 → PERF-BENCH
+
+**Cooldown:** 43200s (12h) — holding stable
