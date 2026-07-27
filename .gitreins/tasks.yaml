@@ -173,3 +173,14 @@ tasks:
   - "BRIN index_create returns {'created': 1} without crash \u2014 current baseline"
   status: in_progress
   created_at: '2026-07-27T07:06:57.223173+00:00'
+- id: PERF-BENCH
+  title: 'PERF-BENCH: Google Benchmark scaffolding for CDC, vector, FTS, BRIN operations'
+  criteria:
+  - 4 benchmark source files created (src/unittest/benchmark_cdc.cc, benchmark_vector.cc,
+    benchmark_fts.cc, benchmark_brin.cc)
+  - Build succeeds with auto-discovered .cc files
+  - 34 benchmark tests pass (CDC 4, Vector 12, FTS 7, BRIN 9, Coroutine 1, total 34)
+  - "Benchmarks use std::chrono via GTest harness \u2014 no external dependencies"
+  - Git committed with Co-authored-by
+  status: pending
+  created_at: '2026-07-27T18:51:46.888720+00:00'
