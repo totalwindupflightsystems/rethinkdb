@@ -554,7 +554,11 @@ void build_and_persist_brin_sidecar_for_sindex(
         new sindex_superblock_t(std::move(sindex_sb_lock)));
 
     /* Traverse the sindex B-tree to collect all (primary_key, indexed_datum) pairs.
-    These will be sorted by primary_key to build summaries over primary-key ranges. */
+    These will be sorted by primary_key to build summaries over primary-key ranges.
+    We release the superblock during traversal (release_superblock_t::RELEASE) to
+    avoid a page-cache deadlock: the write-locked superblock prevents eviction of
+    dirty pages that the read traversal needs to access. After the traversal, we
+    re-acquire the sindex superblock for write to store the summary block_id. */
     brin_build_helpers::collect_brin_entries_cb_t cb;
     logINF("BRIN: Starting btree_depth_first_traversal");
     btree_depth_first_traversal(
@@ -563,9 +567,23 @@ void build_and_persist_brin_sidecar_for_sindex(
         &cb,
         access_t::read,
         direction_t::FORWARD,
-        release_superblock_t::KEEP,
+        release_superblock_t::RELEASE,
         interruptor);
     logINF("BRIN: Traversal complete, entries=%lu", static_cast<unsigned long>(cb.entries_.size()));
+
+    /* Re-acquire the sindex superblock for write so we can store the summary
+    block_id. The traversal released the original buf_lock; we must re-acquire
+    using the sindex.superblock block_id we saved earlier. We use the txn as
+    the parent (buf_parent_t from txn_t*) since the original sindex_block has
+    already been released. */
+    {
+        buf_lock_t reacquire_sb(
+            buf_parent_t(txn.get()),
+            sindex.superblock,
+            access_t::write);
+        sindex_sb.init(new sindex_superblock_t(std::move(reacquire_sb)));
+    }
+    logINF("BRIN: Re-acquired sindex superblock for write");
 
     /* If we collected nothing, leave brin_summary_block as NULL_BLOCK_ID. An empty
     index has no summaries to build. */

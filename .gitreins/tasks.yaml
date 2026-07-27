@@ -150,14 +150,25 @@ tasks:
   created_at: '2026-07-26T14:16:32.983198+00:00'
   completed_at: '2026-07-26T15:13:49.383376+00:00'
 - id: INT-07-BUG-BRIN
-  title: "Fix BRIN sidecar construction hang with default range_size"
+  title: "BRIN sidecar: sindex B-tree empty during post-construction \u2014 index\
+    \ never becomes ready"
   criteria:
-  - build_and_persist_brin_sidecar_for_sindex() in src/rdb_protocol/protocol.cc hangs
-    when brin_range_size is 0 (default) during index construction
-  - 'Possible root cause: btree_depth_first_traversal deadlock on write-locked superblock,
-    or collect_brin_entries_cb_t hang on empty/small B-tree'
-  - 'Fix: investigate btree_depth_first_traversal with access_t::read on write-locked
-    superblock'
-  - "Verify with: python3 test/vector_fts_brin_integration_test.py"
-  - "Verify unit: ./build/release/rethinkdb-unittest --gtest_filter='*Brin*:*Vector*:*Fts*'"
+  - "build_and_persist_brin_sidecar_for_sindex() in src/rdb_protocol/protocol.cc no\
+    \ longer hangs (buf_lock fix: release_superblock_t::RELEASE + re-acquire after\
+    \ traversal \u2014 VERIFIED)"
+  - "The original hang (write-locked superblock preventing page-cache eviction during\
+    \ read traversal) is FIXED \u2014 server stays alive through BRIN index creation"
+  - 'Root cause of remaining bug: sindex B-tree traversal finds entries=0 during sidecar
+    construction, setting brin_summary_block=NULL_BLOCK_ID. Index never transitions
+    to ready=True'
+  - 'Fix option A: build BRIN sidecar from PRIMARY B-tree instead of sindex B-tree
+    (the sindex B-tree may not be populated yet)'
+  - 'Fix option B: defer sidecar construction until after sindex B-tree is confirmed
+    populated (post-construction completion signal)'
+  - "Fix option C: in the collect_brin_entries_cb_t, add a diagnostic check \u2014\
+    \ verify the sindex B-tree has data pages before claiming the index is empty"
+  - 'Verify unit: ./build/release/rethinkdb-unittest --gtest_filter=''*Brin*:*Vector*:*Fts*''
+    (currently 84/84 PASS)'
+  - "BRIN index_create returns {'created': 1} without crash \u2014 current baseline"
   status: pending
+  created_at: '2026-07-27T07:06:57.223173+00:00'
