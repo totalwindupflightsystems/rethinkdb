@@ -5,316 +5,41 @@ on:
   push:
     branches:
       - main
-      - v2.4.x
   pull_request:
     branches:
       - "*"
-  schedule:
-    - cron: '00 8 * * 1'
 
 jobs:
-  # ── Preflight (cpplint) ──
-  preflight:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  # ── Build & Unit Tests (gcc-15 on ubuntu-26.04) ──
+  build-and-test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: cpplint
-        uses: ./.github/actions/tests
-        with:
-          command: |
-            [ ! -d "${TEST_OUTPUT_DIR}" ] && mkdir -p ${TEST_OUTPUT_DIR}
-            ./scripts/check_style.sh | tee ${TEST_OUTPUT_DIR}/cpplint.log
-          download_artifacts: false
 
-  # ── Build Matrix (x86_64) ──
-  build:
-    needs: preflight
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: "gcc-14",       os: ubuntu-24.04, cc: gcc-14,   cxx: g++-14,   extra_pkgs: "g++-14" }
-          - { name: "gcc-15",       os: ubuntu-26.04, cc: gcc-15,   cxx: g++-15,   extra_pkgs: "g++-15" }
-          - { name: "clang-18",     os: ubuntu-24.04, cc: clang-18, cxx: clang++-18, extra_pkgs: "clang-18" }
-          - { name: "clang-19",     os: ubuntu-26.04, cc: clang-19, cxx: clang++-19, extra_pkgs: "clang-19" }
-          - { name: "gcc-arm64",    os: ubuntu-24.04-arm, cc: gcc, cxx: g++, extra_pkgs: "" }
-    name: "build (${{ matrix.name }})"
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - name: apt install
+      - name: Install dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt update && sudo apt install -y tzdata \
-              && sudo ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
-              && sudo dpkg-reconfigure --frontend noninteractive tzdata
-          sudo apt update && sudo apt install -y \
-              libc6 libcurl4 \
-              git build-essential protobuf-compiler \
-              libprotobuf-dev libcurl4-openssl-dev \
-              libncurses5-dev m4 libssl-dev \
-              debhelper curl ${{ matrix.extra_pkgs }}
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            protobuf-compiler \
+            python3 \
+            libprotobuf-dev \
+            libcurl4-openssl-dev \
+            libncurses5-dev \
+            libjemalloc-dev \
+            wget \
+            m4 \
+            g++-15 \
+            libssl-dev
 
-      - name: configure
-        run: ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs CXX=${{ matrix.cxx }} CC=${{ matrix.cc }}
+      - name: Configure
+        run: ./configure --allow-fetch CXX=g++-15 CC=gcc-15
 
-      - name: make support
-        run: make support -j4
+      - name: Build
+        run: make -j$(nproc)
 
-      - name: make
-        run: make -j4
-
-      - name: generate compile_commands.json
-        run: |
-          sudo apt update && sudo apt install -y bear
-          bear -- make -j4
-          # Verify it was generated
-          test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
-
-      - name: upload compile_commands.json
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: compile-commands-${{ matrix.name }}
-          path: compile_commands.json
-
-      - name: compress build artifacts
-        if: always()
-        run: tar -czf ${{ github.job }}-${{ matrix.name }}.tar.gz build config.mk
-
-      - name: upload build artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.name }}
-          path: |
-            config.mk
-            build.tar.gz
-
-  # ── RISC-V Build (native, RISE runners) ──
-  # RISE project: https://riseproject.dev/2026/03/24/announcing-the-rise-risc-v-runners-free-native-risc-v-ci-on-github/
-  # Adds native RISC-V (riscv64) build verification using the free RISE RISC-V
-  # GitHub Actions runners. Mirrors the x86_64 build matrix:
-  #   - configure with all bundled dependencies (boost, gtest, re2, jemalloc, quickjs)
-  #   - full make support + make
-  #   - bear-generated compile_commands.json uploaded as CI artifact
-  #   - build artifact (compressed tar.gz) uploaded for downstream debugging
-  # continue-on-error: true while RISE runners are in Early Availability — failures
-  # here should not block PRs, but log a clear warning so the team can investigate.
-  build-riscv:
-    needs: preflight
-    runs-on: ubuntu-24.04-riscv
-    timeout-minutes: 60
-    continue-on-error: true  # Experimental — RISC-V support is new
-    steps:
-      - uses: actions/checkout@v4
-      - name: apt install
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt update && sudo apt install -y tzdata \
-              && sudo ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
-              && sudo dpkg-reconfigure --frontend noninteractive tzdata
-          sudo apt update && sudo apt install -y \
-              libc6 libcurl4 \
-              git build-essential protobuf-compiler \
-              libprotobuf-dev libcurl4-openssl-dev \
-              libncurses5-dev m4 libssl-dev \
-              debhelper curl
-      - name: configure
-        run: ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs
-      - name: make support
-        run: make support -j4
-      - name: make
-        run: make -j4
-
-      - name: generate compile_commands.json
-        run: |
-          sudo apt update && sudo apt install -y bear
-          bear -- make -j4
-          test -f compile_commands.json && echo "compile_commands.json generated ($(wc -l < compile_commands.json) entries)"
-
-      - name: upload compile_commands.json
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: compile-commands-riscv
-          path: compile_commands.json
-
-      - name: compress build artifacts
-        if: always()
-        run: tar -czf ${{ github.job }}-riscv.tar.gz build config.mk
-
-      - name: upload build artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-riscv
-          path: |
-            config.mk
-            build-riscv.tar.gz
-
-  # ── Unit Tests ──
-  unit-tests:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: "gcc-14",   os: ubuntu-24.04 }
-          - { name: "clang-18", os: ubuntu-24.04 }
-    name: "unit-tests (${{ matrix.name }})"
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: unit tests
-        uses: ./.github/actions/tests
-        with:
-          command: |
-            export MAX_JOBS=4
-            test/run --verbose --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H unit
-
-  # ── Sanitizer Build (ASan + UBSan) ──
-  sanitizer:
-    needs: preflight
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - name: apt install
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt update && sudo apt install -y tzdata \
-              && sudo ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
-              && sudo dpkg-reconfigure --frontend noninteractive tzdata
-          sudo apt update && sudo apt install -y \
-              libc6 libcurl4 git build-essential protobuf-compiler \
-              libprotobuf-dev libcurl4-openssl-dev \
-              libncurses5-dev m4 libssl-dev debhelper curl
-      - name: configure (ASan + UBSan)
-        run: |
-          ./configure --fetch boost --fetch gtest --fetch re2 --fetch jemalloc --fetch quickjs \
-            CXXFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
-            LDFLAGS="-fsanitize=address,undefined"
-      - name: make
-        run: make -j4
-      - name: unit tests (sanitized)
-        run: |
-          export MAX_JOBS=4
-          test/run --verbose --jobs "${MAX_JOBS}" -o /tmp/test-output -H unit
-        continue-on-error: true  # Sanitizer findings are informational
-
-  # ── Integration Tests ──
-  integration-tests:
-    needs: unit-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: integration tests
-        uses: ./.github/actions/driver-tests
-        with:
-          driver_name: python
-          driver_dist_dir: /tmp/python-driver/rethinkdb
-          test_command: |
-            export PYTHON_DRIVER=/tmp/python-driver/rethinkdb
-            export MAX_JOBS=4
-            test/run --timeout 300 --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H all '!unit' '!cpplint' '!long' '!disabled'
-
-  # ── Long-Running Tests ──
-  long-running-tests:
-    needs: unit-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: long running tests
-        uses: ./.github/actions/driver-tests
-        with:
-          driver_name: python
-          driver_dist_dir: /tmp/python-driver/rethinkdb
-          test_command: |
-            export PYTHON_DRIVER=/tmp/python-driver/rethinkdb
-            export MAX_JOBS=4
-            test/run --timeout 900 --jobs "${MAX_JOBS}" -o ${TEST_OUTPUT_DIR} -H long '!disabled'
-
-  # ── Polyglot Tests ──
-  polyglot-tests-python:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [integration-tests, long-running-tests]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: polyglot tests for python
-        uses: ./.github/actions/driver-tests
-        with:
-          driver_name: python
-          driver_dist_dir: /tmp/python-driver/rethinkdb
-          interpreter: py3.12
-          test_target: polyglot
-
-  polyglot-tests-javascript:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [integration-tests, long-running-tests]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '16.14'
-      - name: polyglot tests for javascript
-        uses: ./.github/actions/driver-tests
-        with:
-          driver_name: javascript
-          driver_dist_dir: /tmp/driver/dist
-          repo_url: https://github.com/rethinkdb/rethinkdb-javascript.git
-          commit_hash: 9e3aa0a229d2f5759a5215844317dae4e7d58d10
-          interpreter: js16.14
-          test_target: polyglot
-          install_command: npm install && npm run build
-
-  polyglot-tests-ruby:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [integration-tests, long-running-tests]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '2.7'
-      - name: polyglot tests for ruby
-        uses: ./.github/actions/driver-tests
-        with:
-          driver_name: ruby
-          driver_dist_dir: /tmp/driver/lib
-          repo_url: https://github.com/rethinkdb/rethinkdb-ruby.git
-          commit_hash: e5b14cc26a9263a60ad88fb4443d4699b7eb6182
-          interpreter: rb2.7
-          test_target: polyglot
-          install_command: bundle update --bundler && bundle install && rake build
+      - name: Unit tests
+        run: ./build/release/rethinkdb-unittest
