@@ -1,0 +1,21 @@
+# RethinkDB Code Owners
+# Last updated: 2026-07-28
+
+# Core engine
+src/rdb_protocol/ @totalwindupflightsystems
+src/btree/ @totalwindupflightsystems
+src/buffer_cache/ @totalwindupflightsystems
+src/serializer/ @totalwindupflightsystems
+src/arch/ @totalwindupflightsystems
+src/clustering/ @totalwindupflightsystems
+src/rpc/ @totalwindupflightsystems
+
+# Tests
+src/unittest/ @totalwindupflightsystems
+test/ @totalwindupflightsystems
+
+# CI/CD
+.github/ @totalwindupflightsystems
+
+# Documentation
+*.md @totalwindupflightsystems
