@@ -151,17 +151,29 @@ tasks:
   created_at: '2026-07-26T14:16:32.983198+00:00'
   completed_at: '2026-07-26T15:13:49.383376+00:00'
 - id: INT-07-BUG-BRIN
-  title: "BRIN index never becomes ready + between queries return empty — FIXED (57e2a64cf0)"
+  title: "BRIN index never becomes ready + between queries return empty \u2014 FIXED\
+    \ (57e2a64cf0)"
   criteria:
-  - "store_t::sindex_list() in src/rdb_protocol/btree_store.cc copies brin, brin_columns, brin_range_size from sindex_disk_info_t into sindex_config_t (previously dropped — sindex_manager pump never saw goal==current for BRIN indexes, kept dropping/recreating them, so ready never transitioned) — VERIFIED live"
-  - "BRIN between query on rows inserted after index creation returns correct rows (NULL_BLOCK_ID sidecar falls back to full-scan of query region with mapping recheck, not empty stream)"
-  - "index_create with 50 PRE-EXISTING docs: ready=True reached via index_status polling (verified live 2026-07-31, 6.5s) — construction completes, index_wait returns"
-  - "index_create on empty table then insert: ready=True, between query returns inserted rows (verified live 2026-07-31)"
-  - "test/vector_fts_brin_integration_test.py passes 33/33 (previously hung at index_wait forever)"
-  - 'Verify unit: ./build/release/rethinkdb-unittest --gtest_filter=''*Brin*:*Vector*:*Fts*:*Sindex*'' → 93/93 PASS'
-  - "build_and_persist_brin_sidecar_for_sindex() in src/rdb_protocol/protocol.cc does not hang (buf_lock fix verified)"
-  status: in_progress
+  - "store_t::sindex_list() in src/rdb_protocol/btree_store.cc copies brin, brin_columns,\
+    \ brin_range_size from sindex_disk_info_t into sindex_config_t (previously dropped\
+    \ \u2014 sindex_manager pump never saw goal==current for BRIN indexes, kept dropping/recreating\
+    \ them, so ready never transitioned) \u2014 VERIFIED live"
+  - BRIN between query on rows inserted after index creation returns correct rows
+    (NULL_BLOCK_ID sidecar falls back to full-scan of query region with mapping recheck,
+    not empty stream)
+  - "index_create with 50 PRE-EXISTING docs: ready=True reached via index_status polling\
+    \ (verified live 2026-07-31, 6.5s) \u2014 construction completes, index_wait returns"
+  - 'index_create on empty table then insert: ready=True, between query returns inserted
+    rows (verified live 2026-07-31)'
+  - test/vector_fts_brin_integration_test.py passes 33/33 (previously hung at index_wait
+    forever)
+  - "Verify unit: ./build/release/rethinkdb-unittest --gtest_filter='*Brin*:*Vector*:*Fts*:*Sindex*'\
+    \ \u2192 93/93 PASS"
+  - build_and_persist_brin_sidecar_for_sindex() in src/rdb_protocol/protocol.cc does
+    not hang (buf_lock fix verified)
+  status: complete
   created_at: '2026-07-27T07:06:57.223173+00:00'
+  completed_at: '2026-07-31T20:44:17.667772+00:00'
 - id: PERF-BENCH
   title: 'PERF-BENCH: Google Benchmark scaffolding for CDC, vector, FTS, BRIN operations'
   criteria:
