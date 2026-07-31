@@ -49,13 +49,15 @@
 |~~INT-06B~~ | ✅ Fix resolved inline — test expectation fixes (snapshot string, target field) + binary rebuild | Canceled | 2 | INT-06 | ++testing, ++build-system | DeepSeek V4 Flash | No Python driver proto change needed; binary rebuild + test fixes resolved all issues | — |
 ||~~INT-07~~ | ✅ Vector+FTS verified through live server (42/42 assertions). BRIN split to INT-07-BUG-BRIN | High | 4 | INT-01 | ++testing, ++search | DeepSeek V4 Pro | Vector index (L2/cosine/IP), FTS match — all ready=True. test/vector_fts_integration_test.py passes 42/42 | GLM-5.2 |
 |~~INT-08~~ | ✅ CI integration workflow committed — gcc-15 on ubuntu-26.04, 90min timeout (ef86dae) | High | 3 | INT-01 | ++infrastructure, ++testing | DeepSeek V4 Flash | GitHub Actions workflow, pip install rethinkdb, automated run | MiniMax M3 |
-| PHASE3-ASYNC | Async I/O subsystem (PG18-style) | Medium | 9 (architectural) | None | +++architecture, +++concurrency, +++performance | GPT-5.6 Sol | System-wide redesign; requires deep architectural planning | — |
-| PHASE3-VEC | Generated/virtual columns | Low | 4 | PHASE3-ASYNC | ++code-generation, +architecture | GLM-5.2 | Moderate feature with clear scope | DeepSeek V4 Pro |
-| PHASE3-MERGE | MERGE/UPSERT complex conditions | Low | 5 | None | ++code-generation, +architecture | GLM-5.2 | ReQL surface extension | DeepSeek V4 Pro |
-| PHASE3-TS | Time-series optimizations | Low | 5 | None | ++code-generation, ++performance | DeepSeek V4 Pro | Optimizer + storage changes | GLM-5.2 |
-||~~INT-07-BUG~~ | ✅ Fixed in tick #34 — graph_block.reset_buf_lock() before txn->commit() in protocol.cc:427 | High | 1 | INT-07 | ++debugging, +++backend | DeepSeek V4 Flash | 1-line fix: release buf_lock before transaction commit. Verified: 215/215 unit tests PASS | — |
-|| PHASE3-FDW | Foreign data wrapper support | Low | 6 | None | ++architecture, ++distributed-systems | GPT-5.6 Sol | Architectural feature; federation layer | GLM-5.2 |
-| PHASE3-WASM | WASM-based UDF sandbox | Low | 7 | None | +++security, ++architecture, ++performance | GPT-5.6 Sol | Replace V8/QuickJS with WASM runtime; security-critical | — |
+| **PHASE3 — APPROVED BY BANE (2026-07-31). Queue order: 1→6. Foreman: decompose + dispatch one at a time.** |
+| INT-07-BUG-BRIN | 🔄 **RE-OPENED** — BRIN ready-state fix (Option A: build sidecar from primary B-tree) | High | 6 | INT-07 | ++debugging, +++backend | GPT-5.6 Sol | **QUEUE #0** — the one known-broken feature; fix before new features | — |
+| PHASE3-MERGE | MERGE/UPSERT complex conditions | Low | 5 | None | ++code-generation, +architecture | GLM-5.2 | **QUEUE #1** — ReQL surface extension, no deps | DeepSeek V4 Pro |
+| PHASE3-VEC | Generated/virtual columns | Low | 4 | PHASE3-MERGE | ++code-generation, +architecture | GLM-5.2 | **QUEUE #2** — moderate feature, clear scope | DeepSeek V4 Pro |
+| PHASE3-TS | Time-series optimizations | Low | 5 | PHASE3-VEC | ++code-generation, ++performance | DeepSeek V4 Pro | **QUEUE #3** — optimizer + storage changes | GLM-5.2 |
+| PHASE3-FDW | Foreign data wrapper support | Low | 6 | PHASE3-TS | ++architecture, ++distributed-systems | GPT-5.6 Sol | **QUEUE #4** — federation layer | GLM-5.2 |
+| PHASE3-ASYNC | Async I/O subsystem (PG18-style) | Medium | 9 (architectural) | PHASE3-FDW | +++architecture, +++concurrency, +++performance | GPT-5.6 Sol | **QUEUE #5** — system-wide redesign | — |
+| PHASE3-WASM | WASM-based UDF sandbox | Low | 7 | PHASE3-ASYNC | +++security, ++architecture, ++performance | GPT-5.6 Sol | **QUEUE #6** — replace V8/QuickJS; security-critical | — |
+|~~INT-07-BUG~~ | ✅ Fixed in tick #34 — graph_block.reset_buf_lock() before txn->commit() in protocol.cc:427 | High | 1 | INT-07 | ++debugging, +++backend | DeepSeek V4 Flash | 1-line fix: release buf_lock before transaction commit. Verified: 215/215 unit tests PASS | — |
 | PERF-BENCH | Performance benchmarks (0 exist for CDC/vector/FTS) | Medium | 3 | CDC-10 | ++testing, +performance | DeepSeek V4 Flash | Mechanical: Google Benchmark scaffolding for existing features | MiniMax M3 |
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | DeepSeek V4 Pro | Audit runs every tick; finds new gaps | GLM-5.2 |
 
