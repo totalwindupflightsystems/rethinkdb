@@ -838,7 +838,11 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         // 3. Get the BRIN summary sidecar block.
         block_id_t summary_block_id = sindex_sb->get_brin_summary_block_id();
         if (summary_block_id == NULL_BLOCK_ID) {
-            // Empty sidecar — return empty stream.
+            // Absent/empty sidecar — no pruning information available. Fall
+            // back to a full scan of the query region with mapping recheck
+            // (same correctness as a non-BRIN sindex read). Returning an
+            // empty stream would silently drop rows inserted after the
+            // sidecar was built on an empty table.
             sindex_sb.reset();
             ql::env_t ql_env(
                 ctx,
@@ -846,10 +850,12 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 interruptor,
                 brin_read.serializable_env,
                 trace);
+            std::vector<key_range_t> full_scan;
+            full_scan.push_back(brin_read.region.inner);
             rdb_brin_rget_slice(
                 btree,
                 brin_read.region,
-                std::vector<key_range_t>(),
+                full_scan,
                 superblock,
                 &ql_env,
                 brin_read.batchspec,

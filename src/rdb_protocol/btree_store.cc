@@ -364,6 +364,9 @@ std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > store_t::sin
         res->first.vector = disk_info.vector;
         res->first.vector_dim = disk_info.vector_dim;
         res->first.vector_metric = disk_info.vector_metric;
+        res->first.brin = disk_info.brin;
+        res->first.brin_columns = disk_info.brin_columns;
+        res->first.brin_range_size = disk_info.brin_range_size;
 
         res->second.outdated =
             (disk_info.mapping_version_info.latest_compatible_reql_version !=
