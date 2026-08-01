@@ -25,3 +25,4 @@ agent-sdlc-interaction-map.json
 # CI download artifacts
 build-artifacts/
 rethinkdb-artifact-*/
+driver/python/
