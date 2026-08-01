@@ -50,6 +50,7 @@ static const std::set<std::string> acceptable_optargs({
     "conflict",
     "data",
     "db",
+    "deep",
     "default",
     "default_timezone",
     "dry_run",

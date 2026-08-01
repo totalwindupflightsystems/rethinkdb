@@ -21549,3 +21549,10 @@
 {"from":"driver/python/ql2_pb2.py","to":"pkg:google.protobuf","rel":"imports","provenance":"ast_exact","confidence":1.0}
 {"from":"driver/python/ql2_pb2.py","to":"pkg:google.protobuf","rel":"imports","provenance":"ast_exact","confidence":1.0}
 {"from":"driver/python/ql2_pb2.py","to":"pkg:google.protobuf","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:shutil","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:subprocess","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:sys","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:tempfile","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:time","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:uuid","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"test/cluster_e2e_test.py","to":"pkg:rethinkdb","rel":"imports","provenance":"ast_exact","confidence":1.0}

@@ -209,6 +209,7 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::UPDATE:
     case Term::DELETE:
     case Term::INSERT:
+    case Term::UPSERT:
     case Term::REPLACE:
     case Term::DB_CREATE:
     case Term::DB_DROP:
@@ -271,6 +272,7 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::PLUCK:
     case Term::WITHOUT:
     case Term::MERGE:
+    case Term::MERGE_DEEP:
     case Term::LITERAL:
     case Term::BETWEEN_DEPRECATED:
     case Term::BETWEEN:
@@ -423,6 +425,7 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::UPDATE:
     case Term::DELETE:
     case Term::INSERT:
+    case Term::UPSERT:
     case Term::REPLACE:
     case Term::DB_CREATE:
     case Term::DB_DROP:
@@ -501,6 +504,7 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::PLUCK:
     case Term::WITHOUT:
     case Term::MERGE:
+    case Term::MERGE_DEEP:
     case Term::LITERAL:
     case Term::BETWEEN_DEPRECATED:
     case Term::BETWEEN:
@@ -647,6 +651,7 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::DELETE:
     case Term::REPLACE:
     case Term::INSERT:
+    case Term::UPSERT:
     case Term::COUNT:
     case Term::SUM:
     case Term::AVG:
@@ -700,6 +705,7 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::PLUCK:
     case Term::WITHOUT:
     case Term::MERGE:
+    case Term::MERGE_DEEP:
     case Term::ARGS:
     case Term::LITERAL:
     case Term::BETWEEN_DEPRECATED:

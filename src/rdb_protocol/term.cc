@@ -76,6 +76,7 @@ counted_t<const term_t> compile_on_current_stack(
     case Term::PLUCK:              return make_pluck_term(env, t);
     case Term::WITHOUT:            return make_without_term(env, t);
     case Term::MERGE:              return make_merge_term(env, t);
+    case Term::MERGE_DEEP:         return make_merge_deep_term(env, t);
     case Term::LITERAL:            return make_literal_term(env, t);
     case Term::ARGS:               return make_args_term(env, t);
     case Term::BETWEEN_DEPRECATED: return make_between_deprecated_term(env, t);
@@ -115,6 +116,7 @@ counted_t<const term_t> compile_on_current_stack(
     case Term::DELETE:             return make_delete_term(env, t);
     case Term::REPLACE:            return make_replace_term(env, t);
     case Term::INSERT:             return make_insert_term(env, t);
+    case Term::UPSERT:             return make_upsert_term(env, t);
     case Term::DB_CREATE:          return make_db_create_term(env, t);
     case Term::DB_DROP:            return make_db_drop_term(env, t);
     case Term::DB_LIST:            return make_db_list_term(env, t);

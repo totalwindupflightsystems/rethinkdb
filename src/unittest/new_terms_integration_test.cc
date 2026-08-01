@@ -156,6 +156,8 @@ TEST(NewTermIntegration, AllPhase3TermsPassServerWhitelist) {
         Term::CDC_SINK_LIST,       // 213
         Term::CDC_SINK_STATUS,     // 214
         Term::CDC_SINK_DROP,       // 215
+        Term::UPSERT,              // 216
+        Term::MERGE_DEEP,          // 217
     };
     for (Term::TermType t : all_phase3) {
         EXPECT_TRUE(ql::term_type_is_valid(t))

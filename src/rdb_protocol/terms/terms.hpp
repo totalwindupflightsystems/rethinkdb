@@ -215,6 +215,8 @@ counted_t<term_t> make_literal_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_merge_term(
     compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_merge_deep_term(
+    compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_has_fields_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_get_field_term(
@@ -409,6 +411,8 @@ counted_t<term_t> make_implicit_var_term(
 
 // writes.cc
 counted_t<term_t> make_insert_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_upsert_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_replace_term(
     compile_env_t *env, const raw_term_t &term);

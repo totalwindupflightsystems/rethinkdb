@@ -849,6 +849,14 @@ message Term {
         CDC_SINK_STATUS = 214;    // TABLE, STRING -> OBJECT
         // Drop a named CDC sink.
         CDC_SINK_DROP = 215;      // TABLE, STRING -> OBJECT
+        // Upsert documents: insert with conflict='update' semantics by default
+        // (Postgres ON CONFLICT DO UPDATE parity). Accepts the same optargs as
+        // INSERT (conflict, durability, return_changes, ...); when `conflict`
+        // is omitted it behaves as conflict='update'.
+        UPSERT = 216;             // TABLE, OBJECT|SEQUENCE, {conflict, durability, ...} -> OBJECT
+        // Deep-merge two objects recursively (merge with `deep: true`),
+        // or merge with a list of explicit field conditions (SQL MERGE parity).
+        MERGE_DEEP = 217;         // OBJECT, OBJECT, {deep:BOOLEAN} -> OBJECT
     }
     optional TermType type = 1;
 

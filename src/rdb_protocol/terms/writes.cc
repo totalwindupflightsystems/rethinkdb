@@ -85,12 +85,16 @@ return_changes_t parse_return_changes(
 
 class insert_term_t : public op_term_t {
 public:
-    insert_term_t(compile_env_t *env, const raw_term_t &term)
+    insert_term_t(compile_env_t *env, const raw_term_t &term,
+                  conflict_behavior_t conflict_default = conflict_behavior_t::ERROR)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"conflict", "durability", "return_vals",
-                                  "return_changes", "ignore_write_hook"})) { }
+                                  "return_changes", "ignore_write_hook"})),
+          conflict_default_(conflict_default) { }
 
 private:
+    conflict_behavior_t conflict_default_;
+
     static void maybe_generate_key(counted_t<table_t> tbl,
                                    const configured_limits_t &limits,
                                    std::vector<std::string> *generated_keys_out,
@@ -136,7 +140,9 @@ private:
 
         scoped_ptr_t<val_t> conflict_optarg = args->optarg(env, "conflict");
         const conflict_behavior_t conflict_behavior
-            = parse_conflict_optarg(args->optarg(env, "conflict"));
+            = conflict_optarg.has()
+            ? parse_conflict_optarg(conflict_optarg)
+            : conflict_default_;
         const durability_requirement_t durability_requirement
             = parse_durability_optarg(args->optarg(env, "durability"));
 
@@ -452,6 +458,21 @@ private:
 counted_t<term_t> make_insert_term(
         compile_env_t *env, const raw_term_t &term) {
     return make_counted<insert_term_t>(env, term);
+}
+
+/* UPSERT (216): insert with conflict='update' semantics by default —
+   Postgres ON CONFLICT DO UPDATE parity. All insert optargs still work;
+   an explicit `conflict` optarg overrides the default. */
+class upsert_term_t : public insert_term_t {
+public:
+    upsert_term_t(compile_env_t *env, const raw_term_t &term)
+        : insert_term_t(env, term, conflict_behavior_t::UPDATE) { }
+    virtual const char *name() const { return "upsert"; }
+};
+
+counted_t<term_t> make_upsert_term(
+        compile_env_t *env, const raw_term_t &term) {
+    return make_counted<upsert_term_t>(env, term);
 }
 
 counted_t<term_t> make_replace_term(

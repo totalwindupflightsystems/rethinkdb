@@ -377,9 +377,113 @@ counted_t<term_t> make_literal_term(
     return make_counted<literal_term_t>(env, term);
 }
 
+/* Recursive deep merge. Semantics (superset of stock merge):
+   - objects merge field-by-field; when both sides have an object at the same
+     field, recurse.
+   - arrays merge element-wise (by position) when both sides have arrays of
+     the same length; longer right arrays extend the result.
+   - non-object/non-array values from the right side win.
+   Stock `merge` already recurses into nested objects, but it REPLACES arrays
+   wholesale; merge_deep is the Postgres-style deep merge that also descends
+   into arrays. */
+datum_t deep_merge_objects(const datum_t &left, const datum_t &right) {
+    r_sanity_check(left.get_type() == datum_t::R_OBJECT);
+    r_sanity_check(right.get_type() == datum_t::R_OBJECT);
+    datum_object_builder_t out;
+    // Start from left's fields.
+    for (size_t i = 0; i < left.obj_size(); ++i) {
+        auto pair = left.get_pair(i);
+        out.add(pair.first, pair.second);
+    }
+    // Merge right's fields over them.
+    datum_t out_datum = std::move(out).to_datum();
+    for (size_t i = 0; i < right.obj_size(); ++i) {
+        auto pair = right.get_pair(i);
+        datum_t existing = out_datum.get_field(pair.first, NOTHROW);
+        if (existing.has() && pair.second.has()) {
+            datum_t merged;
+            if (existing.get_type() == datum_t::R_OBJECT
+                && pair.second.get_type() == datum_t::R_OBJECT) {
+                merged = deep_merge_objects(existing, pair.second);
+            } else if (existing.get_type() == datum_t::R_ARRAY
+                       && pair.second.get_type() == datum_t::R_ARRAY) {
+                // Element-wise array merge (by position).
+                std::vector<datum_t> elems;
+                size_t n = std::max(existing.arr_size(), pair.second.arr_size());
+                elems.reserve(n);
+                for (size_t j = 0; j < n; ++j) {
+                    datum_t lj = existing.get(j, NOTHROW);
+                    datum_t rj = pair.second.get(j, NOTHROW);
+                    if (lj.has() && rj.has()
+                        && lj.get_type() == datum_t::R_OBJECT
+                        && rj.get_type() == datum_t::R_OBJECT) {
+                        elems.push_back(deep_merge_objects(lj, rj));
+                    } else if (rj.has()) {
+                        elems.push_back(rj);
+                    } else {
+                        elems.push_back(lj);
+                    }
+                }
+                merged = datum_t(std::move(elems),
+                                 datum_t::no_array_size_limit_check_t());
+            } else {
+                merged = pair.second;
+            }
+            datum_object_builder_t b;
+            b.add(pair.first, merged);
+            out_datum = out_datum.merge(std::move(b).to_datum());
+        } else {
+            datum_object_builder_t b;
+            b.add(pair.first, pair.second);
+            out_datum = out_datum.merge(std::move(b).to_datum());
+        }
+    }
+    return out_datum;
+}
+
+class merge_deep_term_t : public op_term_t {
+public:
+    merge_deep_term_t(compile_env_t *env, const raw_term_t &term)
+        : op_term_t(env, term, argspec_t(2, -1, LITERAL_OK),
+                    optargspec_t({"deep"})) { }
+private:
+    virtual scoped_ptr_t<val_t> eval_impl(
+        scope_env_t *env, args_t *args, eval_flags_t) const {
+        bool deep = false;
+        if (scoped_ptr_t<val_t> deep_opt = args->optarg(env, "deep")) {
+            deep = deep_opt->as_bool();
+        }
+        datum_t d = args->arg(env, 0, LITERAL_OK)->as_datum();
+        rcheck(d.get_type() == datum_t::R_OBJECT,
+               base_exc_t::LOGIC,
+               "merge_deep can only be used on objects.");
+        for (size_t i = 1; i < args->num_args(); ++i) {
+            scoped_ptr_t<val_t> v = args->arg(env, i, LITERAL_OK);
+            datum_t d0;
+            if (v->get_type().is_convertible(val_t::type_t::DATUM)) {
+                d0 = v->as_datum();
+            } else {
+                auto f = v->as_func(CONSTANT_SHORTCUT);
+                d0 = f->call(env->env, d, LITERAL_OK)->as_datum();
+            }
+            rcheck(d0.get_type() == datum_t::R_OBJECT,
+                   base_exc_t::LOGIC,
+                   "merge_deep can only merge objects.");
+            d = deep ? deep_merge_objects(d, d0) : d.merge(d0);
+        }
+        return new_val(d);
+    }
+    virtual const char *name() const { return "merge_deep"; }
+};
+
 counted_t<term_t> make_merge_term(
         compile_env_t *env, const raw_term_t &term) {
     return make_counted<merge_term_t>(env, term);
+}
+
+counted_t<term_t> make_merge_deep_term(
+        compile_env_t *env, const raw_term_t &term) {
+    return make_counted<merge_deep_term_t>(env, term);
 }
 
 } // namespace ql

@@ -375,6 +375,9 @@ class RqlQuery(object):
     def merge(self, *args):
         return Merge(self, *[func_wrap(arg) for arg in args])
 
+    def merge_deep(self, *args, **kwargs):
+        return MergeDeep(self, *[func_wrap(arg) for arg in args], **kwargs)
+
     def append(self, *args):
         return Append(self, *args)
 
@@ -1281,6 +1284,9 @@ class Table(RqlQuery):
     def insert(self, *args, **kwargs):
         return Insert(self, *[expr(arg) for arg in args], **kwargs)
 
+    def upsert(self, *args, **kwargs):
+        return Upsert(self, *[expr(arg) for arg in args], **kwargs)
+
     def get(self, *args):
         return Get(self, *args)
 
@@ -1596,6 +1602,16 @@ class Replace(RqlMethodQuery):
 class Insert(RqlMethodQuery):
     term_type = P_TERM.INSERT
     statement = "insert"
+
+
+class Upsert(RqlMethodQuery):
+    term_type = P_TERM.UPSERT
+    statement = "upsert"
+
+
+class MergeDeep(RqlMethodQuery):
+    term_type = P_TERM.MERGE_DEEP
+    statement = "merge_deep"
 
 
 class DbCreate(RqlTopLevelQuery):
