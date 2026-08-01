@@ -762,6 +762,11 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             // apply the sindex mapping function to each doc to recover its
             // vector, compute true L2 distance, return the k nearest.
             // O(n) but correct — identical results to an exact scan.
+            // NOTE: we collect (dist, doc) pairs directly from the traversal
+            // callback; we must NOT call rdb_get() afterwards because it
+            // releases the primary superblock (find_keyvalue_location_for_read
+            // calls superblock->release()), which breaks subsequent reads and
+            // crashes on multi-shard/cluster dispatch.
             vector_read_response_t::result_t out;
             try {
                 cond_t non_interruptor;
@@ -773,7 +778,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                     sindex_disk_info_t sindex_info;
                     std::vector<double> query_vector;
                     ql::env_t *sindex_env;
-                    std::vector<std::pair<double, store_key_t>> scanned;
+                    std::vector<std::pair<double, ql::datum_t>> scanned;
                     continue_bool_t handle_pair(scoped_key_value_t &&keyvalue,
                                                 signal_t *) {
                         ql::datum_t doc = get_data(
@@ -804,7 +809,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                             double d = vec[i] - query_vector[i];
                             dist += d * d;
                         }
-                        scanned.emplace_back(dist, store_key_t(keyvalue.key()));
+                        scanned.emplace_back(dist, doc);
                         return continue_bool_t::CONTINUE;
                     }
                 } cb;
@@ -824,9 +829,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 std::sort(cb.scanned.begin(), cb.scanned.end());
                 size_t n = std::min(cb.scanned.size(), vec_read.k);
                 for (size_t i = 0; i < n; ++i) {
-                    point_read_response_t pr_resp;
-                    rdb_get(cb.scanned[i].second, btree, superblock, &pr_resp, trace);
-                    out.emplace_back(cb.scanned[i].first, std::move(pr_resp.data));
+                    out.emplace_back(cb.scanned[i].first, cb.scanned[i].second);
                 }
             } catch (const std::exception &e) {
                 res->results_or_error = ql::exc_t(
@@ -875,6 +878,14 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                              /*ef_search=*/100);
 
         // 6. Build response — for each result, read the primary key's datum.
+        // WARNING: rdb_get() releases the primary superblock after the first
+        // call (find_keyvalue_location_for_read calls superblock->release()),
+        // so a multi-row loop here would crash. This branch is currently
+        // unreachable — the HNSW graph sidecar is never persisted, so
+        // graph_block_id is always NULL_BLOCK_ID and the brute-force fallback
+        // above handles all reads. If graph persistence is ever enabled,
+        // rewrite this to collect docs during a single B-tree traversal
+        // instead of calling rdb_get() per result.
         vector_read_response_t::result_t out;
         out.reserve(results.size());
         for (const auto &r : results) {
