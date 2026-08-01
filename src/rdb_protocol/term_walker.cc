@@ -393,6 +393,10 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::CEIL:
     case Term::ROUND:
     case Term::FORMAT:
+    case Term::FTS_TOKENIZE:
+    case Term::FTS_MATCH:
+    case Term::VECTOR:
+    case Term::VECTOR_NEAR:
     case Term::PARTITION_INFO:
     case Term::REPARTITION:
     case Term::PUBLICATION_CREATE:
@@ -447,6 +451,8 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::CDC_SINK_LIST:
     case Term::CDC_SINK_STATUS:
     case Term::CDC_SINK_DROP:
+    case Term::PARTITION_INFO:
+    case Term::REPARTITION:
         return true;
 
     case Term::DATUM:
@@ -617,6 +623,10 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::CEIL:
     case Term::ROUND:
     case Term::FORMAT:
+    case Term::FTS_TOKENIZE:
+    case Term::FTS_MATCH:
+    case Term::VECTOR:
+    case Term::VECTOR_NEAR:
         return false;
     default: unreachable();
     }
@@ -813,6 +823,10 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::CEIL:
     case Term::ROUND:
     case Term::FORMAT:
+    case Term::FTS_TOKENIZE:
+    case Term::FTS_MATCH:
+    case Term::VECTOR:
+    case Term::VECTOR_NEAR:
     case Term::PARTITION_INFO:
     case Term::REPARTITION:
     case Term::PUBLICATION_CREATE:

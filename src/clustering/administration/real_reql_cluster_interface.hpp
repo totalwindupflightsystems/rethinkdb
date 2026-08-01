@@ -341,6 +341,38 @@ public:
             signal_t *interruptor,
             admin_err_t *error_out);
 
+    bool sink_create(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const ql::cdc_sink_config_t &config,
+            signal_t *interruptor,
+            admin_err_t *error_out);
+
+    bool sink_list(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            std::map<uuid_u, ql::cdc_sink_config_t> *sinks_out);
+
+    bool sink_status(
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const name_string_t &sink_name,
+            signal_t *interruptor,
+            admin_err_t *error_out,
+            ql::cdc_sink_config_t *config_out);
+
+    bool sink_drop(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const uuid_u &sink_id,
+            const name_string_t &sink_name,
+            signal_t *interruptor,
+            admin_err_t *error_out);
+
     /* `calculate_split_points_with_distribution` needs access to the underlying
     `namespace_interface_t` and `table_meta_client_t`. */
     table_meta_client_t *get_table_meta_client() {

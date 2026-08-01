@@ -144,6 +144,22 @@ public:
         return size == 1;
     }
 
+    result_type operator()(
+            const sink_create_t &sink_create) const {
+        auto pair = table_config_and_shards->sinks.insert(
+            std::make_pair(
+                sink_create.config.sink_id,
+                sink_create.config));
+        return pair.second;
+    }
+
+    result_type operator()(
+            const sink_drop_t &sink_drop) const {
+        auto size = table_config_and_shards->sinks.erase(
+            sink_drop.sink_id);
+        return size == 1;
+    }
+
 private:
     table_config_and_shards_t *table_config_and_shards;
 };
@@ -309,9 +325,9 @@ RDB_IMPL_EQUALITY_COMPARABLE_7(table_config_t,
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);
 
-RDB_IMPL_EQUALITY_COMPARABLE_5(table_config_and_shards_t,
+RDB_IMPL_EQUALITY_COMPARABLE_6(table_config_and_shards_t,
                                config, shard_scheme, server_names,
-                               publications, subscriptions);
+                               publications, subscriptions, sinks);
 
 template <cluster_version_t W>
 void serialize(write_message_t *wm, const table_config_and_shards_t &tcas) {
@@ -328,6 +344,9 @@ void serialize(write_message_t *wm, const table_config_and_shards_t &tcas) {
     is empty on tables that have no subscriptions. */
     std::map<uuid_u, ql::subscription_config_t> subscriptions = tcas.subscriptions;
     serialize<W>(wm, subscriptions);
+    /* CDC sinks map. Same additive convention as publications/subscriptions. */
+    std::map<uuid_u, ql::cdc_sink_config_t> sinks = tcas.sinks;
+    serialize<W>(wm, sinks);
 }
 
 INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(table_config_and_shards_t);
@@ -381,11 +400,16 @@ archive_result_t deserialize(
     res = deserialize<W>(s, &subscriptions);
     if (bad(res)) { return res; }
 
+    std::map<uuid_u, ql::cdc_sink_config_t> sinks;
+    res = deserialize<W>(s, &sinks);
+    if (bad(res)) { return res; }
+
     tcas->config = std::move(config);
     tcas->shard_scheme = std::move(shard_scheme);
     tcas->server_names = std::move(server_names);
     tcas->publications = std::move(publications);
     tcas->subscriptions = std::move(subscriptions);
+    tcas->sinks = std::move(sinks);
 
     return res;
 }
@@ -441,6 +465,12 @@ RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     table_config_and_shards_change_t::subscription_drop_t,
     table_uuid, subscription_id, name);
+
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
+    table_config_and_shards_change_t::sink_create_t, config);
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
+    table_config_and_shards_change_t::sink_drop_t,
+    sink_id, name);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(database_semilattice_metadata_t, name);
 RDB_IMPL_SEMILATTICE_JOINABLE_1(database_semilattice_metadata_t, name);

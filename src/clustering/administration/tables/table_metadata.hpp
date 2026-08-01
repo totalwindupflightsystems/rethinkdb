@@ -17,6 +17,7 @@
 #include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/publication.hpp"  // publication_config_t for publications map
+#include "rdb_protocol/cdc_sink.hpp"      // cdc_sink_config_t for sinks map
 #include "rdb_protocol/subscription.hpp"  // subscription_config_t for subscriptions map
 #include "rpc/connectivity/server_id.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
@@ -119,6 +120,11 @@ public:
     table_config_and_shards_change_t::subscription_create_t / subscription_drop_t.
     The map is empty on tables that have no subscriptions. */
     std::map<uuid_u, ql::subscription_config_t> subscriptions;
+
+    /* CDC sinks attached to this table's publications. Keyed by sink_id.
+    Committed through Raft via table_config_and_shards_change_t::sink_create_t /
+    sink_drop_t. The map is empty on tables that have no sinks. */
+    std::map<uuid_u, ql::cdc_sink_config_t> sinks;
 };
 
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_t);
@@ -218,6 +224,22 @@ public:
         name_string_t name;
     };
 
+    /* Register a CDC sink on this table. The sink is inserted into
+    `table_config_and_shards_t::sinks` keyed by `config.sink_id`;
+    apply_change returns false if a sink with that id already exists. */
+    class sink_create_t {
+    public:
+        ql::cdc_sink_config_t config;
+    };
+
+    /* Drop a CDC sink by id. `name` is echoed in audit logs. apply_change
+    returns false if the sink does not exist. */
+    class sink_drop_t {
+    public:
+        uuid_u sink_id;
+        name_string_t name;
+    };
+
     table_config_and_shards_change_t() { }
 
     explicit table_config_and_shards_change_t(set_table_config_and_shards_t &&_change)
@@ -242,6 +264,10 @@ public:
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(subscription_drop_t &&_change)
         : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(sink_create_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(sink_drop_t &&_change)
+        : change(std::move(_change)) { }
 
 
     /* Note, it's important that `apply_change` does not change
@@ -264,7 +290,9 @@ private:
         publication_create_t,
         publication_drop_t,
         subscription_create_t,
-        subscription_drop_t> change;
+        subscription_drop_t,
+        sink_create_t,
+        sink_drop_t> change;
 
     class apply_change_visitor_t;
 };
@@ -280,5 +308,7 @@ RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_create_t)
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_drop_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sink_create_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sink_drop_t);
 
 #endif // CLUSTERING_ADMINISTRATION_TABLES_TABLE_METADATA_HPP_

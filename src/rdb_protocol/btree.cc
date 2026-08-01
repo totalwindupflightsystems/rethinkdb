@@ -28,6 +28,7 @@
 #include "rdb_protocol/geo/indexing.hpp"
 #include "rdb_protocol/blob_wrapper.hpp"
 #include "rdb_protocol/func.hpp"
+#include "rdb_protocol/fts_tokenizer.hpp"
 #include "rdb_protocol/geo_traversal.hpp"
 #include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
@@ -1730,6 +1731,23 @@ void compute_keys(const store_key_t &primary_key,
 
     ql::datum_t index =
         index_info.mapping.compile_wire_func()->call(&sindex_env, doc)->as_datum();
+
+    /* FTS indexes: tokenize string values so each token becomes its own
+       index key. `fts_match` tokenizes the query and does get_all() with the
+       resulting tokens, so the sindex keys must be the tokens themselves,
+       not the raw document string. */
+    if (index_info.fts == sindex_fts_bool_t::FTS
+        && index.get_type() == ql::datum_t::R_STR) {
+        ql::fts_tokenizer_t tokenizer;
+        std::vector<std::string> tokens =
+            tokenizer.tokenize(index.as_str().to_std());
+        std::vector<ql::datum_t> token_datums;
+        token_datums.reserve(tokens.size());
+        for (const std::string &tok : tokens) {
+            token_datums.emplace_back(datum_string_t(tok));
+        }
+        index = ql::datum_t(std::move(token_datums), ql::configured_limits_t::unlimited);
+    }
 
     if (index_info.multi == sindex_multi_bool_t::MULTI
         && index.get_type() == ql::datum_t::R_ARRAY) {

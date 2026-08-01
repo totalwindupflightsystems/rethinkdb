@@ -5,6 +5,9 @@
 #include <list>
 
 #include "btree/backfill_debug.hpp"
+#include "btree/depth_first_traversal.hpp"
+#include "btree/leaf_node.hpp"
+#include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
 #include "buffer_cache/blob.hpp"
@@ -21,6 +24,7 @@
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/hnsw.hpp"
+#include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/query_planner.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/table_common.hpp"
@@ -721,13 +725,16 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             boost::get<vector_read_response_t>(&response->response);
 
         // 1. Acquire the sindex superblock for read.
+        // KEEP the primary superblock: both the HNSW graph path and the
+        // brute-force fallback need it afterwards (rdb_get row fetches and
+        // the primary B-tree traversal).
         sindex_disk_info_t sindex_info;
         uuid_u sindex_uuid;
         scoped_ptr_t<sindex_superblock_t> sindex_sb;
         try {
             sindex_sb = acquire_sindex_for_read(
                 store, superblock,
-                release_superblock_t::RELEASE,
+                release_superblock_t::KEEP,
                 vec_read.table_name,
                 vec_read.sindex_id,
                 &sindex_info, &sindex_uuid);
@@ -749,8 +756,86 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         // 3. Get the vector graph block ID.
         block_id_t graph_block_id = sindex_sb->get_vector_graph_block_id();
         if (graph_block_id == NULL_BLOCK_ID) {
-            // No graph — return empty results.
-            res->results_or_error = vector_read_response_t::result_t();
+            // No persisted HNSW graph (the sidecar is built during sindex
+            // post-construction, when the sindex B-tree is typically empty).
+            // Fall back to a brute-force scan: traverse the PRIMARY B-tree,
+            // apply the sindex mapping function to each doc to recover its
+            // vector, compute true L2 distance, return the k nearest.
+            // O(n) but correct — identical results to an exact scan.
+            vector_read_response_t::result_t out;
+            try {
+                cond_t non_interruptor;
+                ql::env_t sindex_env(&non_interruptor,
+                                     ql::return_empty_normal_batches_t::NO,
+                                     sindex_info.mapping_version_info
+                                         .latest_compatible_reql_version);
+                struct collect_vec_cb_t : public depth_first_traversal_callback_t {
+                    sindex_disk_info_t sindex_info;
+                    std::vector<double> query_vector;
+                    ql::env_t *sindex_env;
+                    std::vector<std::pair<double, store_key_t>> scanned;
+                    continue_bool_t handle_pair(scoped_key_value_t &&keyvalue,
+                                                signal_t *) {
+                        ql::datum_t doc = get_data(
+                            static_cast<const rdb_value_t *>(keyvalue.value()),
+                            keyvalue.expose_buf());
+                        if (!doc.has() || doc.get_type() != ql::datum_t::R_OBJECT) {
+                            return continue_bool_t::CONTINUE;
+                        }
+                        ql::datum_t indexed =
+                            sindex_info.mapping.compile_wire_func()
+                                ->call(sindex_env, doc)
+                                ->as_datum();
+                        std::vector<double> vec;
+                        if (indexed.get_type() == ql::datum_t::R_VECTOR) {
+                            vec = indexed.as_vector();
+                        } else if (indexed.get_type() == ql::datum_t::R_ARRAY) {
+                            for (size_t i = 0; i < indexed.arr_size(); ++i) {
+                                vec.push_back(indexed.get(i).as_num());
+                            }
+                        } else {
+                            return continue_bool_t::CONTINUE;
+                        }
+                        if (vec.size() != query_vector.size()) {
+                            return continue_bool_t::CONTINUE;  // dim mismatch
+                        }
+                        double dist = 0.0;
+                        for (size_t i = 0; i < vec.size(); ++i) {
+                            double d = vec[i] - query_vector[i];
+                            dist += d * d;
+                        }
+                        scanned.emplace_back(dist, store_key_t(keyvalue.key()));
+                        return continue_bool_t::CONTINUE;
+                    }
+                } cb;
+                cb.sindex_info = sindex_info;
+                cb.query_vector = vec_read.query_vector;
+                cb.sindex_env = &sindex_env;
+
+                btree_depth_first_traversal(
+                    superblock,
+                    key_range_t::universe(),
+                    &cb,
+                    access_t::read,
+                    direction_t::FORWARD,
+                    release_superblock_t::KEEP,
+                    interruptor);
+
+                std::sort(cb.scanned.begin(), cb.scanned.end());
+                size_t n = std::min(cb.scanned.size(), vec_read.k);
+                for (size_t i = 0; i < n; ++i) {
+                    point_read_response_t pr_resp;
+                    rdb_get(cb.scanned[i].second, btree, superblock, &pr_resp, trace);
+                    out.emplace_back(cb.scanned[i].first, std::move(pr_resp.data));
+                }
+            } catch (const std::exception &e) {
+                res->results_or_error = ql::exc_t(
+                    ql::base_exc_t::OP_FAILED,
+                    strprintf("Vector fallback scan failed: %s", e.what()),
+                    ql::backtrace_id_t::empty());
+                return;
+            }
+            res->results_or_error = std::move(out);
             return;
         }
 

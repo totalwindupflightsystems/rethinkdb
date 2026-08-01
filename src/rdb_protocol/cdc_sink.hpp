@@ -38,6 +38,22 @@ struct cdc_sink_config_t {
     cdc_sink_state_t state = cdc_sink_state_t::CREATING;
     uuid_u created_by_user_id;
     microtime_t created_at;
+
+    bool operator==(const cdc_sink_config_t &other) const {
+        return sink_id == other.sink_id
+            && name == other.name
+            && publication_id == other.publication_id
+            && sink_type == other.sink_type
+            && connection_string == other.connection_string
+            && credential_ref == other.credential_ref
+            && topic == other.topic
+            && state == other.state
+            && created_by_user_id == other.created_by_user_id
+            && created_at == other.created_at;
+    }
+    bool operator!=(const cdc_sink_config_t &other) const {
+        return !(*this == other);
+    }
 };
 
 // Batching knobs for the dispatcher (spec §5.5). Defaults match the existing

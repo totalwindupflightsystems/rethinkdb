@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "clustering/administration/admin_op_exc.hpp"
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
 #include "rdb_protocol/env.hpp"
@@ -313,12 +314,71 @@ private:
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
-        (void)table;
         scoped_ptr_t<val_t> config_val = args->arg(env, 1);
         parsed_cdc_sink_create_t cfg =
             parse_cdc_sink_config_from_datum(config_val->as_datum(),
                                              config_val.get());
-        return new_val(stub_created_response(cfg.name.str()));
+
+        /* Resolve the publication_id from the table's publications map. */
+        admin_err_t error;
+        std::map<uuid_u, publication_config_t> pubs;
+        if (!env->env->reql_cluster_interface()->publication_list(
+                table->db,
+                name_string_t::guarantee_valid(table->name.c_str()),
+                env->env->interruptor,
+                &error,
+                &pubs)) {
+            REQL_RETHROW(error);
+        }
+        uuid_u publication_id = nil_uuid();
+        for (const auto &pair : pubs) {
+            if (pair.second.name == cfg.publication_name) {
+                publication_id = pair.first;
+                break;
+            }
+        }
+        rcheck(publication_id != nil_uuid(),
+               base_exc_t::LOGIC,
+               strprintf("Publication `%s` does not exist on table `%s`.",
+                         cfg.publication_name.str().c_str(),
+                         table->display_name().c_str()));
+
+        cdc_sink_config_t config;
+        config.sink_id = generate_uuid();
+        config.name = cfg.name;
+        config.publication_id = publication_id;
+        config.sink_type = cfg.sink_type;
+        config.connection_string = cfg.connection_string;
+        config.credential_ref = cfg.credential_ref;
+        name_string_t topic_name;
+        if (!topic_name.assign_value(cfg.topic)) {
+            topic_name = name_string_t::guarantee_valid("default");
+        }
+        config.topic = topic_name;
+        config.state = cdc_sink_state_t::CREATING;
+        config.created_at = current_microtime();
+
+        try {
+            admin_err_t err;
+            if (!env->env->reql_cluster_interface()->sink_create(
+                    env->env->get_user_context(),
+                    table->db,
+                    name_string_t::guarantee_valid(table->name.c_str()),
+                    config,
+                    env->env->interruptor,
+                    &err)) {
+                REQL_RETHROW(err);
+            }
+        } catch (auth::permission_error_t const &permission_error) {
+            rfail(ql::base_exc_t::PERMISSION_ERROR, "%s",
+                  permission_error.what());
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("created", datum_t(1.0));
+        res.overwrite("sink", datum_t(datum_string_t(config.name.str())));
+        res.overwrite("state", datum_t(datum_string_t("creating")));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "cdc_sink_create"; }
 };
@@ -333,9 +393,37 @@ private:
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
-        (void)table;
-        return new_val(datum_t(std::vector<datum_t>(),
-                               env->env->limits()));
+
+        admin_err_t error;
+        std::map<uuid_u, cdc_sink_config_t> sinks;
+        if (!env->env->reql_cluster_interface()->sink_list(
+                table->db,
+                name_string_t::guarantee_valid(table->name.c_str()),
+                env->env->interruptor,
+                &error,
+                &sinks)) {
+            REQL_RETHROW(error);
+        }
+
+        ql::datum_array_builder_t res(env->env->limits());
+        for (const auto &pair : sinks) {
+            const cdc_sink_config_t &config = pair.second;
+            ql::datum_object_builder_t one;
+            one.overwrite("id", datum_t(datum_string_t(uuid_to_str(pair.first))));
+            one.overwrite("name", datum_t(datum_string_t(config.name.str())));
+            const char *state_str = "creating";
+            switch (config.state) {
+            case cdc_sink_state_t::CREATING: state_str = "creating"; break;
+            case cdc_sink_state_t::CONNECTING: state_str = "connecting"; break;
+            case cdc_sink_state_t::STREAMING: state_str = "streaming"; break;
+            case cdc_sink_state_t::DROPPING: state_str = "dropping"; break;
+            case cdc_sink_state_t::DROPPED: state_str = "dropped"; break;
+            case cdc_sink_state_t::ERROR: state_str = "error"; break;
+            }
+            one.overwrite("state", datum_t(datum_string_t(state_str)));
+            res.add(std::move(one).to_datum());
+        }
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "cdc_sink_list"; }
 };
@@ -350,7 +438,6 @@ private:
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
-        (void)table;
         std::string sink_name = args->arg(env, 1)->as_str().to_std();
         name_string_t checked;
         bool ok = checked.assign_value(sink_name);
@@ -359,12 +446,35 @@ private:
                          sink_name.c_str(),
                          name_string_t::valid_char_msg));
 
+        admin_err_t error;
+        cdc_sink_config_t config;
+        if (!env->env->reql_cluster_interface()->sink_status(
+                table->db,
+                name_string_t::guarantee_valid(table->name.c_str()),
+                checked,
+                env->env->interruptor,
+                &error,
+                &config)) {
+            REQL_RETHROW(error);
+        }
+
         ql::datum_object_builder_t res;
-        res.overwrite("name", datum_t(datum_string_t(checked.str())));
-        res.overwrite("state", datum_t(datum_string_t("unknown")));
-        res.overwrite("message",
+        res.overwrite("name", datum_t(datum_string_t(config.name.str())));
+        const char *state_str = "creating";
+        switch (config.state) {
+        case cdc_sink_state_t::CREATING: state_str = "creating"; break;
+        case cdc_sink_state_t::CONNECTING: state_str = "connecting"; break;
+        case cdc_sink_state_t::STREAMING: state_str = "streaming"; break;
+        case cdc_sink_state_t::DROPPING: state_str = "dropping"; break;
+        case cdc_sink_state_t::DROPPED: state_str = "dropped"; break;
+        case cdc_sink_state_t::ERROR: state_str = "error"; break;
+        }
+        res.overwrite("state", datum_t(datum_string_t(state_str)));
+        res.overwrite("type",
                       datum_t(datum_string_t(
-                          "CDC term not yet wired to backend")));
+                          config.sink_type == cdc_sink_type_t::KAFKA ? "kafka" :
+                          config.sink_type == cdc_sink_type_t::WEBHOOK ? "webhook" :
+                          config.sink_type == cdc_sink_type_t::FILE ? "file" : "s3")));
         return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "cdc_sink_status"; }
@@ -380,7 +490,6 @@ private:
             scope_env_t *env, args_t *args, eval_flags_t) const {
         require_cdc_cluster_support(this);
         counted_t<table_t> table = args->arg(env, 0)->as_table();
-        (void)table;
         std::string sink_name = args->arg(env, 1)->as_str().to_std();
         name_string_t checked;
         bool ok = checked.assign_value(sink_name);
@@ -388,7 +497,52 @@ private:
                strprintf("CDC sink name `%s` invalid (%s).",
                          sink_name.c_str(),
                          name_string_t::valid_char_msg));
-        return new_val(stub_dropped_response(checked.str()));
+
+        /* Resolve sink_id from the list, then drop by id. */
+        admin_err_t error;
+        std::map<uuid_u, cdc_sink_config_t> sinks;
+        if (!env->env->reql_cluster_interface()->sink_list(
+                table->db,
+                name_string_t::guarantee_valid(table->name.c_str()),
+                env->env->interruptor,
+                &error,
+                &sinks)) {
+            REQL_RETHROW(error);
+        }
+        uuid_u sink_id = nil_uuid();
+        for (const auto &pair : sinks) {
+            if (pair.second.name == checked) {
+                sink_id = pair.first;
+                break;
+            }
+        }
+        rcheck(sink_id != nil_uuid(),
+               base_exc_t::LOGIC,
+               strprintf("Sink `%s` does not exist on table `%s`.",
+                         checked.str().c_str(),
+                         table->display_name().c_str()));
+
+        try {
+            admin_err_t err;
+            if (!env->env->reql_cluster_interface()->sink_drop(
+                    env->env->get_user_context(),
+                    table->db,
+                    name_string_t::guarantee_valid(table->name.c_str()),
+                    sink_id,
+                    checked,
+                    env->env->interruptor,
+                    &err)) {
+                REQL_RETHROW(err);
+            }
+        } catch (auth::permission_error_t const &permission_error) {
+            rfail(ql::base_exc_t::PERMISSION_ERROR, "%s",
+                  permission_error.what());
+        }
+
+        ql::datum_object_builder_t res;
+        res.overwrite("dropped", datum_t(1.0));
+        res.overwrite("sink", datum_t(datum_string_t(checked.str())));
+        return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "cdc_sink_drop"; }
 };

@@ -74,6 +74,7 @@ static const std::set<std::string> acceptable_optargs({
     "index",
     "interleave",
     "ordered",
+    "k",
     "left_bound",
     "max_batch_bytes",
     "max_batch_rows",
@@ -112,6 +113,7 @@ static const std::set<std::string> acceptable_optargs({
     "use_outdated", // Only so we can detect it and error.
     "vector",
     "verify",
+    "wait",
     "wait_for",
 });
 

@@ -295,6 +295,12 @@ private:
         config.state = subscription_state_t::CREATING;
         config.created_at = current_microtime();
 
+        /* If the user did not specify a target db, default to the scope
+           table's database (the common single-cluster case). */
+        if (cfg.target_db.empty() && table->db.has()) {
+            cfg.target_db = table->db->name.str();
+        }
+
         /* Resolve target db/table UUIDs. CDC-06a uses the same permission
         gating pattern as createPublication: the source table's db id is
         already known from the scope; we resolve target via

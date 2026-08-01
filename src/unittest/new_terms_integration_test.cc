@@ -6,6 +6,13 @@
 #include "rdb_protocol/cdc_types.hpp"
 #include "rdb_protocol/ql2.pb.h"
 
+// Forward-declared in term_walker.cc (namespace ql); the server's wire-level
+// whitelist. A term can exist in the proto enum yet be REJECTED at query time
+// if it's missing here (caught live: FTS_TOKENIZE..VECTOR_NEAR were absent).
+namespace ql {
+bool term_type_is_valid(Term::TermType type);
+}  // namespace ql
+
 namespace unittest {
 
 TEST(NewTermIntegration, TermIDsFromCompiledProto) {
@@ -125,6 +132,37 @@ TEST(NewTermIntegration, CdcEnumSerializationBoundary) {
     EXPECT_EQ(static_cast<int>(ql::change_operation_t::UPDATE), 1);
     EXPECT_EQ(static_cast<int>(ql::change_operation_t::DELETE), 2);
     EXPECT_EQ(static_cast<int>(ql::change_operation_t::REPLACE), 3);
+}
+
+TEST(NewTermIntegration, AllPhase3TermsPassServerWhitelist) {
+    // THE regression guard: every Phase 3 term must be accepted by the
+    // server's term_type_is_valid() whitelist, not just the proto enum.
+    // Without this, queries like r.vector_near() fail at runtime with
+    // "Unrecognized TermType" even though the proto knows the term.
+    const Term::TermType all_phase3[] = {
+        Term::FTS_TOKENIZE,      // 198
+        Term::FTS_MATCH,         // 199
+        Term::VECTOR,            // 200
+        Term::VECTOR_NEAR,       // 201
+        Term::PARTITION_INFO,    // 202
+        Term::REPARTITION,       // 203
+        Term::PUBLICATION_CREATE,  // 204
+        Term::PUBLICATION_LIST,    // 205
+        Term::PUBLICATION_STATUS,  // 206
+        Term::PUBLICATION_DROP,    // 207
+        Term::SUBSCRIPTION_CREATE, // 208
+        Term::SUBSCRIPTION_DROP,   // 211
+        Term::CDC_SINK_CREATE,     // 212
+        Term::CDC_SINK_LIST,       // 213
+        Term::CDC_SINK_STATUS,     // 214
+        Term::CDC_SINK_DROP,       // 215
+    };
+    for (Term::TermType t : all_phase3) {
+        EXPECT_TRUE(ql::term_type_is_valid(t))
+            << "Term " << static_cast<int>(t)
+            << " rejected by server whitelist (term_type_is_valid) — "
+               "queries using it fail with 'Unrecognized TermType'";
+    }
 }
 
 }  // namespace unittest

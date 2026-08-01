@@ -84,13 +84,31 @@ public:
             keys.insert(std::make_pair(std::move(key), 0)).first->second += 1;
         }
 
-        return new_val(
-            make_counted<selection_t>(
-                table,
-                table->get_all(env->env,
-                               datumspec_t(std::move(keys)),
-                               sindex_id,
-                               backtrace())));
+        // Eagerly materialize the get_all stream and deduplicate by primary
+        // key. A document containing a token N times produces N sindex
+        // entries, so raw get_all would return it N times.
+        counted_t<datum_stream_t> stream = table->get_all(
+            env->env, datumspec_t(std::move(keys)), sindex_id, backtrace());
+        std::string pkey_name = table->get_pkey();
+        std::set<datum_t, optional_datum_less_t> seen;
+        ql::datum_array_builder_t res(ql::configured_limits_t::unlimited);
+        batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
+        while (true) {
+            datum_t doc = stream->next(env->env, batchspec);
+            if (!doc.has()) {
+                break;
+            }
+            datum_t pkey = doc.get_field(
+                datum_string_t(pkey_name), ql::NOTHROW);
+            if (pkey.has() && seen.count(pkey)) {
+                continue;
+            }
+            if (pkey.has()) {
+                seen.insert(pkey);
+            }
+            res.add(doc);
+        }
+        return new_val(std::move(res).to_datum());
     }
 
     virtual const char *name() const { return "fts_match"; }

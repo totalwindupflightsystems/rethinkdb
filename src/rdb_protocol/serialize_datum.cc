@@ -39,6 +39,7 @@ enum class datum_serialized_type_t {
     UNINITIALIZED = 12,
     MINVAL = 13,
     MAXVAL = 14,
+    R_VECTOR = 15,
 };
 
 // Objects and arrays use different word sizes for storing offsets,
@@ -75,7 +76,7 @@ struct size_tree_node_t {
 
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(datum_serialized_type_t, int8_t,
                                       datum_serialized_type_t::R_ARRAY,
-                                      datum_serialized_type_t::MAXVAL);
+                                      datum_serialized_type_t::R_VECTOR);
 
 serialization_result_t datum_serialize(write_message_t *wm,
                                        datum_serialized_type_t type) {
@@ -520,6 +521,11 @@ size_t datum_serialized_size(const datum_t &datum,
     case datum_t::R_STR: {
         sz += datum_serialized_size(datum.as_str());
     } break;
+    case datum_t::R_VECTOR: {
+        // 1 byte varint count + 8 bytes per double
+        const std::vector<double> &vec = datum.as_vector();
+        sz += varint_uint64_serialized_size(vec.size()) + vec.size() * sizeof(double);
+    } break;
     case datum_t::MAXVAL: break; // No data aside from the type
     case datum_t::UNINITIALIZED: break;
     default:
@@ -599,6 +605,14 @@ serialization_result_t datum_serialize(
         const datum_string_t &value = datum.as_str();
         res = res | datum_serialize(wm, value);
     } break;
+    case datum_t::R_VECTOR: {
+        res = res | datum_serialize(wm, datum_serialized_type_t::R_VECTOR);
+        const std::vector<double> &vec = datum.as_vector();
+        serialize_varint_uint64(wm, vec.size());
+        for (double d : vec) {
+            serialize_universal(wm, d);
+        }
+    } break;
     case datum_t::MAXVAL: {
         res = res | serialization_result_t::EXTREMA_PRESENT;
         res = res | datum_serialize(wm, datum_serialized_type_t::MAXVAL);
@@ -667,6 +681,28 @@ archive_result_t datum_deserialize(read_stream_t *s, datum_t *datum) {
         }
         try {
             *datum = datum_t::binary(std::move(value));
+        } catch (const base_exc_t &) {
+            return archive_result_t::RANGE_ERROR;
+        }
+    } break;
+    case datum_serialized_type_t::R_VECTOR: {
+        uint64_t count;
+        res = deserialize_varint_uint64(s, &count);
+        if (bad(res)) {
+            return res;
+        }
+        std::vector<double> vec;
+        vec.reserve(count);
+        for (uint64_t i = 0; i < count; ++i) {
+            double d;
+            res = deserialize_universal(s, &d);
+            if (bad(res)) {
+                return res;
+            }
+            vec.push_back(d);
+        }
+        try {
+            *datum = datum_t::vector(std::move(vec));
         } catch (const base_exc_t &) {
             return archive_result_t::RANGE_ERROR;
         }
@@ -850,6 +886,7 @@ datum_t datum_deserialize_from_buf(const shared_buf_ref_t<char> &buf, size_t at_
     case datum_serialized_type_t::INT_POSITIVE: // fallthru
     case datum_serialized_type_t::MINVAL: // fallthru
     case datum_serialized_type_t::MAXVAL: // fallthru
+    case datum_serialized_type_t::R_VECTOR: // fallthru
     case datum_serialized_type_t::UNINITIALIZED: {
         buffer_read_stream_t data_read_stream(buf.get() + at_offset,
                                               buf.get_safety_boundary() - at_offset);

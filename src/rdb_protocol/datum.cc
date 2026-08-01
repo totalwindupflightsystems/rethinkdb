@@ -28,6 +28,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/pseudo_binary.hpp"
+#include "rdb_protocol/pseudo_vector.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
 #include "rdb_protocol/pseudo_literal.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
@@ -910,6 +911,23 @@ void datum_t::maybe_sanitize_ptype(const std::set<std::string> &allowed_pts) {
                                   pseudo::decode_base64_ptype(*data.r_object));
             return;
         }
+        if (s == pseudo::vector_string) {
+            r_sanity_check(data.get_internal_type() == internal_type_t::R_OBJECT);
+            std::vector<double> vec;
+            datum_t arr = get_field(datum_string_t(pseudo::vector_data_key), NOTHROW);
+            rcheck(arr.has() && arr.get_type() == R_ARRAY,
+                   base_exc_t::LOGIC,
+                   "VECTOR pseudotype must have a `data` field that is an array.");
+            for (size_t i = 0; i < arr.arr_size(); ++i) {
+                datum_t elt = arr.get(i);
+                rcheck(elt.get_type() == R_NUM,
+                       base_exc_t::LOGIC,
+                       "VECTOR `data` field must contain only numbers.");
+                vec.push_back(elt.as_num());
+            }
+            data = data_wrapper_t(std::move(vec));
+            return;
+        }
         rfail(base_exc_t::LOGIC,
               "Unknown $reql_type$ `%s`.", get_type_name().c_str());
     }
@@ -1583,7 +1601,7 @@ void write_json_unchecked_stack(const datum_t &datum, json_writer_t *writer) {
         }
     } break;
     case datum_t::R_STR: writer->String(datum.as_str().data(), datum.as_str().size()); break;
-    case datum_t::R_VECTOR: rfail_datum(base_exc_t::LOGIC, "Cannot convert VECTOR to JSON.");
+    case datum_t::R_VECTOR: pseudo::encode_vector_ptype(datum.as_vector(), writer); break;
     case datum_t::R_ARRAY: {
         writer->StartArray();
         const size_t sz = datum.arr_size();
@@ -1629,7 +1647,7 @@ cJSON *datum_t::as_json_raw() const {
     case R_BOOL: return cJSON_CreateBool(as_bool());
     case R_NUM: return cJSON_CreateNumber(as_num());
     case R_STR: return cJSON_CreateStringN(as_str().data(), as_str().size());
-    case R_VECTOR: rfail_datum(base_exc_t::LOGIC, "Cannot convert VECTOR to JSON.");
+    case R_VECTOR: return pseudo::encode_vector_ptype(as_vector()).release();
     case R_ARRAY: {
         scoped_cJSON_t arr(cJSON_CreateArray());
         const size_t sz = arr_size();
