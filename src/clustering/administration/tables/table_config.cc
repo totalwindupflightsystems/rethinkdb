@@ -9,6 +9,7 @@
 #include "concurrency/cross_thread_signal.hpp"
 #include "containers/archive/string_stream.hpp"
 #include "rdb_protocol/terms/write_hook.hpp"
+#include "rdb_protocol/terms/generated_columns.hpp"
 
 table_config_artificial_table_backend_t::table_config_artificial_table_backend_t(
         rdb_context_t *_rdb_context,
@@ -398,6 +399,8 @@ ql::datum_t convert_table_config_to_datum(
     builder.overwrite("id", convert_uuid_to_datum(table_id));
     builder.overwrite("indexes", convert_sindexes_to_datum(config.sindexes));
     builder.overwrite("write_hook", convert_write_hook_to_datum(config.write_hook));
+    builder.overwrite("generated_columns",
+                      format_generated_columns_datum(config.generated_columns));
     builder.overwrite("primary_key", convert_string_to_datum(config.basic.primary_key));
     builder.overwrite("shards",
         convert_vector_to_datum<table_config_t::shard_t>(
@@ -622,6 +625,27 @@ bool convert_table_config_and_name_from_datum(
     } else {
         if (existed_before) {
             error_out->msg = "Expected a field named `write_hook`.";
+            return false;
+        }
+    }
+
+    if (converter.has("generated_columns")) {
+        ql::datum_t gc_datum;
+        if (!converter.get("generated_columns", &gc_datum, error_out)) {
+            return false;
+        }
+        if (gc_datum.has() &&
+            gc_datum != format_generated_columns_datum(
+                old_config.config.generated_columns)) {
+            error_out->msg = "The `generated_columns` field is read-only and "
+                "can't be used to set generated columns. Use "
+                "`table.set_generated_columns({...})` instead.";
+            return false;
+        }
+        config_out->generated_columns = old_config.config.generated_columns;
+    } else {
+        if (existed_before) {
+            error_out->msg = "Expected a field named `generated_columns`.";
             return false;
         }
     }

@@ -1842,6 +1842,7 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
                 br.pkey,
                 br.f.compile_wire_func(),
                 temp_write_hook_func,
+                br.generated_columns,
                 br.serializable_env,
                 br.return_changes);
             return true;
@@ -1872,6 +1873,7 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
             *payload_out = batched_insert_t(std::move(shard_inserts),
                                             bi.pkey,
                                             temp_write_hook,
+                                            bi.generated_columns,
                                             bi.conflict_behavior,
                                             temp_conflict_func,
                                             bi.limits,
@@ -1930,6 +1932,7 @@ batched_insert_t::batched_insert_t(
         std::vector<ql::datum_t> &&_inserts,
         const std::string &_pkey,
         const optional<counted_t<const ql::func_t> > &_write_hook,
+        const std::map<std::string, ql::wire_func_t> &_generated_columns,
         conflict_behavior_t _conflict_behavior,
         const optional<counted_t<const ql::func_t> > &_conflict_func,
         const ql::configured_limits_t &_limits,
@@ -1939,7 +1942,8 @@ batched_insert_t::batched_insert_t(
           conflict_behavior(_conflict_behavior),
           limits(_limits),
           serializable_env(std::move(s_env)),
-          return_changes(_return_changes) {
+          return_changes(_return_changes),
+          generated_columns(_generated_columns) {
     r_sanity_check(inserts.size() != 0);
 
     if (_conflict_func.has_value()) {
@@ -2209,19 +2213,21 @@ RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(dummy_write_response_t);
 
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(write_response_t, response, event_log, n_shards);
 
-RDB_IMPL_SERIALIZABLE_6_FOR_CLUSTER(
+RDB_IMPL_SERIALIZABLE_7_FOR_CLUSTER(
         batched_replace_t,
         keys,
         pkey,
         f,
         write_hook,
+        generated_columns,
         serializable_env,
         return_changes);
-RDB_IMPL_SERIALIZABLE_8_FOR_CLUSTER(
+RDB_IMPL_SERIALIZABLE_9_FOR_CLUSTER(
         batched_insert_t,
         inserts,
         pkey,
         write_hook,
+        generated_columns,
         conflict_behavior,
         conflict_func,
         limits,

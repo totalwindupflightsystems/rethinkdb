@@ -222,6 +222,8 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::GRANT:
     case Term::SET_WRITE_HOOK:
     case Term::GET_WRITE_HOOK:
+    case Term::SET_GENERATED_COLUMNS:
+    case Term::GET_GENERATED_COLUMNS:
     case Term::INDEX_CREATE:
     case Term::INDEX_DROP:
     case Term::INDEX_WAIT:
@@ -438,6 +440,8 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::GRANT:
     case Term::SET_WRITE_HOOK:
     case Term::GET_WRITE_HOOK:
+    case Term::SET_GENERATED_COLUMNS:
+    case Term::GET_GENERATED_COLUMNS:
     case Term::INDEX_CREATE:
     case Term::INDEX_DROP:
     case Term::INDEX_WAIT:
@@ -742,6 +746,8 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::GRANT:
     case Term::SET_WRITE_HOOK:
     case Term::GET_WRITE_HOOK:
+    case Term::SET_GENERATED_COLUMNS:
+    case Term::GET_GENERATED_COLUMNS:
     case Term::INDEX_CREATE:
     case Term::INDEX_DROP:
     case Term::INDEX_LIST:

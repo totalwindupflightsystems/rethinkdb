@@ -138,6 +138,10 @@ private:
         ql::env_t *env,
         ignore_write_hook_t ignore_write_hook);
 
+    /* PHASE3-VEC: fetch the table's generated-columns wire funcs. */
+    std::map<std::string, ql::wire_func_t> get_generated_columns(
+        ql::env_t *env);
+
     namespace_id_t uuid;
     namespace_interface_access_t namespace_access;
     std::string pkey;

@@ -69,6 +69,11 @@ public:
     std::vector<shard_t> shards;
     std::map<std::string, sindex_config_t> sindexes;
     optional<write_hook_config_t> write_hook;
+    /* Generated columns (PHASE3-VEC). Map of column name -> ReQL function
+    (arity 1: takes the full row, returns the column value). Values are
+    computed at write time and stored in the row (Postgres GENERATED ALWAYS
+    AS ... STORED parity). */
+    std::map<std::string, ql::wire_func_t> generated_columns;
     write_ack_config_t write_ack_config;
     write_durability_t durability;
     partition_config_t partitioning;
@@ -143,6 +148,17 @@ public:
     };
 
     class write_hook_drop_t {
+    public:
+    };
+
+    /* PHASE3-VEC: set or drop the table's generated columns map. `config`
+    is the complete replacement map (empty = drop all). */
+    class generated_columns_set_t {
+    public:
+        std::map<std::string, ql::wire_func_t> config;
+    };
+
+    class generated_columns_drop_t {
     public:
     };
 
@@ -254,6 +270,10 @@ public:
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(write_hook_drop_t &&_change)
         : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(generated_columns_set_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(generated_columns_drop_t &&_change)
+        : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(set_partition_config_t &&_change)
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(publication_create_t &&_change)
@@ -286,6 +306,8 @@ private:
         sindex_rename_t,
         write_hook_create_t,
         write_hook_drop_t,
+        generated_columns_set_t,
+        generated_columns_drop_t,
         set_partition_config_t,
         publication_create_t,
         publication_drop_t,
@@ -300,6 +322,8 @@ private:
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::set_table_config_and_shards_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::write_hook_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::write_hook_drop_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::generated_columns_set_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::generated_columns_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_rename_t);

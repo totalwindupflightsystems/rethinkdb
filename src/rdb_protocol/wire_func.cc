@@ -4,6 +4,7 @@
 #include "containers/archive/optional.hpp"
 #include "containers/archive/stl_types.hpp"
 #include "containers/archive/archive.hpp"
+#include "containers/archive/vector_stream.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
@@ -29,6 +30,19 @@ wire_func_t::wire_func_t(const raw_term_t &body,
 wire_func_t::wire_func_t(const wire_func_t &copyee)
     : func(copyee.func) { }
 
+
+bool wire_func_t::operator==(const wire_func_t &o) const {
+    /* Same hack as sindex_config_t::operator==: compare serialized forms. */
+    write_message_t wm1, wm2;
+    serialize<cluster_version_t::CLUSTER>(&wm1, *this);
+    serialize<cluster_version_t::CLUSTER>(&wm2, o);
+    vector_stream_t stream1, stream2;
+    int res = send_write_message(&stream1, &wm1);
+    guarantee(res == 0);
+    res = send_write_message(&stream2, &wm2);
+    guarantee(res == 0);
+    return stream1.vector() == stream2.vector();
+}
 
 std::string wire_func_t::print_source() const {
     return func->print_source();

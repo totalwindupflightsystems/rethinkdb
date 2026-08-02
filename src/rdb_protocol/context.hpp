@@ -489,6 +489,25 @@ public:
             ql::datum_t *write_hook_datum_out,
             admin_err_t *error_out) = 0;
 
+    /* PHASE3-VEC: set or fetch the table's generated-columns map. `config`
+    is the complete replacement map; an empty map drops all columns. The
+    datum form is {column_name: reql_func}. */
+    virtual bool set_generated_columns(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const std::map<std::string, ql::wire_func_t> &config,
+            signal_t *interruptor,
+            admin_err_t *error_out) = 0;
+
+    virtual bool get_generated_columns(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            signal_t *interruptor,
+            std::map<std::string, ql::wire_func_t> *config_out,
+            admin_err_t *error_out) = 0;
+
     virtual bool sindex_create(
             auth::user_context_t const &user_context,
             counted_t<const ql::db_t> db,

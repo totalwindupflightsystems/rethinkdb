@@ -1299,6 +1299,12 @@ class Table(RqlQuery):
     def get_write_hook(self, *args, **kwargs):
         return GetWriteHook(self, *args, **kwargs)
 
+    def set_generated_columns(self, *args, **kwargs):
+        return SetGeneratedColumns(self, *[expr(arg) for arg in args], **kwargs)
+
+    def get_generated_columns(self, *args, **kwargs):
+        return GetGeneratedColumns(self, *[expr(arg) for arg in args], **kwargs)
+
     def publication_create(self, *args, **kwargs):
         if kwargs:
             return PublicationCreate(self, *[expr(arg) for arg in args],
@@ -1612,6 +1618,16 @@ class Upsert(RqlMethodQuery):
 class MergeDeep(RqlMethodQuery):
     term_type = P_TERM.MERGE_DEEP
     statement = "merge_deep"
+
+
+class SetGeneratedColumns(RqlMethodQuery):
+    term_type = P_TERM.SET_GENERATED_COLUMNS
+    statement = "set_generated_columns"
+
+
+class GetGeneratedColumns(RqlMethodQuery):
+    term_type = P_TERM.GET_GENERATED_COLUMNS
+    statement = "get_generated_columns"
 
 
 class DbCreate(RqlTopLevelQuery):

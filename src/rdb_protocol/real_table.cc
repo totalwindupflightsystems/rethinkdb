@@ -430,6 +430,15 @@ optional<counted_t<const ql::func_t> > real_table_t::get_write_hook(
     return write_hook;
 }
 
+std::map<std::string, ql::wire_func_t> real_table_t::get_generated_columns(
+    ql::env_t *env) {
+    std::map<std::string, ql::wire_func_t> out;
+    table_config_and_shards_t config;
+    m_table_meta_client->get_config(uuid, env->interruptor, &config);
+    out = config.config.generated_columns;
+    return out;
+}
+
 ql::datum_t real_table_t::write_batched_replace(
     ql::env_t *env,
     const std::vector<ql::datum_t> &keys,
@@ -441,6 +450,10 @@ ql::datum_t real_table_t::write_batched_replace(
     // Get write_hook function
     optional<counted_t<const ql::func_t> > write_hook =
         get_write_hook(env, ignore_write_hook);
+
+    // Get generated columns (PHASE3-VEC)
+    std::map<std::string, ql::wire_func_t> generated_columns =
+        get_generated_columns(env);
 
     std::vector<store_key_t> store_keys;
     store_keys.reserve(keys.size());
@@ -459,6 +472,7 @@ ql::datum_t real_table_t::write_batched_replace(
                 pkey,
                 func,
                 write_hook,
+                generated_columns,
                 env->get_serializable_env(),
                 return_changes);
             write_t w(std::move(write), durability, env->profile(), env->limits());
@@ -500,6 +514,10 @@ ql::datum_t real_table_t::write_batched_insert(
     optional<counted_t<const ql::func_t> > write_hook =
         get_write_hook(env, ignore_write_hook);
 
+    // Get generated columns (PHASE3-VEC)
+    std::map<std::string, ql::wire_func_t> generated_columns =
+        get_generated_columns(env);
+
     ql::datum_t stats((std::map<datum_string_t, ql::datum_t>()));
     std::set<std::string> conditions;
     std::vector<std::vector<ql::datum_t> > batches = split(std::move(inserts));
@@ -508,6 +526,7 @@ ql::datum_t real_table_t::write_batched_insert(
             std::move(batch),
             pkey,
             write_hook,
+            generated_columns,
             conflict_behavior,
             conflict_func,
             env->limits(),

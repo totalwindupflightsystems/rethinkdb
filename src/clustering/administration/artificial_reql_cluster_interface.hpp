@@ -240,6 +240,22 @@ public:
         ql::datum_t *write_hook_datum_out,
         admin_err_t *error_out);
 
+    bool set_generated_columns(
+            auth::user_context_t const &user_context,
+            counted_t<const ql::db_t> db,
+            const name_string_t &table,
+            const std::map<std::string, ql::wire_func_t> &config,
+            signal_t *interruptor,
+            admin_err_t *error_out);
+
+    bool get_generated_columns(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        signal_t *interruptor,
+        std::map<std::string, ql::wire_func_t> *config_out,
+        admin_err_t *error_out);
+
     bool sindex_create(
             auth::user_context_t const &user_context,
             counted_t<const ql::db_t> db,

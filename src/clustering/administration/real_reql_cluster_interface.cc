@@ -1379,6 +1379,68 @@ bool real_reql_cluster_interface_t::get_write_hook(
     return true;
 }
 
+bool real_reql_cluster_interface_t::set_generated_columns(
+    auth::user_context_t const &user_context,
+    counted_t<const ql::db_t> db,
+    const name_string_t &table,
+    const std::map<std::string, ql::wire_func_t> &config,
+    signal_t *interruptor_on_caller,
+    admin_err_t *) {
+    guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
+        "real_reql_cluster_interface_t should never get queries for system tables");
+
+    cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
+    on_thread_t thread_switcher(home_thread());
+
+    namespace_id_t table_id;
+    m_table_meta_client->find(db->id, table, &table_id);
+
+    user_context.require_config_permission(m_rdb_context, db->id, table_id);
+
+    if (!config.empty()) {
+        table_config_and_shards_change_t table_config_and_shards_change(
+            table_config_and_shards_change_t::generated_columns_set_t{config});
+
+        m_table_meta_client->set_config(
+            table_id, table_config_and_shards_change, &interruptor_on_home);
+    } else {
+        table_config_and_shards_change_t table_config_and_shards_change(
+            table_config_and_shards_change_t::generated_columns_drop_t{});
+        m_table_meta_client->set_config(
+            table_id, table_config_and_shards_change, &interruptor_on_home);
+    }
+    return true;
+}
+
+bool real_reql_cluster_interface_t::get_generated_columns(
+    auth::user_context_t const &user_context,
+    counted_t<const ql::db_t> db,
+    const name_string_t &table,
+    signal_t *interruptor_on_caller,
+    std::map<std::string, ql::wire_func_t> *config_out,
+    admin_err_t *) {
+    guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
+        "real_reql_cluster_interface_t should never get queries for system tables");
+
+    cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
+    on_thread_t thread_switcher(home_thread());
+
+    namespace_id_t table_id;
+    m_table_meta_client->find(db->id, table, &table_id);
+
+    user_context.require_config_permission(m_rdb_context, db->id, table_id);
+
+    table_config_and_shards_t existing_config;
+
+    m_table_meta_client->get_config(
+        table_id,
+        &interruptor_on_home,
+        &existing_config);
+
+    *config_out = existing_config.config.generated_columns;
+    return true;
+}
+
 bool real_reql_cluster_interface_t::sindex_create(
         auth::user_context_t const &user_context,
         counted_t<const ql::db_t> db,

@@ -376,6 +376,45 @@ ql::datum_t btree_batched_replacer_t::apply_write_hook(
     return res;
 }
 
+ql::datum_t btree_batched_replacer_t::apply_generated_columns(
+    const ql::datum_t &res,
+    const std::map<std::string, counted_t<const ql::func_t> > &generated_columns) const {
+    if (generated_columns.empty()) {
+        return res;
+    }
+    if (res.get_type() == ql::datum_t::type_t::R_NULL) {
+        // Deletions pass through untouched.
+        return res;
+    }
+    ql::datum_t out = res;
+    for (const auto &pair : generated_columns) {
+        counted_t<const ql::func_t> f = pair.second;
+        ql::datum_t value;
+        try {
+            cond_t non_interruptor;
+            ql::env_t gen_env(&non_interruptor,
+                              ql::return_empty_normal_batches_t::NO,
+                              reql_version_t::LATEST);
+            value = f->call(&gen_env, out, ql::LITERAL_OK)->as_datum();
+        } catch (ql::exc_t &e) {
+            throw ql::exc_t(e.get_type(),
+                            strprintf("Error computing generated column `%s`: %s",
+                                      pair.first.c_str(), e.what()),
+                            e.backtrace(),
+                            e.dummy_frames());
+        } catch (ql::datum_exc_t &e) {
+            throw ql::datum_exc_t(
+                e.get_type(),
+                strprintf("Error computing generated column `%s`: %s",
+                          pair.first.c_str(), e.what()));
+        }
+        ql::datum_object_builder_t builder(out);
+        builder.overwrite(datum_string_t(pair.first), value);
+        out = std::move(builder).to_datum();
+    }
+    return out;
+}
+
 class one_replace_t : public btree_point_replacer_t {
 public:
     one_replace_t(const btree_batched_replacer_t *_replacer, size_t _index)

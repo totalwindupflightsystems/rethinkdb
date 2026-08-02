@@ -41,6 +41,12 @@ public:
     bool is_simple_selector() const;
     std::string print_source() const;
 
+    /* Compare by serialized form (same hack as sindex_config_t). */
+    bool operator==(const wire_func_t &o) const;
+    bool operator!=(const wire_func_t &o) const {
+        return !(*this == o);
+    }
+
 private:
     bool has() const { return func.has(); }
     friend class maybe_wire_func_t;  // for has().

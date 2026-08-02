@@ -558,6 +558,40 @@ bool artificial_reql_cluster_interface_t::get_write_hook(
     return m_next->get_write_hook(
         user_context, db, table, interruptor, write_hook_datum_out, error_out);
 }
+
+bool artificial_reql_cluster_interface_t::set_generated_columns(
+        auth::user_context_t const &user_context,
+        counted_t<const ql::db_t> db,
+        const name_string_t &table,
+        const std::map<std::string, ql::wire_func_t> &config,
+        signal_t *interruptor,
+        admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        *error_out = admin_err_t{
+            strprintf("Database `%s` is special; you can't set generated "
+                      "columns on the tables in it.",
+                      artificial_reql_cluster_interface_t::database_name.c_str()),
+            query_state_t::FAILED};
+        return false;
+    }
+    return m_next->set_generated_columns(
+        user_context, db, table, config, interruptor, error_out);
+}
+
+bool artificial_reql_cluster_interface_t::get_generated_columns(
+    auth::user_context_t const &user_context,
+    counted_t<const ql::db_t> db,
+    const name_string_t &table,
+    signal_t *interruptor,
+    std::map<std::string, ql::wire_func_t> *config_out,
+    admin_err_t *error_out) {
+    if (db->name == artificial_reql_cluster_interface_t::database_name) {
+        config_out->clear();
+        return true;
+    }
+    return m_next->get_generated_columns(
+        user_context, db, table, interruptor, config_out, error_out);
+}
 bool artificial_reql_cluster_interface_t::sindex_create(
         auth::user_context_t const &user_context,
         counted_t<const ql::db_t> db,

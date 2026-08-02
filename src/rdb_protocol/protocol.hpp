@@ -720,11 +720,13 @@ struct batched_replace_t {
             const std::string &_pkey,
             const counted_t<const ql::func_t> &func,
             const optional<counted_t<const ql::func_t> > &wh,
+            const std::map<std::string, ql::wire_func_t> &gc,
             serializable_env_t s_env,
             return_changes_t _return_changes)
         : keys(std::move(_keys)),
           pkey(_pkey),
           f(func),
+          generated_columns(gc),
           serializable_env(std::move(s_env)),
           return_changes(_return_changes) {
         r_sanity_check(keys.size() != 0);
@@ -738,6 +740,8 @@ struct batched_replace_t {
     std::string pkey;
     ql::wire_func_t f;
     optional<ql::wire_func_t> write_hook;
+    /* PHASE3-VEC: same semantics as batched_insert_t::generated_columns. */
+    std::map<std::string, ql::wire_func_t> generated_columns;
     serializable_env_t serializable_env;
     return_changes_t return_changes;
 };
@@ -749,6 +753,7 @@ struct batched_insert_t {
         std::vector<ql::datum_t> &&_inserts,
         const std::string &_pkey,
         const optional<counted_t<const ql::func_t> > &_write_hook,
+        const std::map<std::string, ql::wire_func_t> &_generated_columns,
         conflict_behavior_t _conflict_behavior,
         const optional<counted_t<const ql::func_t> > &_conflict_func,
         const ql::configured_limits_t &_limits,
@@ -758,6 +763,10 @@ struct batched_insert_t {
     std::vector<ql::datum_t> inserts;
     std::string pkey;
     optional<ql::wire_func_t> write_hook;
+    /* PHASE3-VEC: generated columns applied to every inserted row (map of
+    column name -> compiled function taking the row). Serialized so the
+    write executes identically on the primary replica. */
+    std::map<std::string, ql::wire_func_t> generated_columns;
     conflict_behavior_t conflict_behavior;
     optional<ql::wire_func_t> conflict_func;
     ql::configured_limits_t limits;

@@ -217,6 +217,10 @@ counted_t<term_t> make_merge_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_merge_deep_term(
     compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_set_generated_columns_term(
+    compile_env_t *env, const raw_term_t &term);
+counted_t<term_t> make_get_generated_columns_term(
+    compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_has_fields_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_get_field_term(

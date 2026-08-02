@@ -1250,18 +1250,24 @@ public:
                     std::string _pkey,
                     const ql::wire_func_t &wf,
                     counted_t<const ql::func_t> wh,
+                    const std::map<std::string, ql::wire_func_t> &gc,
                     return_changes_t _return_changes)
         : env(_env),
           pkey(std::move(_pkey)),
           f(wf.compile_wire_func()),
           write_hook(std::move(wh)),
-          return_changes(_return_changes) { }
+          return_changes(_return_changes) {
+        for (const auto &pair : gc) {
+            generated_columns[pair.first] = pair.second.compile_wire_func();
+        }
+    }
     ql::datum_t replace(
         const ql::datum_t &d, size_t) const {
         ql::datum_t res = f->call(env, d, ql::LITERAL_OK)->as_datum();
 
         const ql::datum_t &write_timestamp = env->get_deterministic_time();
         r_sanity_check(write_timestamp.has());
+        res = apply_generated_columns(res, generated_columns);
         return apply_write_hook(pkey, d, res, write_timestamp, write_hook);
     }
     return_changes_t should_return_changes() const { return return_changes; }
@@ -1270,6 +1276,7 @@ private:
     datum_string_t pkey;
     const counted_t<const ql::func_t> f;
     const counted_t<const ql::func_t> write_hook;
+    std::map<std::string, counted_t<const ql::func_t> > generated_columns;
     const return_changes_t return_changes;
 };
 
@@ -1288,6 +1295,10 @@ public:
         if (bi.write_hook.has_value()) {
             write_hook = bi.write_hook->compile_wire_func();
         }
+        for (const auto &pair : bi.generated_columns) {
+            generated_columns[pair.first] =
+                pair.second.compile_wire_func();
+        }
     }
     ql::datum_t replace(const ql::datum_t &d,
                         size_t index) const {
@@ -1301,6 +1312,7 @@ public:
                                              conflict_func);
         const ql::datum_t &write_timestamp = env->get_deterministic_time();
         r_sanity_check(write_timestamp.has());
+        res = apply_generated_columns(res, generated_columns);
         res = apply_write_hook(datum_string_t(pkey), d, res, write_timestamp,
                                write_hook);
         return res;
@@ -1310,6 +1322,9 @@ private:
     ql::env_t *env;
 
     counted_t<const ql::func_t> write_hook;
+
+    /* PHASE3-VEC: compiled once per write from the table's generated columns. */
+    std::map<std::string, counted_t<const ql::func_t> > generated_columns;
 
     const std::vector<ql::datum_t> *const datums;
     const conflict_behavior_t conflict_behavior;
@@ -1339,6 +1354,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
                                  br.pkey,
                                  br.f,
                                  write_hook,
+                                 br.generated_columns,
                                  br.return_changes);
 
         response->response =

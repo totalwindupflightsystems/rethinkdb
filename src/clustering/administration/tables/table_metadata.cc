@@ -64,6 +64,19 @@ public:
         return true;
     }
 
+    result_type operator()(
+            const generated_columns_set_t &generated_columns_set) const {
+        table_config_and_shards->config.generated_columns =
+            generated_columns_set.config;
+        return true;
+    }
+
+    result_type operator()(
+            UNUSED const generated_columns_drop_t &generated_columns_drop) const {
+        table_config_and_shards->config.generated_columns.clear();
+        return true;
+    }
+
     result_type operator()(const sindex_create_t &sindex_create) const {
         auto pair = table_config_and_shards->config.sindexes.insert(
             std::make_pair(sindex_create.name, sindex_create.config));
@@ -208,6 +221,10 @@ void serialize(write_message_t *wm, const table_config_t &tc) {
     optional<write_hook_config_t> write_hook = tc.write_hook;
     serialize<W>(wm, write_hook);
 
+    std::map<std::string, ql::wire_func_t> generated_columns =
+        tc.generated_columns;
+    serialize<W>(wm, generated_columns);
+
     write_ack_config_t write_ack_config = tc.write_ack_config;
     serialize<W>(wm, write_ack_config);
 
@@ -275,6 +292,10 @@ archive_result_t deserialize(
     res = deserialize<W>(s, &write_hook);
     if (bad(res)) { return res; }
 
+    std::map<std::string, ql::wire_func_t> generated_columns;
+    res = deserialize<W>(s, &generated_columns);
+    if (bad(res)) { return res; }
+
     write_ack_config_t write_ack_config;
     res = deserialize<W>(s, &write_ack_config);
     if (bad(res)) { return res; }
@@ -291,6 +312,7 @@ archive_result_t deserialize(
                          std::move(shards),
                          std::move(sindexes),
                          std::move(write_hook),
+                         std::move(generated_columns),
                          std::move(write_ack_config),
                          std::move(durability),
                          std::move(partitioning)};
@@ -319,8 +341,9 @@ archive_result_t deserialize<cluster_version_t::v2_3>(
 template archive_result_t deserialize<cluster_version_t::v2_4_is_latest>(
     read_stream_t *, table_config_t *);
 
-RDB_IMPL_EQUALITY_COMPARABLE_7(table_config_t,
-    basic, shards, write_hook, sindexes, write_ack_config, durability, partitioning);
+RDB_IMPL_EQUALITY_COMPARABLE_8(table_config_t,
+    basic, shards, write_hook, generated_columns, sindexes,
+    write_ack_config, durability, partitioning);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);
@@ -449,6 +472,10 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(table_config_and_shards_change_t::sindex_ren
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_create_t, config);
 RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(table_config_and_shards_change_t::write_hook_drop_t);
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
+    table_config_and_shards_change_t::generated_columns_set_t, config);
+RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(
+    table_config_and_shards_change_t::generated_columns_drop_t);
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     table_config_and_shards_change_t::set_partition_config_t,
     expected_epoch, new_config, provisional_stores);

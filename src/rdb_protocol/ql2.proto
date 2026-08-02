@@ -857,6 +857,11 @@ message Term {
         // Deep-merge two objects recursively (merge with `deep: true`),
         // or merge with a list of explicit field conditions (SQL MERGE parity).
         MERGE_DEEP = 217;         // OBJECT, OBJECT, {deep:BOOLEAN} -> OBJECT
+        // Set the table's generated columns: {column_name: function(row) -> value}.
+        // Values are computed at write time and stored (GENERATED ALWAYS AS ... STORED).
+        SET_GENERATED_COLUMNS = 218; // TABLE, OBJECT {col: FUNC} -> OBJECT
+        // Fetch the table's generated columns as {column_name: reql_func}.
+        GET_GENERATED_COLUMNS = 219; // TABLE -> OBJECT
     }
     optional TermType type = 1;
 

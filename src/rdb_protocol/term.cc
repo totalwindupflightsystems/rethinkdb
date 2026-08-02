@@ -77,6 +77,8 @@ counted_t<const term_t> compile_on_current_stack(
     case Term::WITHOUT:            return make_without_term(env, t);
     case Term::MERGE:              return make_merge_term(env, t);
     case Term::MERGE_DEEP:         return make_merge_deep_term(env, t);
+    case Term::SET_GENERATED_COLUMNS: return make_set_generated_columns_term(env, t);
+    case Term::GET_GENERATED_COLUMNS: return make_get_generated_columns_term(env, t);
     case Term::LITERAL:            return make_literal_term(env, t);
     case Term::ARGS:               return make_args_term(env, t);
     case Term::BETWEEN_DEPRECATED: return make_between_deprecated_term(env, t);

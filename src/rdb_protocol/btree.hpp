@@ -103,6 +103,14 @@ struct btree_batched_replacer_t {
         const ql::datum_t &res_,
         const ql::datum_t &write_timestamp,
         const counted_t<const ql::func_t> &write_hook) const;
+
+    /* PHASE3-VEC: compute and merge generated-column values into `res`.
+    Each column function takes the full row (after conflict resolution /
+    replace) and returns the column value; the value is stored in the row.
+    Callers pass compiled functions (compiled once per write, not per row). */
+    ql::datum_t apply_generated_columns(
+        const ql::datum_t &res,
+        const std::map<std::string, counted_t<const ql::func_t> > &generated_columns) const;
 };
 struct btree_point_replacer_t {
     virtual ~btree_point_replacer_t() { }
