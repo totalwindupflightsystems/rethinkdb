@@ -89,7 +89,8 @@ public:
             signal_t *interruptor,
             ql::datum_t *result_out,
             admin_err_t *error_out,
-            optional<partition_config_t> partition_config = r_nullopt);
+            optional<partition_config_t> partition_config = r_nullopt,
+            optional<ql::time_series_config_t> time_series_config = r_nullopt);
     bool table_drop(
             auth::user_context_t const &user_context,
             const name_string_t &name,

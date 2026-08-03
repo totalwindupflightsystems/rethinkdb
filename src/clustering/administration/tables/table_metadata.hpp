@@ -10,6 +10,7 @@
 
 #include "buffer_cache/types.hpp"   // for `write_durability_t`
 #include "btree/reql_specific.hpp"  // partition_store_ref_t for set_partition_config_t
+#include "btree/time_series_config.hpp"
 #include "clustering/administration/servers/server_metadata.hpp"
 #include "clustering/generic/nonoverlapping_regions.hpp"
 #include "containers/name_string.hpp"
@@ -77,9 +78,14 @@ public:
     write_ack_config_t write_ack_config;
     write_durability_t durability;
     partition_config_t partitioning;
+    /* Time-series configuration (PHASE3-TS-1). Set at tableCreate via the
+    `timeSeries` optarg; immutable after creation (see the read-only
+    `time_series` handler in table_config.cc). Nullopt = regular table. */
+    optional<ql::time_series_config_t> time_series_config;
 };
 
 RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
+RDB_DECLARE_SERIALIZABLE(table_config_t);
 
 RDB_DECLARE_SERIALIZABLE(table_config_t::shard_t);
 RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t::shard_t);

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "btree/time_series_config.hpp"
 #include "concurrency/one_per_thread.hpp"
 #include "concurrency/promise.hpp"
 #include "concurrency/watchable.hpp"
@@ -321,7 +322,9 @@ public:
             admin_err_t *error_out) = 0;
 
     /* `table_create()` won't return until the table is ready for writing.
-    Optional `partition_config` attaches a declarative partition layout (Phase 3). */
+    Optional `partition_config` attaches a declarative partition layout
+    (Phase 3). Optional `time_series_config` (PHASE3-TS-1) attaches the
+    time-series config parsed from the `timeSeries` tableCreate optarg. */
     virtual bool table_create(
             auth::user_context_t const &user_context,
             const name_string_t &name,
@@ -332,7 +335,8 @@ public:
             signal_t *interruptor,
             ql::datum_t *result_out,
             admin_err_t *error_out,
-            optional<partition_config_t> partition_config = r_nullopt) = 0;
+            optional<partition_config_t> partition_config = r_nullopt,
+            optional<ql::time_series_config_t> time_series_config = r_nullopt) = 0;
     virtual bool table_drop(
             auth::user_context_t const &user_context,
             const name_string_t &name,

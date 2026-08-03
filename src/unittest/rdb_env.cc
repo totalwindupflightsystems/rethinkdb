@@ -438,7 +438,8 @@ bool test_rdb_env_t::instance_t::table_create(
         UNUSED signal_t *local_interruptor,
         UNUSED ql::datum_t *result_out,
         admin_err_t *error_out,
-        UNUSED optional<partition_config_t> partition_config) {
+        UNUSED optional<partition_config_t> partition_config,
+        UNUSED optional<ql::time_series_config_t> time_series_config) {
     *error_out = admin_err_t{
         "test_rdb_env_t::instance_t doesn't support mutation",
         query_state_t::FAILED};
@@ -853,6 +854,84 @@ bool test_rdb_env_t::instance_t::subscription_drop(
         admin_err_t *error_out) {
     *error_out = admin_err_t{
         "test_rdb_env_t::instance_t doesn't support subscription_drop()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::set_generated_columns(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const std::map<std::string, ql::wire_func_t> &config,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support set_generated_columns()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::get_generated_columns(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED signal_t *interruptor,
+        UNUSED std::map<std::string, ql::wire_func_t> *config_out,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support get_generated_columns()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::sink_create(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const ql::cdc_sink_config_t &config,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support sink_create()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::sink_list(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED std::map<uuid_u, ql::cdc_sink_config_t> *sinks_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support sink_list()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::sink_status(
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const name_string_t &sink_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out,
+        UNUSED ql::cdc_sink_config_t *config_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support sink_status()",
+        query_state_t::FAILED};
+    return false;
+}
+
+bool test_rdb_env_t::instance_t::sink_drop(
+        UNUSED auth::user_context_t const &user_context,
+        UNUSED counted_t<const ql::db_t> db,
+        UNUSED const name_string_t &table,
+        UNUSED const uuid_u &sink_id,
+        UNUSED const name_string_t &sink_name,
+        UNUSED signal_t *interruptor,
+        admin_err_t *error_out) {
+    *error_out = admin_err_t{
+        "test_rdb_env_t::instance_t doesn't support sink_drop()",
         query_state_t::FAILED};
     return false;
 }

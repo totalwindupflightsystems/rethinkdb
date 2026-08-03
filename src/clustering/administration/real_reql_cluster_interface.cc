@@ -295,7 +295,8 @@ bool real_reql_cluster_interface_t::table_create(
         signal_t *interruptor_on_caller,
         ql::datum_t *result_out,
         admin_err_t *error_out,
-        optional<partition_config_t> partition_config) {
+        optional<partition_config_t> partition_config,
+        optional<ql::time_series_config_t> time_series_config) {
     guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
         "real_reql_cluster_interface_t should never get queries for system tables");
 
@@ -340,6 +341,10 @@ bool real_reql_cluster_interface_t::table_create(
             config.config.partitioning = *partition_config;
             config.config.basic.partition_type = partition_config->type;
             config.config.basic.partition_key_field = partition_config->key_field;
+        }
+
+        if (time_series_config.has_value()) {
+            config.config.time_series_config = time_series_config;
         }
 
         table_id = generate_uuid();

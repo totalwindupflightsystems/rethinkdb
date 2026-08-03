@@ -10,6 +10,7 @@
 #include "containers/archive/string_stream.hpp"
 #include "rdb_protocol/terms/write_hook.hpp"
 #include "rdb_protocol/terms/generated_columns.hpp"
+#include "rdb_protocol/terms/time_series.hpp"
 
 table_config_artificial_table_backend_t::table_config_artificial_table_backend_t(
         rdb_context_t *_rdb_context,
@@ -413,6 +414,14 @@ ql::datum_t convert_table_config_to_datum(
         convert_write_ack_config_to_datum(config.write_ack_config));
     builder.overwrite("durability",
         convert_durability_to_datum(config.durability));
+    if (config.time_series_config.has_value()) {
+        builder.overwrite("time_series",
+            ql::format_time_series_config_datum(*config.time_series_config));
+    } else {
+        /* Always present for round-trip symmetry (same contract as
+        `generated_columns`): null means "no time-series config". */
+        builder.overwrite("time_series", ql::datum_t::null());
+    }
     return std::move(builder).to_datum();
 }
 
@@ -646,6 +655,30 @@ bool convert_table_config_and_name_from_datum(
     } else {
         if (existed_before) {
             error_out->msg = "Expected a field named `generated_columns`.";
+            return false;
+        }
+    }
+
+    if (converter.has("time_series")) {
+        ql::datum_t ts_datum;
+        if (!converter.get("time_series", &ts_datum, error_out)) {
+            return false;
+        }
+        ql::datum_t old_ts_datum;
+        if (old_config.config.time_series_config.has_value()) {
+            old_ts_datum = ql::format_time_series_config_datum(
+                *old_config.config.time_series_config);
+        }
+        if (ts_datum.has() && ts_datum != old_ts_datum) {
+            error_out->msg = "The `time_series` field is read-only and can't "
+                "be used to set time-series options. Use tableCreate instead.";
+            return false;
+        }
+        config_out->time_series_config =
+            old_config.config.time_series_config;
+    } else {
+        if (existed_before) {
+            error_out->msg = "Expected a field named `time_series`.";
             return false;
         }
     }

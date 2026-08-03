@@ -110,6 +110,7 @@ static const std::set<std::string> acceptable_optargs({
     "squash",
     "time_format",
     "timeout",
+    "timeSeries",
     "unit",
     "use_outdated", // Only so we can detect it and error.
     "vector",

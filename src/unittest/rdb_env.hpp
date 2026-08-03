@@ -197,7 +197,8 @@ public:
                 signal_t *interruptor,
                 ql::datum_t *result_out,
                 admin_err_t *error_out,
-                optional<partition_config_t> partition_config = r_nullopt);
+                optional<partition_config_t> partition_config = r_nullopt,
+                optional<ql::time_series_config_t> time_series_config = r_nullopt);
         bool table_drop(
                 auth::user_context_t const &user_context,
                 const name_string_t &name,
@@ -439,6 +440,54 @@ public:
                 const name_string_t &table,
                 const uuid_u &subscription_id,
                 const name_string_t &subscription_name,
+                signal_t *interruptor,
+                admin_err_t *error_out);
+
+        bool set_generated_columns(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const std::map<std::string, ql::wire_func_t> &config,
+                signal_t *interruptor,
+                admin_err_t *error_out);
+
+        bool get_generated_columns(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                signal_t *interruptor,
+                std::map<std::string, ql::wire_func_t> *config_out,
+                admin_err_t *error_out);
+
+        bool sink_create(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const ql::cdc_sink_config_t &config,
+                signal_t *interruptor,
+                admin_err_t *error_out);
+
+        bool sink_list(
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                signal_t *interruptor,
+                admin_err_t *error_out,
+                std::map<uuid_u, ql::cdc_sink_config_t> *sinks_out);
+
+        bool sink_status(
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const name_string_t &sink_name,
+                signal_t *interruptor,
+                admin_err_t *error_out,
+                ql::cdc_sink_config_t *config_out);
+
+        bool sink_drop(
+                auth::user_context_t const &user_context,
+                counted_t<const ql::db_t> db,
+                const name_string_t &table,
+                const uuid_u &sink_id,
+                const name_string_t &sink_name,
                 signal_t *interruptor,
                 admin_err_t *error_out);
 

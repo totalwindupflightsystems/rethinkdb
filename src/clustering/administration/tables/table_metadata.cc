@@ -233,6 +233,10 @@ void serialize(write_message_t *wm, const table_config_t &tc) {
 
     partition_config_t partitioning = tc.partitioning;
     serialize<W>(wm, partitioning);
+
+    optional<ql::time_series_config_t> time_series_config =
+        tc.time_series_config;
+    serialize<W>(wm, time_series_config);
 }
 
 INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(table_config_t);
@@ -308,6 +312,10 @@ archive_result_t deserialize(
     res = deserialize<W>(s, &partitioning);
     if (bad(res)) { return res; }
 
+    optional<ql::time_series_config_t> time_series_config;
+    res = deserialize<W>(s, &time_series_config);
+    if (bad(res)) { return res; }
+
     *tc = table_config_t{std::move(basic),
                          std::move(shards),
                          std::move(sindexes),
@@ -315,7 +323,8 @@ archive_result_t deserialize(
                          std::move(generated_columns),
                          std::move(write_ack_config),
                          std::move(durability),
-                         std::move(partitioning)};
+                         std::move(partitioning),
+                         std::move(time_series_config)};
 
     return res;
 }
@@ -341,9 +350,9 @@ archive_result_t deserialize<cluster_version_t::v2_3>(
 template archive_result_t deserialize<cluster_version_t::v2_4_is_latest>(
     read_stream_t *, table_config_t *);
 
-RDB_IMPL_EQUALITY_COMPARABLE_8(table_config_t,
+RDB_IMPL_EQUALITY_COMPARABLE_9(table_config_t,
     basic, shards, write_hook, generated_columns, sindexes,
-    write_ack_config, durability, partitioning);
+    write_ack_config, durability, partitioning, time_series_config);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_16(table_shard_scheme_t, split_points);
 RDB_IMPL_EQUALITY_COMPARABLE_1(table_shard_scheme_t, split_points);

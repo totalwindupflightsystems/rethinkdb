@@ -16,6 +16,7 @@
 #include "rdb_protocol/partition_config.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
 #include "rdb_protocol/terms/partitioning.hpp"
+#include "rdb_protocol/terms/time_series.hpp"
 #include "rdb_protocol/terms/writes.hpp"
 
 namespace ql {
@@ -167,7 +168,7 @@ public:
         : meta_op_term_t(env, term, argspec_t(1, 2),
             optargspec_t({"primary_key", "shards", "replicas",
                           "nonvoting_replica_tags", "primary_replica_tag",
-                          "durability", "partitions"})) { }
+                          "durability", "partitions", "timeSeries"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
             scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -206,6 +207,14 @@ private:
                     partitions_val->as_datum(), partitions_val.get()));
         }
 
+        /* PHASE3-TS-1: parse the `timeSeries` optarg from its RAW term (not
+        evaluated) so downsample `aggregate` values can be ReQL expressions
+        (mirrors generated-columns parsing). Scalar keys must be literals. */
+        optional<time_series_config_t> time_series_config;
+        if (optional<raw_term_t> ts_optarg = get_src().optarg("timeSeries")) {
+            time_series_config = make_optional(
+                parse_time_series_config_from_raw_term(*ts_optarg, this));
+        }
         counted_t<const db_t> db;
         name_string_t tbl_name;
         if (args->num_args() == 1) {
@@ -232,7 +241,8 @@ private:
                     env->env->interruptor,
                     &result,
                     &error,
-                    std::move(partition_config))) {
+                    std::move(partition_config),
+                    std::move(time_series_config))) {
                 REQL_RETHROW(error);
             }
         } catch (auth::permission_error_t const &permission_error) {

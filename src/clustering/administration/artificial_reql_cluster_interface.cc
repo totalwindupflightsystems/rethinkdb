@@ -110,7 +110,8 @@ bool artificial_reql_cluster_interface_t::table_create(
         signal_t *interruptor,
         ql::datum_t *result_out,
         admin_err_t *error_out,
-        optional<partition_config_t> partition_config) {
+        optional<partition_config_t> partition_config,
+        optional<ql::time_series_config_t> time_series_config) {
     if (db->name == artificial_reql_cluster_interface_t::database_name) {
         *error_out = admin_err_t{
             strprintf("Database `%s` is special; you can't create new tables "
@@ -128,7 +129,8 @@ bool artificial_reql_cluster_interface_t::table_create(
         interruptor,
         result_out,
         error_out,
-        std::move(partition_config));
+        std::move(partition_config),
+        std::move(time_series_config));
 }
 
 bool artificial_reql_cluster_interface_t::table_drop(
