@@ -4679,3 +4679,50 @@ VERDICT: **PRODUCTIVE** — PHASE3-TS-1 (QUEUE #3a) complete: config layer imple
 - **tier1 lint ✗**: 6 violations, ALL git-blame-proven pre-existing (protocol.cc:553/566/602 BRIN `unsigned long` logs from 9065d5904b 07-26; `using namespace ql` in cdc_durability/conflict_resolver/cdc_failure tests from 07-25). All 8 new time-series files lint-clean ("Done processing", 0 findings). Known repo limitation (same as PHASE3-VEC tick #90: evaluator caps on C++ diffs; lint failures pre-existing).
 - **tier3**: cppcheck path config error + clang-tidy timeout — pre-existing tooling config, not code.
 - Evidence standing: guard PASS + 9/11 LLM criteria + foreman-verified build/regression/E2E. Same disposition as tick #90 (PHASE3-VEC partial ×4 → committed with evidence).
+
+## Productive Tick #92 — 2026-08-03 23:20 UTC (STEWARDSHIP — sibling double-fire + TS-2 live-path bug found)
+
+**Situation:** Scheduler double-fired — tick rethinkdb-2026-08-03-22-41-28 (session eef0dd27) was still running when this tick (22-43-47) spawned. Sibling stewarded the uncommitted TS-2 work (from worker c0f8c802, finished), stripped 7 TSDBG debug prints from page_cache.cc, added superblock pinning + time_series_mutex + catalog-pointer enshrine, verified 16/16 TimeSeries + 253/253 regression, then found a MAJOR live bug (insert 50 → count 0) and DIED from a DeepSeek 503 (fatal after 3 retries, 22:54:10, no further activity). This tick took over as steward.
+
+### Independent verification (this tick, real tool output)
+
+| Check | Result |
+|-------|--------|
+| Sibling session state | DEAD (fatal 503, 108 msgs, silent 18+ min, ended_at=None but loop errored) |
+| Unit — TimeSeries filter | ✅ 16/16 PASS (316ms, fresh binary) |
+| Unit — regression filter (Cdc/Conflict/Vector/Fts/Brin/Sindex/GeneratedColumn/Term/Btree/Reql) | ✅ 238/238 PASS (52.1s) |
+| Live probe (fixed epoch_time) | ⛔ **insert 50 → count()=0, get('r000')=None** — chunked writes invisible to reads |
+| Catalog integrity | ⛔ total_rows=6 for 50 inserted (5 chunks: 2,1,1,1,1) — rows lost under batch insert |
+| Server stability | ✅ alive after insert + error-path (no crash in current binary) |
+| Leftover debug prints | ✅ 0 TSDBG in TS-2 files (sibling stripped) |
+| Tree hygiene | ✅ no stray rethinkdb servers, no stashes; 23 modified + 2 new TS-2 files uncommitted |
+| External signals | origin/main = HEAD, no new issues (disabled), CI failures pre-2026-07-20 (known INFRA) |
+
+### Bugs found (confirmed live, worker dispatched to fix)
+
+| # | Bug | Evidence |
+|---|-----|----------|
+| 1 | **Read path ignores chunk sub-trees** — writes route rows into per-chunk B-trees (catalog on superblock) but point_read/rget/count read ONLY the main B-tree → count()=0, get()=None after successful insert | /tmp/rethinkdb-t92-probe2.py: inserted:50, count:0, GET r000: False |
+| 2 | **Catalog undercounts rows** — 50-row batch insert leaves total_rows=6 (last-save-wins clobber persists despite sibling's mutex+enshrine; needs deeper fix) | probe2 chunk info: chunk_count=5, total_rows=6 |
+| 3 | **Batch stats report `replaced` for fresh rows** (sibling probe ts2_probe_out2: 'replaced': 2 for fresh batch) | ts2_probe_out2.txt |
+
+### Actions this tick
+
+1. ✅ Loaded foreman/cron/hilo/gitreins skills; read board tail (tick #91 = TS-1 complete)
+2. ✅ Detected double-fire: previous tick still running → polled with bounded waits (20+ min)
+3. ✅ Confirmed sibling dead (fatal DeepSeek 503 at 22:54:10) → took over stewardship
+4. ✅ Independent verification: 16/16 + 238/238 unit, live probe reproduced both bugs
+5. ✅ Dispatched TS-2 fix worker (deepseek-v4-flash @ deepseek-foreman, PID 833732, prompt /tmp/rethinkdb-t92-worker-prompt.txt) with full diagnosis + 3-bug brief + mandatory verification list
+6. ✅ External signal scan: no new commits/issues/deps
+7. ⏳ GitReins task PHASE3-TS-2: create AFTER worker commit (per gitreins-task-creation-timing pitfall)
+8. ⏳ Board/judge/commit: next tick when worker returns
+
+**Status:** PHASE3-TS-2 ⛔ has live-path bugs (read invisibility + catalog row loss) — fix worker dispatched. Unit layer solid (16/16 + 238/238).
+
+**Next tick:** Poll worker (proc_155ac111213c / PID 833732). Verify: probe2 all-pass (count=50, total_rows=50), ts2_e2e_probe all checks, unit regression green, guard PASS, no TSDBG. Then: create gitreins task PHASE3-TS-2, judge via `timeout 540 gitreins task complete PHASE3-TS-2`, commit worker files + board entry, push, DuckBrain write.
+
+**Execution order:** INT-01 ✅ → ... → PHASE3-TS-1 ✅ (tick #91) → **PHASE3-TS-2 🔄 (fix worker dispatched)** → TS-3 → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (stewardship)** — previous tick died mid-debug; this tick independently confirmed 2 critical live bugs in TS-2 (read path + catalog accounting), dispatched fix worker with complete diagnosis, all claims backed by real tool output.
