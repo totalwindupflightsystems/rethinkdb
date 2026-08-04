@@ -3,11 +3,14 @@
 
 #include "clustering/administration/datum_adapter.hpp"
 #include "clustering/administration/metadata.hpp"
+#include "clustering/administration/namespace_interface_repository.hpp"
 #include "clustering/administration/tables/generate_config.hpp"
 #include "clustering/administration/tables/split_points.hpp"
 #include "clustering/table_manager/table_meta_client.hpp"
 #include "concurrency/cross_thread_signal.hpp"
+#include "concurrency/fifo_checker.hpp"
 #include "containers/archive/string_stream.hpp"
+#include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/terms/write_hook.hpp"
 #include "rdb_protocol/terms/generated_columns.hpp"
 #include "rdb_protocol/terms/time_series.hpp"
@@ -20,7 +23,8 @@ table_config_artificial_table_backend_t::table_config_artificial_table_backend_t
         real_reql_cluster_interface_t *_reql_cluster_interface,
         admin_identifier_format_t _identifier_format,
         server_config_client_t *_server_config_client,
-        table_meta_client_t *_table_meta_client)
+        table_meta_client_t *_table_meta_client,
+        namespace_repo_t *_namespace_repo)
     : common_table_artificial_table_backend_t(
         name_string_t::guarantee_valid("table_config"),
         _rdb_context,
@@ -30,7 +34,8 @@ table_config_artificial_table_backend_t::table_config_artificial_table_backend_t
         _identifier_format),
       rdb_context(_rdb_context),
       reql_cluster_interface(_reql_cluster_interface),
-      server_config_client(_server_config_client) {
+      server_config_client(_server_config_client),
+      namespace_repo(_namespace_repo) {
 }
 
 table_config_artificial_table_backend_t::~table_config_artificial_table_backend_t() {
@@ -393,7 +398,8 @@ ql::datum_t convert_table_config_to_datum(
         const ql::datum_t &db_name_or_uuid,
         const table_config_t &config,
         admin_identifier_format_t identifier_format,
-        const server_name_map_t &server_names) {
+        const server_name_map_t &server_names,
+        const ql::datum_t &time_series_chunks) {
     ql::datum_object_builder_t builder;
     builder.overwrite("name", convert_name_to_datum(config.basic.name));
     builder.overwrite("db", db_name_or_uuid);
@@ -422,11 +428,15 @@ ql::datum_t convert_table_config_to_datum(
         `generated_columns`): null means "no time-series config". */
         builder.overwrite("time_series", ql::datum_t::null());
     }
+    /* PHASE3-TS-2: durable chunk-index summary read from the table's
+    storage engine. Null when the table is not time-series, has no writes
+    yet, or the store was unreachable. */
+    builder.overwrite("time_series_chunks", time_series_chunks);
     return std::move(builder).to_datum();
 }
 
 void table_config_artificial_table_backend_t::format_row(
-        UNUSED auth::user_context_t const &user_context,
+        auth::user_context_t const &user_context,
         const namespace_id_t &table_id,
         const table_config_and_shards_t &config,
         const ql::datum_t &db_name_or_uuid,
@@ -434,8 +444,42 @@ void table_config_artificial_table_backend_t::format_row(
         ql::datum_t *row_out)
         THROWS_ONLY(interrupted_exc_t, no_such_table_exc_t, failed_table_op_exc_t) {
     assert_thread();
+
+    /* PHASE3-TS-2: for time-series tables, augment the config datum with
+    the durable chunk-index summary read from the table's storage engine.
+    If the store is unreachable (table not ready, being reconfigured) the
+    field stays null rather than failing the whole config() read. */
+    ql::datum_t ts_chunks = ql::datum_t::null();
+    if (config.config.time_series_config.has_value()
+            && namespace_repo != nullptr) {
+        try {
+            namespace_interface_access_t ns_if =
+                namespace_repo->get_namespace_interface(
+                    table_id, interruptor_on_home);
+            read_t read(time_series_info_read_t(),
+                        profile_bool_t::DONT_PROFILE,
+                        read_mode_t::SINGLE);
+            read_response_t response;
+            order_token_t order_token;
+            ns_if.get()->read(user_context, read, &response, order_token,
+                              interruptor_on_home);
+            auto *res = boost::get<time_series_info_read_response_t>(
+                &response.response);
+            if (res != nullptr && res->has_catalog) {
+                ts_chunks = res->chunk_info;
+            }
+        } catch (const cannot_perform_query_exc_t &) {
+            /* Table not available; report no chunk info. */
+        } catch (const auth::permission_error_t &) {
+            /* Config permission was already checked upstream; treat as
+            unavailable chunk info. */
+        } catch (const no_such_table_exc_t &) {
+        } catch (const failed_table_op_exc_t &) {
+        }
+    }
+
     *row_out = convert_table_config_to_datum(table_id, db_name_or_uuid,
-        config.config, identifier_format, config.server_names);
+        config.config, identifier_format, config.server_names, ts_chunks);
 }
 
 bool convert_table_config_and_name_from_datum(
@@ -683,6 +727,16 @@ bool convert_table_config_and_name_from_datum(
         }
     }
 
+    /* PHASE3-TS-2: `time_series_chunks` is a read-only storage summary
+    (part of the config() datum); consume it so config round-trips through
+    reconfigure are accepted, and ignore its value. */
+    if (converter.has("time_series_chunks")) {
+        ql::datum_t ts_chunks_datum;
+        if (!converter.get("time_series_chunks", &ts_chunks_datum, error_out)) {
+            return false;
+        }
+    }
+
     if (!converter.check_no_extra_keys(error_out)) {
         return false;
     }
@@ -880,7 +934,7 @@ bool table_config_artificial_table_backend_t::write_row(
             */
             *new_value_inout = convert_table_config_to_datum(
                 table_id, new_value_inout->get_field("db"), new_config,
-                identifier_format, new_server_names);
+                identifier_format, new_server_names, ql::datum_t::null());
 
             try {
                 do_create(table_id, std::move(new_config), std::move(new_server_names),

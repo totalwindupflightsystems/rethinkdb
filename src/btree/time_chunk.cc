@@ -23,13 +23,13 @@ std::vector<size_t> time_chunk_index_t::overlapping_chunks(
     return out;
 }
 
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(time_chunk_bounds_t,
-    min_time_us, max_time_us, row_count);
+RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(time_chunk_bounds_t,
+    min_time_us, max_time_us, row_count, root_block);
 
 RDB_IMPL_SERIALIZABLE_1_SINCE_v2_4(time_chunk_index_t, chunks);
 
-RDB_IMPL_EQUALITY_COMPARABLE_3(time_chunk_bounds_t,
-    min_time_us, max_time_us, row_count);
+RDB_IMPL_EQUALITY_COMPARABLE_4(time_chunk_bounds_t,
+    min_time_us, max_time_us, row_count, root_block);
 
 RDB_IMPL_EQUALITY_COMPARABLE_1(time_chunk_index_t, chunks);
 

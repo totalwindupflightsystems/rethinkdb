@@ -162,6 +162,29 @@ void rdb_rget_slice(
     rget_read_response_t *response,
     release_superblock_t release_superblock);
 
+/* PHASE3-TS-2: primary-key range scan across the table's time-series chunk
+ * sub-trees. Each chunk is a self-contained B-tree rooted at a block id in
+ * the time-series catalog (spec §5.1); rows are distributed across chunk
+ * roots, never in the table's main tree. One traversal callback / accumulator
+ * serves every chunk (like rdb_brin_rget_slice serves multiple key ranges),
+ * so terminals (count/sum/...) and scans merge correctly across chunks.
+ * `chunk_roots` must be non-empty (the caller checks for a catalog); empty
+ * chunk roots (NULL_BLOCK_ID) are skipped. */
+void rdb_ts_rget_slice(
+    btree_slice_t *slice,
+    const region_t &shard,
+    const key_range_t &range,
+    const std::vector<block_id_t> &chunk_roots,
+    const optional<std::map<store_key_t, uint64_t> > &primary_keys,
+    superblock_t *superblock,
+    ql::env_t *ql_env,
+    const ql::batchspec_t &batchspec,
+    const std::vector<ql::transform_variant_t> &transforms,
+    const optional<ql::terminal_variant_t> &terminal,
+    sorting_t sorting,
+    rget_read_response_t *response,
+    release_superblock_t release_superblock);
+
 /* Primary-key range scan with BRIN recheck: for every row, apply the sindex
 mapping and emit only rows whose mapped value satisfies `datumspec`. Multiple
 candidate ranges may be scanned into the same response via KEEP/RELEASE. */

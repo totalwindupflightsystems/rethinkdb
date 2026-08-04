@@ -1072,7 +1072,8 @@ artificial_reql_cluster_backends_t::artificial_reql_cluster_backends_t(
                 real_reql_cluster_interface,
                 static_cast<admin_identifier_format_t>(format),
                 server_config_client,
-                table_meta_client));
+                table_meta_client,
+                real_reql_cluster_interface->get_namespace_repo()));
     }
     table_config_sentry = backend_sentry_t(
         artificial_reql_cluster_interface->get_table_backends_map_mutable(),

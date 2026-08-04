@@ -10,6 +10,7 @@
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
+#include "btree/time_series_ops.hpp"
 #include "buffer_cache/blob.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
 #include "concurrency/cross_thread_signal.hpp"
@@ -28,6 +29,8 @@
 #include "rdb_protocol/query_planner.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/table_common.hpp"
+#include "rdb_protocol/terms/time_series.hpp"
+#include "rdb_protocol/time_series_errors.hpp"
 #include "rdb_protocol/wire_func.hpp"
 #include "logger.hpp"
 
@@ -208,6 +211,26 @@ scoped_ptr_t<sindex_superblock_t> acquire_sindex_for_read(
     return sindex_sb;
 }
 
+/* PHASE3-TS-2: fills `roots_out` with the chunk root block ids from this
+ * store's durable time-series catalog. Returns false when the store has no
+ * catalog at all (a plain table, or a time-series table with no writes yet)
+ * — callers then use the legacy main-tree path. An existing catalog with an
+ * empty chunk index yields true with an empty vector (the read result is
+ * empty either way). */
+bool load_time_series_chunk_roots(real_superblock_t *superblock,
+                                  std::vector<block_id_t> *roots_out) {
+    roots_out->clear();
+    if (superblock->get_time_series_catalog_block_id() == NULL_BLOCK_ID) {
+        return false;
+    }
+    time_series_catalog_t catalog =
+        time_series_ops_t::load_catalog(superblock);
+    for (const ql::time_chunk_bounds_t &chunk : catalog.chunk_index.chunks) {
+        roots_out->push_back(chunk.root_block);
+    }
+    return true;
+}
+
 void do_read(ql::env_t *env,
              store_t *store,
              btree_slice_t *btree,
@@ -223,19 +246,40 @@ void do_read(ql::env_t *env,
         if (sindex_id_out != nullptr) {
             *sindex_id_out = r_nullopt;
         }
-        rdb_rget_slice(
-            btree,
-            *rget.current_shard,
-            rget.region.inner,
-            rget.primary_keys,
-            superblock,
-            env,
-            rget.batchspec,
-            rget.transforms,
-            rget.terminal,
-            rget.sorting,
-            res,
-            release_superblock);
+        std::vector<block_id_t> chunk_roots;
+        if (load_time_series_chunk_roots(superblock, &chunk_roots)) {
+            /* PHASE3-TS-2: time-series rows live in chunk sub-trees; scan
+             * every chunk root with one shared accumulator so terminals and
+             * streams merge correctly. */
+            rdb_ts_rget_slice(
+                btree,
+                *rget.current_shard,
+                rget.region.inner,
+                chunk_roots,
+                rget.primary_keys,
+                superblock,
+                env,
+                rget.batchspec,
+                rget.transforms,
+                rget.terminal,
+                rget.sorting,
+                res,
+                release_superblock);
+        } else {
+            rdb_rget_slice(
+                btree,
+                *rget.current_shard,
+                rget.region.inner,
+                rget.primary_keys,
+                superblock,
+                env,
+                rget.batchspec,
+                rget.transforms,
+                rget.terminal,
+                rget.sorting,
+                res,
+                release_superblock);
+        }
     } else {
         // rget using a secondary index
         sindex_disk_info_t sindex_info;
@@ -582,7 +626,34 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         response->response = point_read_response_t();
         point_read_response_t *res =
             boost::get<point_read_response_t>(&response->response);
-        rdb_get(get.key, btree, superblock, res, trace);
+        std::vector<block_id_t> chunk_roots;
+        if (load_time_series_chunk_roots(superblock, &chunk_roots)) {
+            /* PHASE3-TS-2: rows of a time-series table live in chunk
+             * sub-trees, never the main tree. Probe each chunk root; the
+             * chunk count is small and the primary key's chunk is unknown
+             * without a time index, so a linear probe is fine. */
+            for (block_id_t root : chunk_roots) {
+                if (root == NULL_BLOCK_ID) {
+                    continue;
+                }
+                time_chunk_superblock_t chunk_sb(
+                    superblock, root, superblock->get_stat_block_id());
+                point_read_response_t chunk_res;
+                rdb_get(get.key, btree, &chunk_sb, &chunk_res, trace);
+                /* rdb_get sets data to R_NULL for a missing key, and
+                 * R_NULL is a "present" datum (has() == true) — so test the
+                 * type, not has(), or a key living in a later chunk would
+                 * be reported missing after the first chunk misses. */
+                if (chunk_res.data.has()
+                        && chunk_res.data.get_type() != ql::datum_t::R_NULL) {
+                    *res = std::move(chunk_res);
+                    return;
+                }
+            }
+            res->data = ql::datum_t::null();
+        } else {
+            rdb_get(get.key, btree, superblock, res, trace);
+        }
     }
 
     void operator()(const intersecting_geo_read_t &geo_read) {
@@ -1153,10 +1224,21 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
                          interruptor, pread.serializable_env, trace);
         try {
-            rdb_rget_slice(btree, pread.region, range, r_nullopt, superblock,
-                &ql_env, ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
-                pread.transforms, pread.terminal, sorting_t::UNORDERED,
-                res, release_superblock_t::RELEASE);
+            std::vector<block_id_t> chunk_roots;
+            if (load_time_series_chunk_roots(superblock, &chunk_roots)) {
+                /* PHASE3-TS-2: parallel reads on time-series tables must
+                 * scan the chunk sub-trees, not the empty main tree. */
+                rdb_ts_rget_slice(btree, pread.region, range, chunk_roots,
+                    r_nullopt, superblock, &ql_env,
+                    ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
+                    pread.transforms, pread.terminal, sorting_t::UNORDERED,
+                    res, release_superblock_t::RELEASE);
+            } else {
+                rdb_rget_slice(btree, pread.region, range, r_nullopt, superblock,
+                    &ql_env, ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
+                    pread.transforms, pread.terminal, sorting_t::UNORDERED,
+                    res, release_superblock_t::RELEASE);
+            }
         } catch (const ql::exc_t &e) { res->result = e; }
           catch (const ql::datum_exc_t &e) {
               res->result = ql::exc_t(e, ql::backtrace_id_t::empty()); }
@@ -1187,6 +1269,24 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
 
     void operator()(const dummy_read_t &) {
         response->response = dummy_read_response_t();
+    }
+
+    /* PHASE3-TS-2: report the table's durable time-series chunk index
+     * (used by the admin `config()` path). */
+    void operator()(const time_series_info_read_t &) {
+        response->response = time_series_info_read_response_t();
+        auto *res = boost::get<time_series_info_read_response_t>(
+            &response->response);
+        guarantee(res != nullptr);
+        const bool has_catalog =
+            superblock->get_time_series_catalog_block_id() != NULL_BLOCK_ID;
+        res->has_catalog = has_catalog;
+        if (has_catalog) {
+            time_series_catalog_t catalog =
+                time_series_ops_t::load_catalog(superblock);
+            res->chunk_info = ql::format_time_series_chunk_info_datum(
+                catalog.chunk_index, true);
+        }
     }
 
     rdb_read_visitor_t(btree_slice_t *_btree,
@@ -1379,6 +1479,15 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
             interruptor,
             bi.serializable_env,
             trace);
+
+        /* PHASE3-TS-2: time-series tables route each datum into the chunk
+        B-tree selected by its time field instead of the legacy batched
+        replace (which writes the table root). */
+        if (time_series_active()) {
+            chunked_batched_insert(bi, &sindex_cb);
+            return;
+        }
+
         datum_replacer_t replacer(&ql_env,
                                   bi);
         std::vector<store_key_t> keys;
@@ -1398,6 +1507,90 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
                 trace);
     }
 
+    /* PHASE3-TS-2: chunk-routed batched insert. Every datum is validated
+     * (time field present + TIME pseudo-type), routed into the chunk
+     * containing its timestamp (creating / sealing chunks per §4.1), and
+     * written into that chunk's B-tree with replace-on-conflict semantics.
+     * The response mirrors the standard batched-insert stats datum
+     * ({inserted, replaced, errors, ...} + warnings). Deviation from the
+     * legacy path, documented in the commit: conflict functions, write
+     * hooks and generated columns are not applied on the chunked path in
+     * TS-2 (they ride on the legacy replacer machinery); rows land with
+     * overwrite=true semantics. */
+    void chunked_batched_insert(
+            const batched_insert_t &bi,
+            rdb_modification_report_cb_t *sindex_cb) {
+        rdb_live_deletion_context_t deletion_context;
+        ql::datum_t stats = ql::datum_t::empty_object();
+        std::set<std::string> conditions;
+
+        /* The chunked write cycle is serialized per store by
+         * time_series_mutex, acquired in store_t::write() across the whole
+         * write + commit — see there for why. */
+        time_series_catalog_t catalog =
+            time_series_ops_t::load_catalog(superblock->get());
+        /* Seed the durable catalog copy of the config from the write stamp
+         * (the write stamp comes from Raft metadata via the term layer). */
+        catalog.config = *time_series_config;
+
+        std::vector<rdb_modification_report_t> mod_reports;
+        mod_reports.reserve(bi.inserts.size());
+        for (size_t i = 0; i < bi.inserts.size(); ++i) {
+            const ql::datum_t &datum = bi.inserts[i];
+            store_key_t key(
+                datum.get_field(datum_string_t(bi.pkey)).print_primary());
+            point_write_response_t pw_res;
+            rdb_modification_report_t mod_report(key);
+            try {
+                time_series_ops_t::route_insert(
+                    btree, superblock->get(), *time_series_config, &catalog,
+                    TIME_SERIES_CHUNK_TARGET_ROWS, key, datum,
+                    true /* overwrite */, timestamp, &deletion_context,
+                    &pw_res, &mod_report.info, trace);
+                mod_reports.push_back(std::move(mod_report));
+
+                const char *stats_key =
+                    (pw_res.result == point_write_result_t::STORED)
+                    ? "inserted" : "replaced";
+                ql::datum_t one(std::map<datum_string_t, ql::datum_t>{
+                    std::make_pair(datum_string_t(stats_key), ql::datum_t(1.0))});
+                stats = stats.merge(one, ql::stats_merge, bi.limits, &conditions);
+            } catch (const ql::base_exc_t &e) {
+                /* Per-row errors (e.g. TIME_SERIES_FIELD_MISSING) are
+                 * reported in the stats datum, mirroring the legacy
+                 * replacer — never allowed to escape and crash the server.
+                 * The row is skipped; no chunk mutation happened. */
+                ql::datum_object_builder_t err;
+                err.add_error(e.what());
+                stats = stats.merge(std::move(err).to_datum(),
+                                    ql::stats_merge, bi.limits, &conditions);
+            }
+        }
+
+        /* Chunk index + config are durable in the same transaction as the
+         * chunk-tree writes, so a crash rolls the whole write back. The
+         * chunked write cycle (load → route → save) is serialized per store
+         * by time_series_mutex: the term layer splits batched inserts into
+         * per-row writes that otherwise overlap, and each would load a
+         * pre-save catalog and clobber the others' chunk index (last-save
+         * wins). */
+        time_series_ops_t::save_catalog(superblock->get(), catalog);
+        if (ts_catalog_block_out != nullptr) {
+            *ts_catalog_block_out =
+                superblock->get()->get_time_series_catalog_block_id();
+        }
+
+        if (!mod_reports.empty()) {
+            store->update_sindexes(txn, &sindex_block, mod_reports,
+                                   true /* release_sindex_block */);
+            sindex_cb->finish(btree, superblock->get());
+        }
+
+        ql::datum_object_builder_t out(stats);
+        out.add_warnings(conditions, bi.limits);
+        response->response = std::move(out).to_datum();
+    }
+
     void operator()(const point_write_t &w) {
         sampler->new_sample();
         response->response = point_write_response_t();
@@ -1408,8 +1601,26 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
 
         rdb_live_deletion_context_t deletion_context;
         rdb_modification_report_t mod_report(w.key);
-        rdb_set(w.key, w.data, w.overwrite, btree, timestamp, superblock->get(),
-                &deletion_context, res, &mod_report.info, trace);
+        if (time_series_active()) {
+            /* PHASE3-TS-2: route into the chunk B-tree selected by the
+            document's time field. Serialized per store in store_t::write()
+            (see time_series_mutex there). */
+            time_series_catalog_t catalog =
+                time_series_ops_t::load_catalog(superblock->get());
+            catalog.config = *time_series_config;
+            time_series_ops_t::route_insert(
+                btree, superblock->get(), *time_series_config, &catalog,
+                TIME_SERIES_CHUNK_TARGET_ROWS, w.key, w.data, w.overwrite,
+                timestamp, &deletion_context, res, &mod_report.info, trace);
+            time_series_ops_t::save_catalog(superblock->get(), catalog);
+            if (ts_catalog_block_out != nullptr) {
+                *ts_catalog_block_out =
+                    superblock->get()->get_time_series_catalog_block_id();
+            }
+        } else {
+            rdb_set(w.key, w.data, w.overwrite, btree, timestamp, superblock->get(),
+                    &deletion_context, res, &mod_report.info, trace);
+        }
 
         update_sindexes(mod_report);
     }
@@ -1455,7 +1666,9 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
                         profile::trace_t *_trace,
                         write_response_t *_response,
                         signal_t *_interruptor,
-                        std::vector<ql::change_record_t> *_cdc_records_out) :
+                        std::vector<ql::change_record_t> *_cdc_records_out,
+                        optional<ql::time_series_config_t> _time_series_config,
+                        block_id_t *_ts_catalog_block_out) :
         btree(_btree),
         store(_store),
         txn(_txn),
@@ -1466,6 +1679,8 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         timestamp(_timestamp),
         sampler(_sampler),
         trace(_trace),
+        time_series_config(std::move(_time_series_config)),
+        ts_catalog_block_out(_ts_catalog_block_out),
         sindex_block((*superblock)->expose_buf(),
                      (*superblock)->get_sindex_block_id(),
                      access_t::write),
@@ -1510,6 +1725,11 @@ private:
                                true /* release_sindex_block */);
     }
 
+    /* True when the write carries an enabled time-series config stamp. */
+    bool time_series_active() const {
+        return time_series_config.has_value() && time_series_config->enabled;
+    }
+
     btree_slice_t *const btree;
     store_t *const store;
     txn_t *const txn;
@@ -1520,6 +1740,12 @@ private:
     const repli_timestamp_t timestamp;
     profile::sampler_t *const sampler;
     profile::trace_t *const trace;
+    const optional<ql::time_series_config_t> time_series_config;
+    /* PHASE3-TS-2: set to the catalog block id after the chunked save;
+     * store_t::write() uses it to verify/self-heal the superblock pointer
+     * after commit (the pointer write is flaky when the superblock page has
+     * live snapshot nodes). */
+    block_id_t *const ts_catalog_block_out;
     buf_lock_t sindex_block;
     profile::event_log_t event_log_out;
     std::vector<ql::change_record_t> *const cdc_records_out;
@@ -1532,7 +1758,8 @@ void store_t::protocol_write(const write_t &_write,
                              state_timestamp_t timestamp,
                              scoped_ptr_t<real_superblock_t> *superblock,
                              signal_t *interruptor,
-                             std::vector<ql::change_record_t> *cdc_records_out) {
+                             std::vector<ql::change_record_t> *cdc_records_out,
+                             block_id_t *ts_catalog_block_out) {
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(_write.profile);
 
     {
@@ -1547,7 +1774,9 @@ void store_t::protocol_write(const write_t &_write,
                               trace.get_or_null(),
                               response,
                               interruptor,
-                              cdc_records_out);
+                              cdc_records_out,
+                              _write.time_series_config,
+                              ts_catalog_block_out);
         boost::apply_visitor(v, _write.write);
     }
 

@@ -97,6 +97,7 @@ public:
     real_superblock_t(buf_lock_t &&sb_buf, new_semaphore_in_line_t &&write_semaphore_acq);
 
     void release();
+    void release_buf();
     buf_lock_t *get() { return &sb_buf_; }
 
     block_id_t get_root_block_id();
@@ -110,6 +111,12 @@ public:
     NULL_BLOCK_ID means the table is not partitioned / catalog not published. */
     block_id_t get_partition_catalog_block_id();
     void set_partition_catalog_block_id(block_id_t new_id);
+
+    /* Table-level time-series catalog blob (PHASE3-TS-2). NULL_BLOCK_ID means
+    the table has no time-series catalog (either not a time-series table, or
+    no writes yet). */
+    block_id_t get_time_series_catalog_block_id();
+    void set_time_series_catalog_block_id(block_id_t new_id);
 
     buf_parent_t expose_buf() { return buf_parent_t(&sb_buf_); }
 

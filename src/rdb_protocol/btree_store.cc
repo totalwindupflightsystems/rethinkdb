@@ -215,6 +215,26 @@ void store_t::write(
         THROWS_ONLY(interrupted_exc_t) {
     assert_thread();
 
+    /* PHASE3-TS-2: serializes the chunked time-series write cycle (catalog
+     * load → route → save → commit) per store. The fork runs
+     * CPU_SHARDING_FACTOR stores per table (table_interface.cc), and each
+     * batched insert is split by key region across those stores — so one
+     * user insert() can fan out into several write_t's landing on the same
+     * store, overlapping at the txn level (each sub-write gets its own txn
+     * and can start before the previous one commits). Without serialization
+     * each would load a catalog snapshot from before the previous writer's
+     * save and clobber its chunk index (last-save wins — verified
+     * empirically: a 4-row insert left a 1-chunk/1-row catalog). Held
+     * across txn->commit() so the next writer's snapshot is guaranteed to
+     * include this writer's catalog. */
+    scoped_ptr_t<new_mutex_in_line_t> ts_acq;
+    const bool ts_write = _write.time_series_config.has_value()
+        && _write.time_series_config->enabled;
+    if (ts_write) {
+        ts_acq.init(new new_mutex_in_line_t(&time_series_mutex));
+        ts_acq->acq_signal()->wait_lazily_unordered();
+    }
+
     scoped_ptr_t<txn_t> txn;
     scoped_ptr_t<real_superblock_t> real_superblock;
     // We assume one block per document, plus changes to the stats block and superblock.
@@ -233,20 +253,64 @@ void store_t::write(
     std::vector<ql::change_record_t> *cdc_records_out =
             cdc_notification_callback ? &cdc_records_buf : nullptr;
 
+    block_id_t ts_catalog_block = NULL_BLOCK_ID;
+
     try {
         protocol_write(_write, response, timestamp, &real_superblock, interruptor,
-                       cdc_records_out);
+                       cdc_records_out, &ts_catalog_block);
     } catch (const interrupted_exc_t &) {
         // We hope that the operation itself is interruption-safe (i.e. always
         // either completes all necessary changes that are part of the
         // transaction, or doesn't perform any changes at all).
         // Hence it should be save to commit here even when interrupted.
-        real_superblock.reset();
+        if (real_superblock.has()) {
+            real_superblock->release_buf();
+        }
         txn->commit();
+        real_superblock.reset();
         throw;
     }
-    real_superblock.reset();
+    /* Release the superblock buf lock before commit (a live page acquisition
+     * at commit time is illegal), but keep the write-semaphore acquisition
+     * alive until after commit: a concurrent writer must not copy-on-write
+     * the superblock page between our last in-txn write and the flush that
+     * persists it (PHASE3-TS-2 — the catalog pointer written this way was
+     * silently lost when a concurrent writer's COW orphaned our page).
+     * Guard for the legacy batched paths: rdb_batched_replace() releases the
+     * superblock (and its write semaphore) itself, emptying our scoped_ptr —
+     * dereferencing it here would crash every plain-table batched insert. */
+    if (real_superblock.has()) {
+        real_superblock->release_buf();
+    }
     txn->commit();
+    real_superblock.reset();
+
+    /* PHASE3-TS-2 catalog-pointer enshrine: the pointer written into the
+     * superblock page inside the main write txn is unreliable in the live
+     * path. Concurrent readers hold snapshot refs on the superblock page,
+     * so the page cache copy-on-writes it per writer; a later reader or
+     * writer can end up on a divergent copy where the pointer is still
+     * NULL (verified empirically: heal-check reads saw the pointer while
+     * subsequent config() reads and the next write saw NULL). The disk
+     * copy is only as good as the last flushed page. Fix: re-commit the
+     * pointer in a bare, semaphore-serialized superblock write txn (no
+     * btree/sindex children — the pattern the unit tests prove reliable).
+     * Its page is fresh, so the flush writes it; the superblock write
+     * semaphore orders it after other superblock writers; holding the
+     * same durability as the main write keeps it on disk before we
+     * acknowledge the insert. */
+    if (ts_write && ts_catalog_block != NULL_BLOCK_ID) {
+        scoped_ptr_t<txn_t> wtxn;
+        scoped_ptr_t<real_superblock_t> wsb;
+        get_btree_superblock_and_txn_for_writing(
+            general_cache_conn.get(), &write_superblock_acq_semaphore,
+            write_access_t::write, 2, durability,
+            &wsb, &wtxn);
+        wsb->set_time_series_catalog_block_id(ts_catalog_block);
+        wsb->release_buf();
+        wtxn->commit();
+        wsb.reset();
+    }
 
     // Post-commit CDC notification: the write has been durably committed, so
     // it's now safe to surface the captured change records to the dispatcher.

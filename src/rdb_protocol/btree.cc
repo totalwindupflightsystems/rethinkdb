@@ -16,6 +16,7 @@
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
+#include "btree/time_series_ops.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
 #include "concurrency/coro_pool.hpp"
 #include "concurrency/new_mutex.hpp"
@@ -706,6 +707,7 @@ public:
 private:
     friend class rget_cb_t;
     friend class brin_rget_cb_t;
+    friend class ts_rget_cb_t;
     ql::env_t *const env;
     scoped_ptr_t<ql::batcher_t> batcher;
     std::vector<scoped_ptr_t<ql::op_t> > transformers;
@@ -720,6 +722,7 @@ public:
 private:
     friend class rget_cb_t;
     friend class brin_rget_cb_t;
+    friend class ts_rget_cb_t;
     rget_read_response_t *const response;
     btree_slice_t *const slice;
 };
@@ -1117,6 +1120,236 @@ void rdb_rget_slice(
         rget_cb_wrapper_t wrapper(&callback, 1, r_nullopt);
         cont = btree_concurrent_traversal(
             superblock, range, &wrapper, direction, release_superblock);
+    }
+    callback.finish(cont);
+}
+
+/* PHASE3-TS-2: rget callback for time-series chunk scans. The chunk
+ * sub-trees are ordered by TIME in the catalog, not by primary key; the
+ * rget machinery's sorted merge and last-key tracking require each store's
+ * stream to be key-ordered (verified live: a backfilled row prepends a
+ * chunk, and a sorted between() then emitted keys out of order — and worse,
+ * the next batched read would advance the range past skipped keys). So this
+ * callback COLLECTS every row from all chunk traversals, then `feed_sorted()`
+ * emits them through the transforms + accumulator in key order. Batching
+ * semantics are preserved: the accumulator's ABORT stops the feed, and the
+ * response stream's last_key tells the reader where to resume. */
+class ts_rget_cb_t : public concurrent_traversal_callback_t {
+public:
+    ts_rget_cb_t(rget_io_data_t &&_io,
+                 job_data_t &&_job)
+        : io(std::move(_io)),
+          job(std::move(_job)),
+          bad_init(false),
+          default_copies(1) {
+        disabler.init(new profile::disabler_t(job.env->trace));
+        sampler.init(new profile::sampler_t(
+            "Time-series chunk traversal doc evaluation.", job.env->trace));
+    }
+
+    /* The number of copies to attribute to rows of the upcoming traversal
+     * (getAll duplicates; 1 for range scans). */
+    void set_default_copies(size_t copies) {
+        default_copies = copies;
+    }
+
+    continue_bool_t handle_pair(
+        scoped_key_value_t &&keyvalue,
+        concurrent_traversal_fifo_enforcer_signal_t waiter)
+        THROWS_ONLY(interrupted_exc_t) override {
+        sampler->new_sample();
+        if (bad_init || boost::get<ql::exc_t>(&io.response->result) != nullptr) {
+            return continue_bool_t::ABORT;
+        }
+        store_key_t key(keyvalue.key());
+        lazy_btree_val_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
+                             keyvalue.expose_buf());
+        io.slice->stats.pm_keys_read.record();
+        io.slice->stats.pm_total_keys_read += 1;
+        try {
+            ql::datum_t val = row.get();
+            guarantee(!row.references_parent());
+            keyvalue.reset();
+            waiter.wait_interruptible();
+            collected.emplace_back(std::move(key), std::move(val),
+                                   default_copies);
+            return continue_bool_t::CONTINUE;
+        } catch (const ql::exc_t &e) {
+            io.response->result = e;
+            return continue_bool_t::ABORT;
+        } catch (const ql::datum_exc_t &e) {
+#ifndef NDEBUG
+            unreachable();
+#else
+            io.response->result = ql::exc_t(e, ql::backtrace_id_t::empty());
+            return continue_bool_t::ABORT;
+#endif
+        }
+    }
+
+    /* Emit the collected rows in key order through the transforms and the
+     * accumulator. Returns ABORT if the accumulator stopped the feed early
+     * (batch full), CONTINUE otherwise. */
+    continue_bool_t feed_sorted(sorting_t sorting)
+        THROWS_ONLY(interrupted_exc_t) {
+        std::sort(collected.begin(), collected.end(),
+                  [&](const collected_row_t &a, const collected_row_t &b) {
+                      return is_better(a.key, b.key, sorting);
+                  });
+        try {
+            for (const auto &row : collected) {
+                ql::groups_t data = {
+                    {ql::datum_t(), ql::datums_t(row.copies, row.data)}};
+                auto lazy_sindex_val = [&]() { return ql::datum_t(); };
+                for (auto it = job.transformers.begin();
+                     it != job.transformers.end(); ++it) {
+                    (**it)(job.env, &data, lazy_sindex_val);
+                }
+                if ((*job.accumulator)(job.env, &data, row.key,
+                                       lazy_sindex_val)
+                        == continue_bool_t::ABORT) {
+                    return continue_bool_t::ABORT;
+                }
+            }
+        } catch (const ql::exc_t &e) {
+            io.response->result = e;
+            return continue_bool_t::ABORT;
+        } catch (const ql::datum_exc_t &e) {
+#ifndef NDEBUG
+            unreachable();
+#else
+            io.response->result = ql::exc_t(e, ql::backtrace_id_t::empty());
+            return continue_bool_t::ABORT;
+#endif
+        }
+        return continue_bool_t::CONTINUE;
+    }
+
+    void finish(continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t) {
+        job.accumulator->finish(last_cb, &io.response->result);
+    }
+
+private:
+    struct collected_row_t {
+        collected_row_t(store_key_t &&_key, ql::datum_t &&_data, size_t _copies)
+            : key(std::move(_key)), data(std::move(_data)), copies(_copies) { }
+        store_key_t key;
+        ql::datum_t data;
+        size_t copies;
+    };
+
+    rget_io_data_t io;
+    job_data_t job;
+    std::vector<collected_row_t> collected;
+    bool bad_init;
+    size_t default_copies;
+    scoped_ptr_t<profile::disabler_t> disabler;
+    scoped_ptr_t<profile::sampler_t> sampler;
+};
+
+/* PHASE3-TS-2: rget across time-series chunk sub-trees. Mirrors
+ * rdb_brin_rget_slice's multi-range structure: one callback + accumulator
+ * serves every chunk, so terminals and scans merge correctly; each chunk's
+ * traversal goes through a time_chunk_superblock_t adapter rooted at the
+ * chunk's own block id while sharing the table's cache / stat block. The
+ * adapter's `release()` is a no-op, so the delegate superblock outlives the
+ * scans and is released by the caller as usual. Rows are emitted in key
+ * order (see ts_rget_cb_t). */
+void rdb_ts_rget_slice(
+        btree_slice_t *slice,
+        const region_t &shard,
+        const key_range_t &range,
+        const std::vector<block_id_t> &chunk_roots,
+        const optional<std::map<store_key_t, uint64_t> > &primary_keys,
+        superblock_t *superblock,
+        ql::env_t *ql_env,
+        const ql::batchspec_t &batchspec,
+        const std::vector<transform_variant_t> &transforms,
+        const optional<terminal_variant_t> &terminal,
+        sorting_t sorting,
+        rget_read_response_t *response,
+        release_superblock_t release_superblock) {
+    r_sanity_check(boost::get<ql::exc_t>(&response->result) == nullptr);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do range scan on time-series chunk trees.",
+        ql_env->trace);
+
+    store_key_t initial_last = !reversed(sorting)
+        ? range.left
+        : range.right.key_or_max();
+
+    ts_rget_cb_t callback(
+        rget_io_data_t(response, slice),
+        job_data_t(ql_env,
+                   batchspec,
+                   transforms,
+                   terminal,
+                   shard,
+                   initial_last,
+                   sorting,
+                   require_sindexes_t::NO));
+
+    direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
+    continue_bool_t cont = continue_bool_t::CONTINUE;
+
+    size_t remaining = chunk_roots.size();
+    for (size_t i = 0; i < chunk_roots.size(); ++i) {
+        if (chunk_roots[i] == NULL_BLOCK_ID) {
+            --remaining;
+            continue;
+        }
+        const bool is_last_chunk = (--remaining == 0);
+        time_chunk_superblock_t chunk_sb(
+            superblock, chunk_roots[i], superblock->get_stat_block_id());
+        if (primary_keys.has_value()) {
+            auto cb = [&](const std::pair<store_key_t, uint64_t> &pair,
+                          bool is_last) {
+                callback.set_default_copies(pair.second);
+                return btree_concurrent_traversal(
+                    &chunk_sb,
+                    key_range_t::one_key(pair.first),
+                    &callback,
+                    direction,
+                    (is_last_chunk && is_last)
+                        ? release_superblock : release_superblock_t::KEEP);
+            };
+            if (!reversed(sorting)) {
+                for (auto it = primary_keys->begin();
+                     it != primary_keys->end();) {
+                    auto this_it = it++;
+                    if (cb(*this_it, it == primary_keys->end())
+                            == continue_bool_t::ABORT) {
+                        cont = continue_bool_t::ABORT;
+                        break;
+                    }
+                }
+            } else {
+                for (auto it = primary_keys->rbegin();
+                     it != primary_keys->rend();) {
+                    auto this_it = it++;
+                    if (cb(*this_it, it == primary_keys->rend())
+                            == continue_bool_t::ABORT) {
+                        cont = continue_bool_t::ABORT;
+                        break;
+                    }
+                }
+            }
+        } else {
+            cont = btree_concurrent_traversal(
+                &chunk_sb, range, &callback, direction,
+                is_last_chunk ? release_superblock : release_superblock_t::KEEP);
+        }
+        if (cont == continue_bool_t::ABORT) {
+            break;
+        }
+    }
+
+    /* All chunk traversals are done; emit the rows in key order and finish
+     * the accumulator. If the feed stopped early (batch full), report ABORT
+     * so the stream's last_key is not extended to the range boundary. */
+    if (callback.feed_sorted(sorting) == continue_bool_t::ABORT) {
+        cont = continue_bool_t::ABORT;
     }
     callback.finish(cont);
 }

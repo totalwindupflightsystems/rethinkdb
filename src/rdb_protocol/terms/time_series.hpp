@@ -2,6 +2,7 @@
 #ifndef RDB_PROTOCOL_TERMS_TIME_SERIES_HPP_
 #define RDB_PROTOCOL_TERMS_TIME_SERIES_HPP_
 
+#include "btree/time_chunk.hpp"
 #include "btree/time_series_config.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/term_storage.hpp"
@@ -28,6 +29,16 @@ time_series_config_t parse_time_series_config_from_raw_term(
  * where aggregate expressions are rendered as JS source strings (same
  * representation as generated columns). */
 datum_t format_time_series_config_datum(const time_series_config_t &config);
+
+/* Format the durable chunk index into its config() datum shape
+ * (PHASE3-TS-2):
+ *   {chunk_count, total_rows, newest: {min_time_us, max_time_us, row_count},
+ *    chunks: [{min_time_us, max_time_us, row_count}, ...]}
+ * `newest` is null when there are no chunks yet; `chunks` is empty then.
+ * Timestamps are epoch microseconds as numbers (double-precision integers
+ * up to 2^53 — safe for micros since 1970). */
+datum_t format_time_series_chunk_info_datum(
+        const time_chunk_index_t &chunk_index, bool has_catalog);
 
 }  // namespace ql
 

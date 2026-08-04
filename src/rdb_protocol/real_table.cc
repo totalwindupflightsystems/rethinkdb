@@ -439,6 +439,17 @@ std::map<std::string, ql::wire_func_t> real_table_t::get_generated_columns(
     return out;
 }
 
+/* PHASE3-TS-2: fetch the table's time-series config from Raft metadata so
+ * the write can be stamped for chunk routing at the storage engine. */
+optional<ql::time_series_config_t> real_table_t::get_time_series_config(
+    ql::env_t *env) {
+    optional<ql::time_series_config_t> out;
+    table_config_and_shards_t config;
+    m_table_meta_client->get_config(uuid, env->interruptor, &config);
+    out = config.config.time_series_config;
+    return out;
+}
+
 ql::datum_t real_table_t::write_batched_replace(
     ql::env_t *env,
     const std::vector<ql::datum_t> &keys,
@@ -476,6 +487,9 @@ ql::datum_t real_table_t::write_batched_replace(
                 env->get_serializable_env(),
                 return_changes);
             write_t w(std::move(write), durability, env->profile(), env->limits());
+            /* PHASE3-TS-2: stamp the time-series config so the storage
+            engine can route chunked writes; empty on plain tables. */
+            w.time_series_config = get_time_series_config(env);
             write_response_t response;
             write_with_profile(env, &w, &response);
             auto dp = boost::get<ql::datum_t>(&response.response);
@@ -533,6 +547,9 @@ ql::datum_t real_table_t::write_batched_insert(
             env->get_serializable_env(),
             return_changes);
         write_t w(std::move(write), durability, env->profile(), env->limits());
+        /* PHASE3-TS-2: stamp the time-series config so the storage engine
+        can route chunked writes; empty on plain tables. */
+        w.time_series_config = get_time_series_config(env);
         write_response_t response;
         write_with_profile(env, &w, &response);
         auto dp = boost::get<ql::datum_t>(&response.response);

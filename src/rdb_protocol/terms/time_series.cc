@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "btree/time_series_ops.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/term_walker.hpp"
@@ -233,6 +234,48 @@ datum_t format_time_series_config_datum(const time_series_config_t &config) {
         steps.add(std::move(step_builder).to_datum());
     }
     builder.overwrite("downsample", std::move(steps).to_datum());
+    return std::move(builder).to_datum();
+}
+
+datum_t format_time_series_chunk_info_datum(
+        const time_chunk_index_t &chunk_index, bool has_catalog) {
+    if (!has_catalog) {
+        return datum_t::null();
+    }
+
+    datum_object_builder_t builder;
+    builder.overwrite("chunk_count",
+        datum_t(static_cast<double>(chunk_index.chunks.size())));
+    builder.overwrite("total_rows",
+        datum_t(static_cast<double>(time_series_ops_t::total_rows(chunk_index))));
+
+    datum_array_builder_t chunks(configured_limits_t::unlimited);
+    for (const time_chunk_bounds_t &c : chunk_index.chunks) {
+        datum_object_builder_t cb;
+        cb.overwrite("min_time_us",
+            datum_t(static_cast<double>(c.min_time_us)));
+        cb.overwrite("max_time_us",
+            datum_t(static_cast<double>(c.max_time_us)));
+        cb.overwrite("row_count",
+            datum_t(static_cast<double>(c.row_count)));
+        chunks.add(std::move(cb).to_datum());
+    }
+
+    if (chunk_index.chunks.empty()) {
+        builder.overwrite("newest", datum_t::null());
+    } else {
+        const time_chunk_bounds_t &newest = chunk_index.chunks.back();
+        datum_object_builder_t nb;
+        nb.overwrite("min_time_us",
+            datum_t(static_cast<double>(newest.min_time_us)));
+        nb.overwrite("max_time_us",
+            datum_t(static_cast<double>(newest.max_time_us)));
+        nb.overwrite("row_count",
+            datum_t(static_cast<double>(newest.row_count)));
+        builder.overwrite("newest", std::move(nb).to_datum());
+    }
+
+    builder.overwrite("chunks", std::move(chunks).to_datum());
     return std::move(builder).to_datum();
 }
 

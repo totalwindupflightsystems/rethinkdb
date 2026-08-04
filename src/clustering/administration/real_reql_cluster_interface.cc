@@ -352,7 +352,8 @@ bool real_reql_cluster_interface_t::table_create(
 
         new_config = convert_table_config_to_datum(table_id,
             convert_name_to_datum(db->name), config.config,
-            admin_identifier_format_t::name, config.server_names);
+            admin_identifier_format_t::name, config.server_names,
+            ql::datum_t::null());
 
     } catch (const admin_op_exc_t &admin_op_exc) {
         *error_out = admin_op_exc.to_admin_err();
@@ -794,7 +795,8 @@ void real_reql_cluster_interface_t::reconfigure_internal(
     // Store the old value of the config and status
     ql::datum_t old_config_datum = convert_table_config_to_datum(
         table_id, convert_name_to_datum(db->name), old_config.config,
-        admin_identifier_format_t::name, old_config.server_names);
+        admin_identifier_format_t::name, old_config.server_names,
+            ql::datum_t::null());
 
     artificial_table_backend_t *status_backend =
         artificial_reql_cluster_interface->get_table_backend(
@@ -844,7 +846,8 @@ void real_reql_cluster_interface_t::reconfigure_internal(
     // Compute the new value of the config and status
     ql::datum_t new_config_datum = convert_table_config_to_datum(
         table_id, convert_name_to_datum(db->name), new_config.config,
-        admin_identifier_format_t::name, new_config.server_names);
+        admin_identifier_format_t::name, new_config.server_names,
+            ql::datum_t::null());
     ql::datum_t new_status;
     if (!status_backend->read_row(
             user_context,
@@ -985,7 +988,8 @@ void real_reql_cluster_interface_t::emergency_repair_internal(
     // Store the old value of the config and status
     ql::datum_t old_config_datum = convert_table_config_to_datum(
         table_id, convert_name_to_datum(db->name), old_config.config,
-        admin_identifier_format_t::name, old_config.server_names);
+        admin_identifier_format_t::name, old_config.server_names,
+            ql::datum_t::null());
 
     artificial_table_backend_t *status_backend =
         artificial_reql_cluster_interface->get_table_backend(
@@ -1038,7 +1042,8 @@ void real_reql_cluster_interface_t::emergency_repair_internal(
     // Compute the new value of the config and status
     ql::datum_t new_config_datum = convert_table_config_to_datum(
         table_id, convert_name_to_datum(db->name), new_config.config,
-        admin_identifier_format_t::name, new_config.server_names);
+        admin_identifier_format_t::name, new_config.server_names,
+            ql::datum_t::null());
     ql::datum_t new_status;
     if (!status_backend->read_row(
             user_context,

@@ -23,10 +23,14 @@ ATTR_PACKED(struct reql_btree_superblock_t {
     /* Table-level partition catalog (Phase 3). Unused / NULL_BLOCK_ID on sindex
     superblocks. */
     block_id_t partition_catalog_block;
+    /* Table-level time-series catalog (PHASE3-TS-2): durable blob holding
+    time_series_catalog_t (config + chunk index). Unused / NULL_BLOCK_ID on
+    sindex superblocks. */
+    block_id_t time_series_catalog_block;
 
     static const int METAINFO_BLOB_MAXREFLEN
         = from_ser_block_size_t<DEVICE_BLOCK_SIZE>::cache_size - sizeof(block_magic_t)
-                                                               - 6 * sizeof(block_id_t);
+                                                               - 7 * sizeof(block_id_t);
 
     char metainfo_blob[METAINFO_BLOB_MAXREFLEN];
 });
@@ -82,6 +86,14 @@ void real_superblock_t::release() {
     write_semaphore_acq_.reset();
 }
 
+/* Releases only the superblock buf lock, keeping the write-semaphore
+ * acquisition alive. Used by store_t::write() to hold the semaphore across
+ * txn->commit() (PHASE3-TS-2: concurrent writers must not copy-on-write the
+ * superblock page between our last write and the flush that persists it). */
+void real_superblock_t::release_buf() {
+    sb_buf_.reset_buf_lock();
+}
+
 block_id_t real_superblock_t::get_root_block_id() {
     buf_read_t read(&sb_buf_);
     uint32_t sb_size;
@@ -130,6 +142,22 @@ void real_superblock_t::set_partition_catalog_block_id(block_id_t new_id) {
     reql_btree_superblock_t *sb_data = static_cast<reql_btree_superblock_t *>(
         write.get_data_write(REQL_BTREE_SUPERBLOCK_SIZE));
     sb_data->partition_catalog_block = new_id;
+}
+
+block_id_t real_superblock_t::get_time_series_catalog_block_id() {
+    buf_read_t read(&sb_buf_);
+    uint32_t sb_size;
+    const reql_btree_superblock_t *sb_data =
+        static_cast<const reql_btree_superblock_t *>(read.get_data_read(&sb_size));
+    guarantee(sb_size == REQL_BTREE_SUPERBLOCK_SIZE);
+    return sb_data->time_series_catalog_block;
+}
+
+void real_superblock_t::set_time_series_catalog_block_id(block_id_t new_id) {
+    buf_write_t write(&sb_buf_);
+    reql_btree_superblock_t *sb_data = static_cast<reql_btree_superblock_t *>(
+        write.get_data_write(REQL_BTREE_SUPERBLOCK_SIZE));
+    sb_data->time_series_catalog_block = new_id;
 }
 
 sindex_superblock_t::sindex_superblock_t(buf_lock_t &&sb_buf)
@@ -225,6 +253,7 @@ void btree_slice_t::init_real_superblock(real_superblock_t *superblock,
     sb->vector_graph_block = NULL_BLOCK_ID;
     sb->brin_summary_block = NULL_BLOCK_ID;
     sb->partition_catalog_block = NULL_BLOCK_ID;
+    sb->time_series_catalog_block = NULL_BLOCK_ID;
 
     set_superblock_metainfo(superblock, metainfo_key, metainfo_value,
                             cluster_version_t::v2_1);
@@ -249,6 +278,7 @@ void btree_slice_t::init_sindex_superblock(sindex_superblock_t *superblock) {
     sb->vector_graph_block = NULL_BLOCK_ID;
     sb->brin_summary_block = NULL_BLOCK_ID;
     sb->partition_catalog_block = NULL_BLOCK_ID;
+    sb->time_series_catalog_block = NULL_BLOCK_ID;
 }
 
 btree_slice_t::btree_slice_t(cache_t *c, perfmon_collection_t *parent,

@@ -14,6 +14,7 @@
 #include <boost/variant.hpp>
 
 #include "btree/secondary_operations.hpp"
+#include "btree/time_series_config.hpp"
 #include "clustering/administration/auth/user_context.hpp"
 #include "concurrency/cond_var.hpp"
 #include "containers/optional.hpp"
@@ -235,6 +236,20 @@ struct serializable_env_t {
 
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(serializable_env_t);
 
+/* PHASE3-TS-2: response to `time_series_info_read_t` — the table's durable
+ * time-series chunk index, pre-formatted as a datum so the admin layer
+ * never needs btree internals. */
+struct time_series_info_read_response_t {
+    /* True if the table has a time-series catalog block at all. */
+    bool has_catalog;
+    /* Formatted chunk-info datum (built at the store): {chunk_count,
+     * total_rows, newest, chunks}. Null when has_catalog is false. */
+    ql::datum_t chunk_info;
+
+    time_series_info_read_response_t() : has_catalog(false) { }
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(time_series_info_read_response_t);
+
 struct read_response_t {
     typedef boost::variant<point_read_response_t,
                            rget_read_response_t,
@@ -245,6 +260,7 @@ struct read_response_t {
                            changefeed_stamp_response_t,
                            changefeed_point_stamp_response_t,
                            distribution_read_response_t,
+                           time_series_info_read_response_t,
                            dummy_read_response_t> variant_t;
     variant_t response;
     profile::event_log_t event_log;
@@ -579,6 +595,15 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(distribution_read_t);
 
+/* PHASE3-TS-2: admin-info read that returns the table's durable time-series
+ * chunk index (used by `config()` to report chunk state). The response is a
+ * pre-formatted datum so the admin layer never needs btree internals. */
+struct time_series_info_read_t {
+    time_series_info_read_t() : region(region_t::universe()) { }
+    region_t region;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(time_series_info_read_t);
+
 struct changefeed_subscribe_t {
     changefeed_subscribe_t() { }
     explicit changefeed_subscribe_t(ql::changefeed::client_t::addr_t _addr)
@@ -633,6 +658,7 @@ struct read_t {
                            changefeed_limit_subscribe_t,
                            changefeed_point_stamp_t,
                            distribution_read_t,
+                           time_series_info_read_t,
                            dummy_read_t> variant_t;
 
     variant_t read;
@@ -830,6 +856,14 @@ struct write_t {
     durability_requirement_t durability_requirement;
     profile_bool_t profile;
     ql::configured_limits_t limits;
+
+    /* PHASE3-TS-2: stamped by the term layer (real_table_t) from the table's
+     * Raft metadata when the table has an enabled time-series config. The
+     * storage engine routes the write through chunk logic iff this is set
+     * and enabled; empty means "not a time-series write" and the legacy
+     * path runs untouched. Serialized FOR_CLUSTER like the generated-columns
+     * fields so the primary replica routes identically. */
+    optional<ql::time_series_config_t> time_series_config;
 
     region_t get_region() const THROWS_NOTHING;
     // Returns true if the write had any side effects applicable to the

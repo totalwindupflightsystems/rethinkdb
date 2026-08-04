@@ -138,6 +138,10 @@ private:
         ql::env_t *env,
         ignore_write_hook_t ignore_write_hook);
 
+    /* PHASE3-TS-2: the table's time-series config from Raft metadata, or
+     * empty for plain tables. Stamped onto write_t for chunk routing. */
+    optional<ql::time_series_config_t> get_time_series_config(ql::env_t *env);
+
     /* PHASE3-VEC: fetch the table's generated-columns wire funcs. */
     std::map<std::string, ql::wire_func_t> get_generated_columns(
         ql::env_t *env);

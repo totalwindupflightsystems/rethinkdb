@@ -1017,6 +1017,10 @@ struct rdb_r_get_region_visitor : public boost::static_visitor<region_t> {
         return dg.region;
     }
 
+    region_t operator()(const time_series_info_read_t &tsr) const {
+        return tsr.region;
+    }
+
     region_t operator()(const changefeed_subscribe_t &s) const {
         return s.shard_region;
     }
@@ -1204,6 +1208,10 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         return rangey_read(dg);
     }
 
+    bool operator()(const time_series_info_read_t &tsr) const {
+        return rangey_read(tsr);
+    }
+
     bool operator()(const dummy_read_t &d) const {
         return rangey_read(d);
     }
@@ -1277,6 +1285,7 @@ public:
     void operator()(const changefeed_limit_subscribe_t &);
     void operator()(const changefeed_stamp_t &);
     void operator()(const changefeed_point_stamp_t &);
+    void operator()(const time_series_info_read_t &tsr);
     void operator()(const dummy_read_t &);
 
 private:
@@ -1634,6 +1643,66 @@ void rdb_r_unshard_visitor_t::operator()(const dummy_read_t &) {
     *response_out = responses[0];
 }
 
+void rdb_r_unshard_visitor_t::operator()(const time_series_info_read_t &) {
+    /* PHASE3-TS-2: the fork runs CPU_SHARDING_FACTOR stores per table
+     * (table_interface.cc `pmap(CPU_SHARDING_FACTOR, ...)`), and each store
+     * keeps its own time-series catalog for its key sub-range. The chunk
+     * info must be AGGREGATED across all stores' responses: row counts and
+     * chunk counts sum, chunk lists concatenate, and `newest` is the chunk
+     * with the greatest max_time. Without aggregation, `config()` would
+     * report only store 0's share (verified: a 50-row insert reported 6). */
+    guarantee(count > 0);
+    time_series_info_read_response_t merged;
+    bool any_catalog = false;
+    double total_chunks = 0;
+    double total_rows = 0;
+    ql::datum_array_builder_t chunks(ql::configured_limits_t::unlimited);
+    ql::datum_t newest = ql::datum_t::null();
+    double newest_max_time_us = -1.0;
+    for (size_t i = 0; i < count; ++i) {
+        auto *res = boost::get<time_series_info_read_response_t>(
+            &responses[i].response);
+        guarantee(res != nullptr);
+        if (!res->has_catalog || !res->chunk_info.has()) {
+            continue;
+        }
+        any_catalog = true;
+        total_chunks += res->chunk_info
+            .get_field(datum_string_t("chunk_count")).as_num();
+        total_rows += res->chunk_info
+            .get_field(datum_string_t("total_rows")).as_num();
+        ql::datum_t store_chunks =
+            res->chunk_info.get_field(datum_string_t("chunks"));
+        for (size_t j = 0; j < store_chunks.arr_size(); ++j) {
+            chunks.add(store_chunks.get(j));
+        }
+        ql::datum_t store_newest =
+            res->chunk_info.get_field(datum_string_t("newest"), ql::NOTHROW);
+        if (store_newest.has() && store_newest.get_type() == ql::datum_t::R_OBJECT) {
+            double store_newest_max = store_newest
+                .get_field(datum_string_t("max_time_us")).as_num();
+            if (store_newest_max > newest_max_time_us) {
+                newest_max_time_us = store_newest_max;
+                newest = store_newest;
+            }
+        }
+    }
+    if (!any_catalog) {
+        /* No store has a catalog yet: report no chunk info (null), so the
+         * admin layer shows `time_series_chunks: null` before first write. */
+        response_out->response = merged;
+        return;
+    }
+    merged.has_catalog = true;
+    ql::datum_object_builder_t builder;
+    builder.overwrite("chunk_count", ql::datum_t(total_chunks));
+    builder.overwrite("total_rows", ql::datum_t(total_rows));
+    builder.overwrite("newest", newest);
+    builder.overwrite("chunks", std::move(chunks).to_datum());
+    merged.chunk_info = std::move(builder).to_datum();
+    response_out->response = merged;
+}
+
 void read_t::unshard(read_response_t *responses, size_t count,
                      read_response_t *response_out, rdb_context_t *ctx,
                      signal_t *interruptor) const
@@ -1685,6 +1754,7 @@ struct use_snapshot_visitor_t : public boost::static_visitor<bool> {
     bool operator()(const changefeed_stamp_t &) const {           return false; }
     bool operator()(const changefeed_point_stamp_t &) const {     return false; }
     bool operator()(const distribution_read_t &) const {          return true;  }
+    bool operator()(const time_series_info_read_t &) const {      return false; }
 };
 
 // Only use snapshotting if we're doing a range get.
@@ -1713,6 +1783,7 @@ struct route_to_primary_visitor_t : public boost::static_visitor<bool> {
     bool operator()(const changefeed_stamp_t &) const {           return true;  }
     bool operator()(const changefeed_point_stamp_t &) const {     return true;  }
     bool operator()(const distribution_read_t &) const {          return false; }
+    bool operator()(const time_series_info_read_t &) const {      return false; }
 };
 
 // Route changefeed reads to the primary replica. For other reads we don't care.
@@ -1925,6 +1996,9 @@ bool write_t::shard(const region_t &region,
     const rdb_w_shard_visitor_t v(&region, &payload);
     bool result = boost::apply_visitor(v, write);
     *write_out = write_t(payload, durability_requirement, profile, limits);
+    /* PHASE3-TS-2: keep the time-series stamp on sharded sub-writes so the
+     * replica routes each shard's chunked write identically. */
+    write_out->time_series_config = time_series_config;
     return result;
 }
 
@@ -2206,6 +2280,10 @@ RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_point_stamp_t, addr, key);
 
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(read_t, read, profile, read_mode);
 
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(time_series_info_read_t, region);
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(time_series_info_read_response_t,
+    has_catalog, chunk_info);
+
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(point_write_response_t, result);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(point_delete_response_t, result);
 RDB_IMPL_SERIALIZABLE_0_FOR_CLUSTER(sync_response_t);
@@ -2239,7 +2317,8 @@ RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(point_delete_t, key);
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(sync_t, region);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(dummy_write_t, region);
 
-RDB_IMPL_SERIALIZABLE_4_FOR_CLUSTER(
-    write_t, write, durability_requirement, profile, limits);
+RDB_IMPL_SERIALIZABLE_5_FOR_CLUSTER(
+    write_t, write, durability_requirement, profile, limits,
+    time_series_config);
 
 

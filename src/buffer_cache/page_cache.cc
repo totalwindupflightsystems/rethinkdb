@@ -109,12 +109,10 @@ void page_cache_t::consider_evicting_current_page(block_id_t block_id) {
     if (read_ahead_cb_ != nullptr) {
         return;
     }
-
     auto page_it = current_pages_.find(block_id);
     if (page_it == current_pages_.end()) {
         return;
     }
-
     current_page_t *page_ptr = page_it->second;
     if (page_ptr->should_be_evicted()) {
         current_pages_.erase(block_id);
@@ -756,6 +754,18 @@ void current_page_t::reset(page_cache_t *page_cache) {
 
 bool current_page_t::should_be_evicted() const {
     // Consider reasons why the current_page_t should not be evicted.
+
+    // The superblock is never evicted. It is a single 4KiB block whose page
+    // carries the btree's root/sindex/stat/metainfo pointers, and — since the
+    // time-series catalog pointer was added — a write that follows an
+    // eviction reloads it from a stale disk token, silently losing in-memory
+    // state written by the previous transaction (the reload's token is the
+    // pre-COW disk version; the post-COW version's token dies with the
+    // evicted page). Pinning it is also a pure win: the alternative is a disk
+    // read on every write.
+    if (block_id_ == SUPERBLOCK_ID) {
+        return false;
+    }
 
     // A reason: It still has acquirers.  (Important.)
     if (!acquirers_.empty()) {

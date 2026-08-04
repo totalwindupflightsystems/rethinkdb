@@ -7,20 +7,36 @@
  * Plus table_config_t integration (field serialization + equality). */
 #include "btree/time_series_config.hpp"
 #include "btree/time_chunk.hpp"
+#include "btree/time_series_ops.hpp"
+#include "rdb_protocol/terms/time_series.hpp"
 
 #include <cstring>
+#include <functional>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "arch/io/disk.hpp"
+#include "btree/operations.hpp"
+#include "buffer_cache/alt.hpp"
+#include "buffer_cache/cache_balancer.hpp"
 #include "clustering/administration/tables/table_metadata.hpp"
+#include "concurrency/cond_var.hpp"
 #include "containers/archive/vector_stream.hpp"
 #include "containers/archive/versioned.hpp"
+#include "containers/binary_blob.hpp"
 #include "containers/name_string.hpp"
 #include "containers/uuid.hpp"
+#include "rdb_protocol/btree.hpp"
+#include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
+#include "rdb_protocol/time_series_errors.hpp"
+#include "serializer/log/log_serializer.hpp"
 #include "unittest/gtest.hpp"
+#include "unittest/unittest_utils.hpp"
 
 namespace unittest {
 
@@ -268,6 +284,467 @@ TEST(TimeSeries, ValidateRejectsBadConfig) {
     no_agg.downsample_steps.push_back(make_step(86400, 60));
     expect_reql_error("Downsample `aggregate` must not be empty.",
                       [&] { no_agg.validate_or_throw(); });
+}
+
+/* ── PHASE3-TS-2: chunked storage + append-optimized write path ─────────── */
+
+namespace {
+
+/* Real on-disk harness (same pattern as partition_ops_test): a fresh
+ * serializer + cache + primary superblock, then `body` runs with a write
+ * connection and a btree slice for rdb_set. */
+void with_ts_store(
+        const std::function<void(cache_conn_t *, btree_slice_t *)> &body) {
+    temp_file_t temp_file;
+    io_backender_t io_backender(file_direct_io_mode_t::buffered_desired);
+    filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
+    log_serializer_t::create(
+        &file_opener,
+        log_serializer_t::static_config_t());
+    log_serializer_t serializer(
+        log_serializer_t::dynamic_config_t(),
+        &file_opener,
+        &get_global_perfmon_collection());
+    dummy_cache_balancer_t balancer(GIGABYTE);
+    cache_t cache(&serializer, &balancer, &get_global_perfmon_collection());
+    cache_conn_t cache_conn(&cache);
+
+    {
+        txn_t txn(&cache_conn, write_durability_t::HARD, 1);
+        {
+            buf_lock_t sb_lock(&txn, SUPERBLOCK_ID, alt_create_t::create);
+            real_superblock_t superblock(std::move(sb_lock));
+            btree_slice_t::init_real_superblock(
+                &superblock, std::vector<char>(), binary_blob_t());
+        }
+        txn.commit();
+    }
+
+    btree_slice_t slice(&cache, &get_global_perfmon_collection(),
+                        "ts_test", index_type_t::PRIMARY);
+    body(&cache_conn, &slice);
+}
+
+/* Build a document {id, ts} with `ts` a ReQL TIME pseudo-type. */
+ql::datum_t ts_doc(const char *id, double epoch_seconds) {
+    ql::datum_object_builder_t doc;
+    doc.overwrite("id", ql::datum_t(datum_string_t(id)));
+    doc.overwrite("ts", ql::pseudo::make_time(epoch_seconds, "+00:00"));
+    return std::move(doc).to_datum();
+}
+
+/* Run a routed insert inside a write txn. Returns the point-write result. */
+point_write_result_t routed_insert(
+        cache_conn_t *cache_conn,
+        btree_slice_t *slice,
+        const ql::time_series_config_t &config,
+        time_series_catalog_t *catalog,
+        uint64_t chunk_target_rows,
+        const store_key_t &key,
+        const ql::datum_t &doc) {
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> superblock;
+    get_btree_superblock_and_txn_for_writing(
+        cache_conn, nullptr, write_access_t::write, 4,
+        write_durability_t::SOFT, &superblock, &txn);
+    rdb_live_deletion_context_t deletion_context;
+    point_write_response_t pw_res;
+    rdb_modification_info_t mod_info;
+    try {
+        time_series_ops_t::route_insert(
+            slice, superblock.get(), config, catalog, chunk_target_rows,
+            key, doc, true /* overwrite */, repli_timestamp_t::distant_past,
+            &deletion_context, &pw_res, &mod_info, nullptr);
+    } catch (...) {
+        /* Error paths (bad time field) reject before any chunk mutation;
+        commit the empty txn to release the superblock cleanly. */
+        superblock.reset();
+        txn->commit();
+        throw;
+    }
+    time_series_ops_t::save_catalog(superblock.get(), *catalog);
+    /* The superblock holds a live page acq (sb_buf_); it must be released
+     * before the txn commits (same pattern as btree_whole.cc run_txn_fn). */
+    superblock.reset();
+    txn->commit();
+    return pw_res.result;
+}
+
+/* Load the catalog in a fresh read txn. */
+time_series_catalog_t load_ts_catalog(cache_conn_t *cache_conn) {
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> superblock;
+    get_btree_superblock_and_txn_for_reading(
+        cache_conn, CACHE_SNAPSHOTTED_NO, &superblock, &txn);
+    return time_series_ops_t::load_catalog(superblock.get());
+}
+
+ql::time_series_config_t make_write_config() {
+    ql::time_series_config_t cfg;
+    cfg.enabled = true;
+    cfg.time_field = name_string_t::guarantee_valid("ts");
+    cfg.chunk_interval_seconds = 3600;
+    return cfg;
+}
+
+}  // namespace
+
+TPTEST(TimeSeries, ChunkedWritePathRouting) {
+    /* Acceptance criteria 1+3: first insert creates chunk 0; in-order
+     * inserts append (extend max_time); out-of-order inserts land in the
+     * containing chunk; every chunk ends up with its own B-tree root. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+
+        /* First insert: creates chunk 0 at [1000s, 1001s). */
+        EXPECT_EQ(point_write_result_t::STORED,
+            routed_insert(cache_conn, slice, config, &catalog,
+                          TIME_SERIES_CHUNK_TARGET_ROWS,
+                          store_key_t("a"), ts_doc("a", 1000.0)));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(1000000000ULL, catalog.chunk_index.chunks[0].min_time_us);
+        EXPECT_EQ(1000000001ULL, catalog.chunk_index.chunks[0].max_time_us);
+        EXPECT_EQ(1u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_NE(NULL_BLOCK_ID, catalog.chunk_index.chunks[0].root_block);
+
+        /* In-order append: same chunk, max_time extended. */
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("b"), ts_doc("b", 2000.0));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2000000001ULL, catalog.chunk_index.chunks[0].max_time_us);
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+
+        /* Out-of-order within the chunk: still chunk 0, row count grows. */
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("c"), ts_doc("c", 1500.0));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(3u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_EQ(2000000001ULL, catalog.chunk_index.chunks[0].max_time_us);
+
+        /* Replace on the same primary key (same chunk): row count stable. */
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("a"), ts_doc("a", 1700.0));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(3u, catalog.chunk_index.chunks[0].row_count);
+
+        /* Everything must be durable: reload in a fresh txn. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_TRUE(reloaded.config == config);
+        EXPECT_TRUE(reloaded.chunk_index == catalog.chunk_index);
+        EXPECT_NE(NULL_BLOCK_ID,
+                  reloaded.chunk_index.chunks[0].root_block);
+    });
+}
+
+TPTEST(TimeSeries, ChunkSealStartsNewChunk) {
+    /* Acceptance criterion 7: when the newest chunk's row_count reaches the
+     * threshold, the next insert seals it and starts a new chunk. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        const uint64_t threshold = 2;
+
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("a"), ts_doc("a", 1000.0));
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("b"), ts_doc("b", 2000.0));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+
+        /* Third row exceeds the threshold → chunk 1 starts at its ts. */
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("c"), ts_doc("c", 3000.0));
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_EQ(3000000000ULL, catalog.chunk_index.chunks[1].min_time_us);
+        EXPECT_EQ(1u, catalog.chunk_index.chunks[1].row_count);
+        EXPECT_NE(NULL_BLOCK_ID, catalog.chunk_index.chunks[1].root_block);
+        EXPECT_NE(catalog.chunk_index.chunks[0].root_block,
+                  catalog.chunk_index.chunks[1].root_block);
+
+        /* Appends after the seal extend the NEW chunk. */
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("d"), ts_doc("d", 3500.0));
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(3500000001ULL, catalog.chunk_index.chunks[1].max_time_us);
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[1].row_count);
+
+        /* Backfill into the sealed chunk still works (containing chunk). */
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("e"), ts_doc("e", 1500.0));
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(3u, catalog.chunk_index.chunks[0].row_count);
+
+        /* Older than every chunk → prepend a new chunk. */
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("f"), ts_doc("f", 500.0));
+        ASSERT_EQ(3u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(500000000ULL, catalog.chunk_index.chunks[0].min_time_us);
+        EXPECT_EQ(1u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[2].row_count);
+
+        /* Durability: fresh txn sees the sealed index. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_EQ(3u, reloaded.chunk_index.chunks.size());
+        EXPECT_TRUE(reloaded.chunk_index == catalog.chunk_index);
+        EXPECT_EQ(6u, time_series_ops_t::total_rows(reloaded.chunk_index));
+    });
+}
+
+TPTEST(TimeSeries, ChunkIntervalSealsNewChunk) {
+    /* A row at/after the chunk's interval boundary starts a new chunk even
+     * when the row-count threshold was not reached. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("a"), ts_doc("a", 1000.0));
+        /* 1000s + 3600s interval boundary = 4600s; at the boundary → new. */
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("b"), ts_doc("b", 4600.0));
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(4600000000ULL, catalog.chunk_index.chunks[1].min_time_us);
+        /* Just below the boundary stays in chunk 0. */
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("c"), ts_doc("c", 4599.0));
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+    });
+}
+
+TPTEST(TimeSeries, ChunkedWriteRejectsBadTimeField) {
+    /* Acceptance criteria 4+5: missing field and non-time field are
+     * rejected with the catalog errors, before any chunk mutation. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+
+        /* Missing field. */
+        ql::datum_object_builder_t no_ts;
+        no_ts.overwrite("id", ql::datum_t(datum_string_t("x")));
+        expect_reql_error("TIME_SERIES_FIELD_MISSING", [&] {
+            routed_insert(cache_conn, slice, config, &catalog,
+                          TIME_SERIES_CHUNK_TARGET_ROWS,
+                          store_key_t("x"),
+                          std::move(no_ts).to_datum());
+        });
+
+        /* Non-object document. */
+        expect_reql_error("TIME_SERIES_FIELD_MISSING", [&] {
+            routed_insert(cache_conn, slice, config, &catalog,
+                          TIME_SERIES_CHUNK_TARGET_ROWS,
+                          store_key_t("n"), ql::datum_t(42.0));
+        });
+
+        /* Wrong type (string instead of a TIME pseudo-type). */
+        ql::datum_object_builder_t bad_ts;
+        bad_ts.overwrite("id", ql::datum_t(datum_string_t("y")));
+        bad_ts.overwrite("ts", ql::datum_t(datum_string_t("not-a-time")));
+        expect_reql_error("TIME_SERIES_FIELD_INVALID_TYPE", [&] {
+            routed_insert(cache_conn, slice, config, &catalog,
+                          TIME_SERIES_CHUNK_TARGET_ROWS,
+                          store_key_t("y"),
+                          std::move(bad_ts).to_datum());
+        });
+
+        /* Nothing was routed: no chunks exist. */
+        EXPECT_TRUE(catalog.chunk_index.chunks.empty());
+        EXPECT_EQ(0u, time_series_ops_t::total_rows(catalog.chunk_index));
+    });
+}
+
+TPTEST(TimeSeries, ChunkedWriteIntervalAndRows) {
+    /* TIME_SERIES_CHUNK_TARGET_ROWS is a sane constant, and total_rows
+     * aggregates across chunks. */
+    EXPECT_GE(TIME_SERIES_CHUNK_TARGET_ROWS, 1000u);
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t());
+    idx.chunks.push_back(ql::time_chunk_bounds_t());
+    idx.chunks[0].row_count = 5;
+    idx.chunks[1].row_count = 7;
+    EXPECT_EQ(12u, time_series_ops_t::total_rows(idx));
+}
+
+TEST(TimeSeries, ChunkInfoDatumShape) {
+    /* The config() chunk-info datum must expose chunk_count, total_rows,
+     * newest bounds and the chunk list; null when no catalog exists. */
+    EXPECT_EQ(ql::datum_t::null(),
+        ql::format_time_series_chunk_info_datum(
+            ql::time_chunk_index_t(), false));
+
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t());
+    idx.chunks[0].min_time_us = 1000000000ULL;
+    idx.chunks[0].max_time_us = 2000000001ULL;
+    idx.chunks[0].row_count = 3;
+    ql::datum_t d = ql::format_time_series_chunk_info_datum(idx, true);
+    EXPECT_EQ(1.0, d.get_field("chunk_count").as_num());
+    EXPECT_EQ(3.0, d.get_field("total_rows").as_num());
+    ql::datum_t newest = d.get_field("newest");
+    EXPECT_EQ(1000000000.0, newest.get_field("min_time_us").as_num());
+    EXPECT_EQ(2000000001.0, newest.get_field("max_time_us").as_num());
+    EXPECT_EQ(3.0, newest.get_field("row_count").as_num());
+    EXPECT_EQ(1u, d.get_field("chunks").arr_size());
+}
+
+TPTEST(TimeSeries, ChunkedCatalogRelease) {
+    /* release_catalog must free the blob and reset the superblock slot. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        time_series_catalog_t catalog;
+        catalog.config = make_write_config();
+        {
+            scoped_ptr_t<txn_t> txn;
+            scoped_ptr_t<real_superblock_t> superblock;
+            get_btree_superblock_and_txn_for_writing(
+                cache_conn, nullptr, write_access_t::write, 4,
+                write_durability_t::SOFT, &superblock, &txn);
+            time_series_ops_t::save_catalog(superblock.get(), catalog);
+            EXPECT_NE(NULL_BLOCK_ID,
+                      superblock->get_time_series_catalog_block_id());
+            time_series_ops_t::release_catalog(superblock.get());
+            EXPECT_EQ(NULL_BLOCK_ID,
+                      superblock->get_time_series_catalog_block_id());
+            superblock.reset();
+            txn->commit();
+        }
+        /* After release, load returns a default catalog. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_FALSE(reloaded.config.enabled);
+        EXPECT_TRUE(reloaded.chunk_index.chunks.empty());
+    });
+}
+
+TPTEST(TimeSeries, ChunkedCatalogPersistsAcrossTxns) {
+    /* Live-path pattern: every write RELOADS the catalog from disk (a fresh
+     * txn), routes into it, and saves. This must accumulate chunks across
+     * transactions — a fresh load must see the previous save. Mirrors
+     * chunked_batched_insert() in store.cc. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        const uint64_t threshold = TIME_SERIES_CHUNK_TARGET_ROWS;
+
+        /* Write 1: fresh catalog (no block id yet) → creates block + chunk 0. */
+        {
+            time_series_catalog_t catalog =
+                load_ts_catalog(cache_conn);
+            catalog.config = config;
+            point_write_response_t pw_res;
+            rdb_modification_info_t mod_info;
+            rdb_live_deletion_context_t deletion_context;
+            scoped_ptr_t<txn_t> txn;
+            scoped_ptr_t<real_superblock_t> superblock;
+            get_btree_superblock_and_txn_for_writing(
+                cache_conn, nullptr, write_access_t::write, 4,
+                write_durability_t::SOFT, &superblock, &txn);
+            time_series_ops_t::route_insert(
+                slice, superblock.get(), config, &catalog, threshold,
+                store_key_t("a"), ts_doc("a", 1000.0), true,
+                repli_timestamp_t::distant_past, &deletion_context,
+                &pw_res, &mod_info, nullptr);
+            time_series_ops_t::save_catalog(superblock.get(), catalog);
+            superblock.reset();
+            txn->commit();
+        }
+
+        /* Write 2: must see write 1's chunk (block id + blob persisted). */
+        {
+            time_series_catalog_t catalog =
+                load_ts_catalog(cache_conn);
+            EXPECT_EQ(1u, catalog.chunk_index.chunks.size())
+                << "write 2 must load write 1's catalog (block id persisted)";
+            EXPECT_EQ(1u, catalog.chunk_index.chunks[0].row_count);
+            catalog.config = config;
+            point_write_response_t pw_res;
+            rdb_modification_info_t mod_info;
+            rdb_live_deletion_context_t deletion_context;
+            scoped_ptr_t<txn_t> txn;
+            scoped_ptr_t<real_superblock_t> superblock;
+            get_btree_superblock_and_txn_for_writing(
+                cache_conn, nullptr, write_access_t::write, 4,
+                write_durability_t::SOFT, &superblock, &txn);
+            time_series_ops_t::route_insert(
+                slice, superblock.get(), config, &catalog, threshold,
+                store_key_t("b"), ts_doc("b", 2000.0), true,
+                repli_timestamp_t::distant_past, &deletion_context,
+                &pw_res, &mod_info, nullptr);
+            time_series_ops_t::save_catalog(superblock.get(), catalog);
+            superblock.reset();
+            txn->commit();
+        }
+
+        /* Write 3: must see 2 chunks' worth of rows (1 chunk, 2 rows). */
+        {
+            time_series_catalog_t catalog =
+                load_ts_catalog(cache_conn);
+            EXPECT_EQ(1u, catalog.chunk_index.chunks.size())
+                << "write 3 must load write 2's catalog";
+            EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count)
+                << "rows must accumulate across transactions";
+            EXPECT_EQ(2000000001ULL, catalog.chunk_index.chunks[0].max_time_us);
+        }
+    });
+}
+
+TPTEST(TimeSeries, LiveVisitorSequenceWithSindexBlock) {
+    /* Mirrors the LIVE server write path (store.cc chunked_batched_insert +
+     * store_t::write): acquire the sindex block parented on the superblock
+     * BEFORE the route+save, release it via reset_buf_lock() (as
+     * update_sindexes does), then commit. The catalog block id must survive
+     * the commit — regression probe for the live-server field loss. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+
+        {
+            scoped_ptr_t<txn_t> txn;
+            scoped_ptr_t<real_superblock_t> superblock;
+            get_btree_superblock_and_txn_for_writing(
+                cache_conn, nullptr, write_access_t::write, 4,
+                write_durability_t::SOFT, &superblock, &txn);
+            /* sindex block acquisition exactly like rdb_write_visitor_t ctor */
+            buf_lock_t sindex_block(superblock->expose_buf(),
+                                    superblock->get_sindex_block_id(),
+                                    access_t::write);
+            time_series_catalog_t catalog =
+                time_series_ops_t::load_catalog(superblock.get());
+            catalog.config = config;
+            point_write_response_t pw_res;
+            rdb_modification_info_t mod_info;
+            rdb_live_deletion_context_t deletion_context;
+            time_series_ops_t::route_insert(
+                slice, superblock.get(), config, &catalog,
+                TIME_SERIES_CHUNK_TARGET_ROWS,
+                store_key_t("a"), ts_doc("a", 1000.0), true,
+                repli_timestamp_t::distant_past, &deletion_context,
+                &pw_res, &mod_info, nullptr);
+            time_series_ops_t::save_catalog(superblock.get(), catalog);
+            EXPECT_NE(NULL_BLOCK_ID,
+                      superblock->get_time_series_catalog_block_id())
+                << "field must be set before commit";
+            /* update_sindexes releases the sindex block like this */
+            sindex_block.reset_buf_lock();
+            superblock.reset();
+            txn->commit();
+        }
+
+        /* Fresh txn must see the catalog block id (live server loses it). */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_EQ(1u, reloaded.chunk_index.chunks.size())
+            << "catalog block id must survive commit (live-server regression)";
+        EXPECT_EQ(1u, reloaded.chunk_index.chunks[0].row_count);
+        EXPECT_NE(NULL_BLOCK_ID, reloaded.chunk_index.chunks[0].root_block);
+    });
 }
 
 }  // namespace unittest

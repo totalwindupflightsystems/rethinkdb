@@ -87,6 +87,7 @@ private:
         void NORETURN operator()(UNUSED const brin_read_t &br);
         void NORETURN operator()(UNUSED const parallel_read_t &pr);
         void NORETURN operator()(UNUSED const distribution_read_t &dg);
+        void NORETURN operator()(UNUSED const time_series_info_read_t &tsr);
 
         read_visitor_t(mock_namespace_interface_t *parent, read_response_t *_response);
 

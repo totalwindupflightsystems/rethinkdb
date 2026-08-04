@@ -5,14 +5,22 @@
 #include <cstdint>
 #include <vector>
 
+#include "serializer/types.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
 #include "rpc/serialize_macros.hpp"
 
-/* Time-chunk metadata (Phase 3 spec §3.2).
+/* Time-chunk metadata (Phase 3 spec §3.2, extended by PHASE3-TS-2 §5.1).
  *
- * Each time-series chunk is a self-contained sub-B-tree; the chunk index is
- * the BRIN-like sparse index used for read pruning and retention. Bounds are
- * half-open: [min_time_us, max_time_us). */
+ * Each time-series chunk is a self-contained sub-B-tree within the table's
+ * storage; the chunk index is the BRIN-like sparse index used for read
+ * pruning and retention. Bounds are half-open: [min_time_us, max_time_us).
+ *
+ * PHASE3-TS-2 added `root_block`: the root block id of the chunk's own
+ * B-tree (NULL_BLOCK_ID until the chunk's first row is written). This is
+ * what makes the chunk index addressable as a set of independent trees
+ * instead of a pure statistics summary. Serialization is SINCE_v2_4 like
+ * the rest of the fork's Phase-3 catalog data (no pre-release on-disk
+ * compat concern). */
 
 namespace ql {
 
@@ -20,6 +28,16 @@ struct time_chunk_bounds_t {
     uint64_t min_time_us;  // micros since epoch
     uint64_t max_time_us;  // exclusive upper bound
     uint64_t row_count;
+    block_id_t root_block;  // root of this chunk's sub-B-tree, NULL if empty
+
+    time_chunk_bounds_t()
+        : min_time_us(0), max_time_us(0), row_count(0),
+          root_block(NULL_BLOCK_ID) { }
+
+    time_chunk_bounds_t(uint64_t min_us, uint64_t max_us, uint64_t rows,
+                        block_id_t root = NULL_BLOCK_ID)
+        : min_time_us(min_us), max_time_us(max_us), row_count(rows),
+          root_block(root) { }
 
     RDB_DECLARE_ME_SERIALIZABLE(time_chunk_bounds_t);
 };

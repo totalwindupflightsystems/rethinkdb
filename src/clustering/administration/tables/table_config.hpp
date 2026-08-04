@@ -14,6 +14,7 @@
 
 class real_reql_cluster_interface_t;
 class table_config_t;
+class namespace_repo_t;
 
 /* This is publicly exposed so that it can be used to create the return value of
 `table.reconfigure()`. */
@@ -22,7 +23,10 @@ ql::datum_t convert_table_config_to_datum(
         const ql::datum_t &db_name_or_uuid,
         const table_config_t &config,
         admin_identifier_format_t identifier_format,
-        const server_name_map_t &server_names);
+        const server_name_map_t &server_names,
+        /* PHASE3-TS-2: chunk-index summary from the storage engine; null
+         * when unavailable. */
+        const ql::datum_t &time_series_chunks);
 
 ql::datum_t convert_write_hook_to_datum(
     const optional<write_hook_config_t> &write_hook);
@@ -39,7 +43,8 @@ public:
             real_reql_cluster_interface_t *_reql_cluster_interface,
             admin_identifier_format_t _identifier_format,
             server_config_client_t *_server_config_client,
-            table_meta_client_t *_table_meta_client);
+            table_meta_client_t *_table_meta_client,
+            namespace_repo_t *_namespace_repo);
     ~table_config_artificial_table_backend_t();
 
     bool write_row(
@@ -83,6 +88,9 @@ private:
     rdb_context_t *rdb_context;
     real_reql_cluster_interface_t *reql_cluster_interface;
     server_config_client_t *server_config_client;
+    /* PHASE3-TS-2: used to read the durable chunk-index summary from the
+    table's storage engine for the config() datum. */
+    namespace_repo_t *namespace_repo;
 };
 
 #endif // CLUSTERING_ADMINISTRATION_TABLES_TABLE_CONFIG_HPP_
