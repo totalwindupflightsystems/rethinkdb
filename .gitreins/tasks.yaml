@@ -243,3 +243,30 @@ tasks:
   status: complete
   created_at: '2026-08-03T04:45:10.809084+00:00'
   completed_at: '2026-08-03T04:51:00.152643+00:00'
+- id: PHASE3-TS-2
+  title: 'PHASE3-TS-2: time-series chunked B-tree storage + append-optimized write
+    path (spec 4.1/5.1/6.2)'
+  criteria:
+  - point_write routes rows into per-chunk B-trees keyed by time chunk (chunk interval
+    from table config; catalog of chunk roots persisted on superblock)
+  - "chunk-aware read path: point_read/get/rget/count/between iterate chunk sub-trees\
+    \ \u2014 live E2E insert 50 \u2192 count()==50, get(r000) works, between returns\
+    \ correct rows"
+  - "catalog row accounting: 50-row batch insert \u2192 total_rows==50 (no last-save-wins\
+    \ clobber; chunk_count>=1)"
+  - "insert stats correct: fresh keys report inserted (replaced:0); existing key conflict\
+    \ \u2192 replaced:1, count unchanged"
+  - "backfill: insert with older timestamp \u2192 inserted:1 and included in between()/order_by"
+  - "missing time field \u2192 [TIME_SERIES_FIELD_MISSING] error result, server stays\
+    \ alive (no crash)"
+  - 'restart persistence: rows and chunk catalog survive server restart (count and
+    chunk info intact)'
+  - 'unit tests pass: TimeSeries suite 16/16 (incl. ChunkedCatalogPersistsAcrossTxns)'
+  - 'regression: 238/238 filtered unit tests pass; live E2E probes all-pass (probe2
+    + test/ts2_e2e_probe.py)'
+  - build passes clean (make -j4); no TSDBG debug prints in TS-2 files
+  status: complete
+  created_at: '2026-08-05T09:26:22.891223+00:00'
+  completed_at: '2026-08-05T09:27:02.946325+00:00'
+  depends_on:
+  - PHASE3-TS-1

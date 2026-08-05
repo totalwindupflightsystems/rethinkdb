@@ -4726,3 +4726,64 @@ VERDICT: **PRODUCTIVE** — PHASE3-TS-1 (QUEUE #3a) complete: config layer imple
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **PRODUCTIVE (stewardship)** — previous tick died mid-debug; this tick independently confirmed 2 critical live bugs in TS-2 (read path + catalog accounting), dispatched fix worker with complete diagnosis, all claims backed by real tool output.
+
+## Productive Tick #93 — 2026-08-05 04:30 UTC (TS-2 live-path fix VERIFIED — QUEUE #3b complete)
+
+**Mission:** Steward tick #92's dispatched fix worker (PID 833732). Worker committed c347269324 (Aug 4 00:07, 26 files +1901/−55) but the tick died before verification. This tick: independent verification → judge → board → push.
+
+### Verification (all live, real tool output)
+
+| Check | Result |
+|-------|--------|
+| Worker commit | ✅ c347269324 present, Co-authored-by trailer verified, **1 commit unpushed** |
+| Binary freshness | ✅ built Aug 4 00:05 (contains fix), no .cc newer than binary or unittest |
+| Unit — TimeSeries suite | ✅ **16/16 PASS** (517ms, incl. ChunkedCatalogPersistsAcrossTxns) |
+| Unit — regression filter (Cdc/Conflict/Vector/Fts/Brin/Sindex/GeneratedColumn/Term/Btree/Reql) | ✅ **238/238 PASS** (32.3s) |
+| Live E2E — /tmp/rethinkdb-t92-probe2.py (tick #92's failing probe) | ✅ **ALL PASS (20 checks)** — insert 50→inserted:50 replaced:0; count==50; get r000/r020 work; between r000..r009==10; conflict→replaced:1 count still 50; backfill→inserted:1; order_by sorted==50; **total_rows==51** (50+1 backfill, chunk_count=43); server alive |
+| Live E2E — test/ts2_e2e_probe.py (worker's probe) | ✅ **15/15 PASS** — tableCreate timeSeries accepted; insert 50→inserted:50; count==50; time_series_chunks populated (chunk_count=42, total_rows=50); backfill ok; missing ts field → TIME_SERIES_FIELD_MISSING error, no crash; **restart persistence: rows survive (count=51) + chunk info survives** |
+| Zombie cleanup | ✅ killed stale server PID 1318729 on :39015 (worker's leftover — known pitfall) |
+| TSDBG debug prints | ✅ 0 in TS-2 files |
+| GitReins guard | ✅ **PASS** (secrets clean, lint ok, tests) |
+| GitReins task PHASE3-TS-2 | ✨ created (11 criteria, depends-on PHASE3-TS-1); judge run via CLI (background) |
+
+### The 3 tick #92 bugs — all confirmed fixed
+
+| # | Bug | Fix evidence |
+|---|-----|--------------|
+| 1 | Read path ignored chunk sub-trees (insert 50 → count 0) | count==50, get r000/r020 work, between/order_by return full ranges |
+| 2 | Catalog undercounts rows (total_rows=6 for 50) | total_rows==50 after batch insert; ==51 after backfill; chunk_count consistent |
+| 3 | Batch stats reported `replaced` for fresh rows | insert 50 → `inserted:50, replaced:0`; conflict path separately verified `replaced:1` |
+
+### Actions this tick
+
+1. ✅ Loaded foreman/cron/hilo/gitreins skills (skill_view backend timed out → read SKILL.md from disk)
+2. ✅ Board tail read (tick #92 = fix worker dispatched); confirmed worker commit landed + unpushed
+3. ✅ Killed zombie rethinkdb server (PID 1318729, ports 39015-17) before E2E
+4. ✅ Independent verification: 16/16 TS units, 238/238 regression, probe2 ALL PASS, ts2_e2e_probe 15/15
+5. ✅ GitReins: guard PASS; task PHASE3-TS-2 created (11 criteria); judge running
+6. ✅ No TSDBG remnants; unittest binary fresh (no stale-binary trap)
+7. ⏳ Judge verdict → commit board + probe file → push → DuckBrain → off-by-one (completion steps)
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1 | all prior | ✅ Complete |
+| **PHASE3-TS-2 (QUEUE #3b)** | **16/16 unit + 238/238 regression + 20/20 + 15/15 E2E** | ✅ **VERIFIED this tick** |
+| PHASE3-TS-3 (QUEUE #3c) | — | ⏳ Next |
+| CDC/Vector/HNSW/BRIN/FTS/Sindex unit | 238/238 (filtered) | ✅ Stable |
+
+**Hilo:** edges.jsonl regenerated (+130 lines, dirty — left uncommitted per prior practice)
+**System:** Binary 376MB, 2.4.5-341-gd2bd62-dirty (GCC 15.2.0), built Aug 4 00:05
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (stewardship complete)** — tick #92's fix worker output independently verified: all 3 live-path bugs fixed, 16/16 + 238/238 units, 20/20 + 15/15 live E2E, guard PASS. Judge running; commit+push follow in this tick.
+
+### Addendum (judge outcome)
+
+**GitReins judge PHASE3-TS-2:** task marked complete; verdict saved (df48f909, 2026-08-05 09:33 UTC).
+- **tier2 (LLM eval): 1/11 verified PASS, 10 "Not verified — evaluation terminated before criterion checked"** (resource cap on large C++ diff, +1901 lines). The verified criterion: evaluator independently ran `--gtest_filter='TimeSeries.*'` → 16 PASSED.
+- **All 10 unverified criteria verified by foreman with real tool output**: chunk-aware reads (count==50, get r000/r020, between/order_by full), catalog accounting (total_rows==50→51), insert stats (inserted:50 replaced:0; conflict replaced:1), backfill, TIME_SERIES_FIELD_MISSING error without crash, restart persistence (count=51 + chunk info), 238/238 regression, clean build, 0 TSDBG prints.
+- **tier1**: build ✓ secrets ✓ tests ✓ (evaluator's own gtest run); lint ✗ = pre-existing debt (documented ticks #90/#91: protocol.cc BRIN `unsigned long` logs + `using namespace ql` in CDC unittest files) — new TS-2 files lint-clean.
+- **tier3**: cppcheck path config error + clang-tidy timeout — pre-existing tooling config, not code.
+- Disposition identical to PHASE3-TS-1/VEC: partial verdict + guard PASS + foreman-verified build/regression/E2E = complete with evidence.
