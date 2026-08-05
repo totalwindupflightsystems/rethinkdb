@@ -12,6 +12,7 @@
 #include "rdb_protocol/datum_stream/array.hpp"
 #include "rdb_protocol/datum_stream/lazy.hpp"
 #include "rdb_protocol/datum_stream/readers.hpp"
+#include "rdb_protocol/datum_stream/readgens.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/math_utils.hpp"
@@ -79,29 +80,49 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
     }
 }
 
-/* Returns true if `sindex` is a BRIN-type secondary index on this table. */
-static bool sindex_is_brin(
+/* PHASE3-TS-3: classification of a non-primary `sindex` for the read
+ * dispatch. Fetches the sindex statuses once; an sindex that is not a real
+ * secondary index may still name the time field of a time-series table
+ * (implicit index, spec §6.3). `ts_cfg_out` is filled when TS_TIME_FIELD
+ * is returned. */
+enum class sindex_read_dispatch_t { BRIN, TS_TIME_FIELD, REGULAR, UNKNOWN };
+
+static sindex_read_dispatch_t classify_sindex_for_read(
         table_meta_client_t *meta,
         const namespace_id_t &table_id,
         const std::string &sindex,
-        signal_t *interruptor) {
+        signal_t *interruptor,
+        optional<ql::time_series_config_t> *ts_cfg_out) {
     if (meta == nullptr) {
-        return false;
+        return sindex_read_dispatch_t::UNKNOWN;
     }
     try {
         std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > statuses;
         meta->get_sindex_status(table_id, interruptor, &statuses);
         auto it = statuses.find(sindex);
-        if (it == statuses.end()) {
-            return false;
+        if (it != statuses.end()) {
+            return it->second.first.brin == sindex_brin_bool_t::BRIN
+                ? sindex_read_dispatch_t::BRIN
+                : sindex_read_dispatch_t::REGULAR;
         }
-        return it->second.first.brin == sindex_brin_bool_t::BRIN;
+        /* Unknown sindex: check whether it is the time field of a
+         * time-series table. */
+        table_config_and_shards_t config;
+        meta->get_config(table_id, interruptor, &config);
+        const optional<ql::time_series_config_t> &ts_cfg =
+            config.config.time_series_config;
+        if (ts_cfg.has_value() && ts_cfg->enabled
+                && ts_cfg->time_field.str() == sindex) {
+            *ts_cfg_out = make_optional(*ts_cfg);
+            return sindex_read_dispatch_t::TS_TIME_FIELD;
+        }
+        return sindex_read_dispatch_t::REGULAR;
     } catch (const interrupted_exc_t &) {
         throw;
     } catch (const no_such_table_exc_t &) {
-        return false;
+        return sindex_read_dispatch_t::UNKNOWN;
     } catch (const failed_table_op_exc_t &) {
-        return false;
+        return sindex_read_dispatch_t::UNKNOWN;
     }
 }
 
@@ -116,73 +137,126 @@ counted_t<ql::datum_stream_t> real_table_t::read_all(
     if (datumspec.is_empty()) {
         return make_counted<ql::lazy_datum_stream_t>(
             make_scoped<ql::empty_reader_t>(
-	        counted_t<real_table_t>(this),
+		counted_t<real_table_t>(this),
                 table_name),
             bt);
     }
+    const bool range_spec = !datumspec.primary_key_map().has_value();
     if (sindex == get_pkey()) {
+        /* PHASE3-TS-3: plain `between` (no index optarg) whose bounds are
+         * ReQL times resolves to the time field on time-series tables
+         * (spec §2.3 example); anything else keeps primary-key semantics. */
+        if (sorting == sorting_t::UNORDERED && range_spec
+                && ql::ts_bounds_are_time_like(datumspec)) {
+            try {
+                optional<ql::time_series_config_t> ts_cfg =
+                    get_time_series_config(env);
+                if (ts_cfg.has_value() && ts_cfg->enabled) {
+                    return make_counted<ql::lazy_datum_stream_t>(
+                        make_scoped<ql::rget_reader_t>(
+                            counted_t<real_table_t>(this),
+                            ql::ts_readgen_t::make(
+                                env, table_name, read_mode, datumspec,
+                                sorting, ts_cfg->time_field.str())),
+                        bt);
+                }
+            } catch (const no_such_table_exc_t &) {
+                /* Table vanished; fall through to the ordinary path. */
+            } catch (const failed_table_op_exc_t &) {
+                /* Fall through to the ordinary path. */
+            }
+        }
         return make_counted<ql::lazy_datum_stream_t>(
             make_scoped<ql::rget_reader_t>(
 		counted_t<real_table_t>(this),
                 ql::primary_readgen_t::make(
                     env, table_name, read_mode, datumspec, sorting)),
             bt);
-    } else if (sindex_is_brin(m_table_meta_client, uuid, sindex, env->interruptor)) {
-        /* BRIN between: dispatch a brin_read_t (vector_read_t pattern). Materialize
-        the full result set into a vector_reader so the caller-facing stream API is
-        unchanged. Batching/streaming for BRIN is a later optimization. */
-        brin_read_t br_read(
-            region_t::universe(),
-            table_name,
-            sindex,
-            datumspec,
-            sorting,
-            ql::batchspec_t::all(),
-            std::vector<ql::transform_variant_t>(),
-            r_nullopt,
-            ql::skey_version_t::post_1_16,
-            env->get_serializable_env());
-        read_t read(br_read, env->profile(), read_mode);
-        read_response_t res;
-        try {
-            namespace_access.get()->read(
-                env->get_user_context(), read, &res, order_token_t::ignore,
-                env->interruptor);
-        } catch (const cannot_perform_query_exc_t &ex) {
-            rfail_datum(ql::base_exc_t::OP_FAILED, "Cannot perform read: %s",
-                        ex.what());
-        } catch (auth::permission_error_t const &error) {
-            rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", error.what());
-        }
-
-        rget_read_response_t *r_res =
-            boost::get<rget_read_response_t>(&res.response);
-        r_sanity_check(r_res != nullptr);
-        if (auto *error = boost::get<ql::exc_t>(&r_res->result)) {
-            throw *error;
-        }
-
-        auto *gs = boost::get<ql::grouped_t<ql::stream_t> >(&r_res->result);
-        r_sanity_check(gs != nullptr);
-        ql::stream_t stream = ql::groups_to_batch(gs->get_underlying_map());
-
-        std::vector<ql::datum_t> items;
-        for (auto &&sub : stream.substreams) {
-            for (auto &&item : sub.second.stream) {
-                items.push_back(std::move(item.data));
-            }
-        }
-        return make_counted<ql::lazy_datum_stream_t>(
-            make_scoped<ql::vector_reader_t>(std::move(items)),
-            bt);
     } else {
-        return make_counted<ql::lazy_datum_stream_t>(
-            make_scoped<ql::rget_reader_t>(
-	        counted_t<real_table_t>(this),
-                ql::sindex_readgen_t::make(
-                    env, table_name, read_mode, sindex, datumspec, sorting)),
-            bt);
+        optional<ql::time_series_config_t> ts_cfg;
+        switch (classify_sindex_for_read(
+                m_table_meta_client, uuid, sindex, env->interruptor,
+                &ts_cfg)) {
+        case sindex_read_dispatch_t::BRIN: {
+            /* BRIN between: dispatch a brin_read_t (vector_read_t pattern). Materialize
+            the full result set into a vector_reader so the caller-facing stream API is
+            unchanged. Batching/streaming for BRIN is a later optimization. */
+            brin_read_t br_read(
+                region_t::universe(),
+                table_name,
+                sindex,
+                datumspec,
+                sorting,
+                ql::batchspec_t::all(),
+                std::vector<ql::transform_variant_t>(),
+                r_nullopt,
+                ql::skey_version_t::post_1_16,
+                env->get_serializable_env());
+            read_t read(br_read, env->profile(), read_mode);
+            read_response_t res;
+            try {
+                namespace_access.get()->read(
+                    env->get_user_context(), read, &res, order_token_t::ignore,
+                    env->interruptor);
+            } catch (const cannot_perform_query_exc_t &ex) {
+                rfail_datum(ql::base_exc_t::OP_FAILED, "Cannot perform read: %s",
+                            ex.what());
+            } catch (auth::permission_error_t const &error) {
+                rfail_datum(ql::base_exc_t::PERMISSION_ERROR, "%s", error.what());
+            }
+
+            rget_read_response_t *r_res =
+                boost::get<rget_read_response_t>(&res.response);
+            r_sanity_check(r_res != nullptr);
+            if (auto *error = boost::get<ql::exc_t>(&r_res->result)) {
+                throw *error;
+            }
+
+            auto *gs = boost::get<ql::grouped_t<ql::stream_t> >(&r_res->result);
+            r_sanity_check(gs != nullptr);
+            ql::stream_t stream = ql::groups_to_batch(gs->get_underlying_map());
+
+            std::vector<ql::datum_t> items;
+            for (auto &&sub : stream.substreams) {
+                for (auto &&item : sub.second.stream) {
+                    items.push_back(std::move(item.data));
+                }
+            }
+            return make_counted<ql::lazy_datum_stream_t>(
+                make_scoped<ql::vector_reader_t>(std::move(items)),
+                bt);
+        }
+        case sindex_read_dispatch_t::TS_TIME_FIELD:
+            /* PHASE3-TS-3: `between(..., {index: '<time field>'})` on a
+             * time-series table — chunk-pruned read. Only UNORDERED range
+             * reads use the implicit time index; other uses (e.g. orderBy
+             * on the time field) keep the "index not found" error path. */
+            if (sorting == sorting_t::UNORDERED && range_spec) {
+                return make_counted<ql::lazy_datum_stream_t>(
+                    make_scoped<ql::rget_reader_t>(
+                        counted_t<real_table_t>(this),
+                        ql::ts_readgen_t::make(
+                            env, table_name, read_mode, datumspec,
+                            sorting, ts_cfg->time_field.str())),
+                    bt);
+            }
+            return make_counted<ql::lazy_datum_stream_t>(
+                make_scoped<ql::rget_reader_t>(
+		    counted_t<real_table_t>(this),
+                    ql::sindex_readgen_t::make(
+                        env, table_name, read_mode, sindex, datumspec, sorting)),
+                bt);
+        case sindex_read_dispatch_t::REGULAR:
+        case sindex_read_dispatch_t::UNKNOWN:
+            return make_counted<ql::lazy_datum_stream_t>(
+                make_scoped<ql::rget_reader_t>(
+		    counted_t<real_table_t>(this),
+                    ql::sindex_readgen_t::make(
+                        env, table_name, read_mode, sindex, datumspec, sorting)),
+                bt);
+        }
     }
+    unreachable();
 }
 
 counted_t<ql::datum_stream_t> real_table_t::read_changes(

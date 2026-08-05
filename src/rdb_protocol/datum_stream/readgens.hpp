@@ -165,6 +165,55 @@ private:
     bool sent_first_read;
 };
 
+/* PHASE3-TS-3: readgen for `between` on a time-series table's time field
+ * (spec §4.2/§6.3). The key space is the full primary-key range (rows are
+ * ordered by pkey inside each chunk, not by time); the time window travels
+ * in `rget_read_t::ts_range` and the store prunes the scanned chunk roots
+ * to those overlapping the window. */
+class ts_readgen_t : public rget_readgen_t {
+public:
+    static scoped_ptr_t<readgen_t> make(
+        env_t *env,
+        std::string table_name,
+        read_mode_t read_mode,
+        const datumspec_t &datumspec,
+        sorting_t sorting,
+        const std::string &time_field);
+
+    virtual void sindex_sort(std::vector<rget_item_t> *vec,
+                             const batchspec_t &batchspec) const;
+    virtual key_range_t original_keyrange(reql_version_t rv) const;
+    virtual optional<std::string> sindex_name() const;
+    void restrict_active_ranges(sorting_t, active_ranges_t *) const final { }
+
+    virtual changefeed::keyspec_t::range_t get_range_spec(
+            std::vector<transform_variant_t> transforms) const;
+
+private:
+    ts_readgen_t(
+        serializable_env_t s_env,
+        std::string table_name,
+        const datumspec_t &datumspec,
+        profile_bool_t profile,
+        read_mode_t read_mode,
+        sorting_t sorting,
+        const std::string &time_field);
+    virtual rget_read_t next_read_impl(
+        const optional<active_ranges_t> &active_ranges,
+        const optional<reql_version_t> &reql_version,
+        optional<changefeed_stamp_t> stamp,
+        std::vector<transform_variant_t> transform,
+        const batchspec_t &batchspec) const;
+
+    ts_between_range_t ts_range;
+};
+
+/* PHASE3-TS-3: true when `datumspec`'s bounds form a time-range over a
+ * time-series table — each bound is a ReQL time, r.minval or r.maxval,
+ * with at least one bound an actual time. Used by the read dispatch to
+ * resolve plain `between` (no index optarg) on time-series tables. */
+bool ts_bounds_are_time_like(const datumspec_t &datumspec);
+
 // For geospatial intersection queries
 class intersecting_readgen_t : public readgen_t {
 public:

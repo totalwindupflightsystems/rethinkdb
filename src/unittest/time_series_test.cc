@@ -8,10 +8,14 @@
 #include "btree/time_series_config.hpp"
 #include "btree/time_chunk.hpp"
 #include "btree/time_series_ops.hpp"
+#include "rdb_protocol/datum_stream/readgens.hpp"
+#include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/terms/time_series.hpp"
 
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <string>
 #include <utility>
@@ -185,6 +189,137 @@ TEST(TimeSeries, ChunkOverlappingChunks) {
     /* Empty index. */
     ql::time_chunk_index_t empty;
     EXPECT_EQ(std::vector<size_t>({}), empty.overlapping_chunks(0, 100));
+}
+
+/* PHASE3-TS-3: between-window normalization. The row filter and the chunk
+ * pruning both consume the half-open [start_us, end_us) normalization. */
+TEST(TimeSeries, TsBetweenRangeNormalize) {
+    const uint64_t max = std::numeric_limits<uint64_t>::max();
+    uint64_t start = 0, end = 0;
+    auto norm = [&](const ts_between_range_t &r) {
+        normalize_ts_range(r, &start, &end);
+    };
+
+    /* Fully unbounded (minval..maxval): everything. */
+    ts_between_range_t unbounded;
+    norm(unbounded);
+    EXPECT_EQ(0u, start);
+    EXPECT_EQ(max, end);
+
+    /* Default between [40, 80): left closed, right open. */
+    ts_between_range_t half_open;
+    half_open.has_left = true;
+    half_open.start_us = 40;
+    half_open.has_right = true;
+    half_open.end_us = 80;
+    half_open.right_open = true;
+    norm(half_open);
+    EXPECT_EQ(40u, start);
+    EXPECT_EQ(80u, end);
+
+    /* Left-open (40, 80): start shifts by one micro. */
+    ts_between_range_t left_open = half_open;
+    left_open.left_open = true;
+    norm(left_open);
+    EXPECT_EQ(41u, start);
+    EXPECT_EQ(80u, end);
+
+    /* Right-closed [40, 80]: end exclusive-incremented. */
+    ts_between_range_t right_closed = half_open;
+    right_closed.right_open = false;
+    norm(right_closed);
+    EXPECT_EQ(40u, start);
+    EXPECT_EQ(81u, end);
+
+    /* Closed-closed equal bounds [t, t]: single micro point. */
+    ts_between_range_t point = half_open;
+    point.end_us = 40;
+    point.right_open = false;
+    norm(point);
+    EXPECT_EQ(40u, start);
+    EXPECT_EQ(41u, end);
+
+    /* Open-closed equal bounds (t, t]: empty. */
+    ts_between_range_t empty_pt = point;
+    empty_pt.left_open = true;
+    norm(empty_pt);
+    EXPECT_EQ(41u, start);
+    EXPECT_EQ(41u, end);
+
+    /* Inverted [80, 40): empty. */
+    ts_between_range_t inverted = half_open;
+    inverted.start_us = 80;
+    inverted.end_us = 40;
+    norm(inverted);
+    EXPECT_EQ(80u, start);
+    EXPECT_EQ(40u, end);
+
+    /* Unbounded left (.., 70): start stays 0. */
+    ts_between_range_t no_left = half_open;
+    no_left.has_left = false;
+    no_left.end_us = 70;
+    norm(no_left);
+    EXPECT_EQ(0u, start);
+    EXPECT_EQ(70u, end);
+
+    /* Unbounded right [130, ..): end stays UINT64_MAX. */
+    ts_between_range_t no_right = half_open;
+    no_right.has_right = false;
+    no_right.start_us = 130;
+    norm(no_right);
+    EXPECT_EQ(130u, start);
+    EXPECT_EQ(max, end);
+
+    /* Overflow guards: no increment past UINT64_MAX. */
+    ts_between_range_t sat = half_open;
+    sat.start_us = max;
+    sat.left_open = true;
+    sat.end_us = max;
+    sat.right_open = false;
+    norm(sat);
+    EXPECT_EQ(max, start);
+    EXPECT_EQ(max, end);
+}
+
+/* PHASE3-TS-3: default-`between` dispatch predicate — bounds must be a
+ * time-range over a time-series table (times and/or minval/maxval, at
+ * least one actual time). */
+TEST(TimeSeries, TsBoundsAreTimeLike) {
+    ql::datum_t t1 = ql::pseudo::make_time(1000.0, "+00:00");
+    ql::datum_t t2 = ql::pseudo::make_time(2000.0, "+00:00");
+
+    /* Time/time — the plain between on a time-series table. */
+    EXPECT_TRUE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(t1, key_range_t::closed,
+                          t2, key_range_t::open))));
+    /* Time with an unbounded end. */
+    EXPECT_TRUE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(ql::datum_t::minval(), key_range_t::closed,
+                          t2, key_range_t::open))));
+    EXPECT_TRUE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(t1, key_range_t::closed,
+                          ql::datum_t::maxval(), key_range_t::open))));
+    /* Non-time bounds are not time-like (pkey between keeps its semantics). */
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(ql::datum_t(5.0), key_range_t::closed,
+                          ql::datum_t(10.0), key_range_t::open))));
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(t1, key_range_t::closed,
+                          ql::datum_t(10.0), key_range_t::open))));
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(ql::datum_t(5.0), key_range_t::closed,
+                          t2, key_range_t::open))));
+    /* Both extrema but no time: plain full-scan between. */
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(ql::datum_t::minval(), key_range_t::closed,
+                          ql::datum_t::maxval(), key_range_t::open))));
+    /* Universe (open minval..maxval): full scan, not a time between. */
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t::universe())));
+    /* Empty range: not time-like. */
+    EXPECT_FALSE(ql::ts_bounds_are_time_like(ql::datumspec_t(
+        ql::datum_range_t(t2, key_range_t::closed,
+                          t1, key_range_t::open))));
 }
 
 TEST(TimeSeries, DownsampleSelection) {

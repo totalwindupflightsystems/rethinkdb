@@ -2,6 +2,7 @@
 #include "rdb_protocol/store.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <list>
 
 #include "btree/backfill_debug.hpp"
@@ -248,23 +249,58 @@ void do_read(ql::env_t *env,
         }
         std::vector<block_id_t> chunk_roots;
         if (load_time_series_chunk_roots(superblock, &chunk_roots)) {
-            /* PHASE3-TS-2: time-series rows live in chunk sub-trees; scan
-             * every chunk root with one shared accumulator so terminals and
-             * streams merge correctly. */
-            rdb_ts_rget_slice(
-                btree,
-                *rget.current_shard,
-                rget.region.inner,
-                chunk_roots,
-                rget.primary_keys,
-                superblock,
-                env,
-                rget.batchspec,
-                rget.transforms,
-                rget.terminal,
-                rget.sorting,
-                res,
-                release_superblock);
+            if (rget.ts_range.has_value()) {
+                /* PHASE3-TS-3: time-series `between` on the time field —
+                 * prune the scanned chunk roots to those overlapping the
+                 * window (spec §4.2). The catalog lives here in the storage
+                 * engine; the term layer only carries the window. Rows are
+                 * filtered to the exact window inside the traversal. */
+                time_series_catalog_t catalog =
+                    time_series_ops_t::load_catalog(superblock);
+                uint64_t start_us = 0;
+                uint64_t end_us = std::numeric_limits<uint64_t>::max();
+                normalize_ts_range(*rget.ts_range, &start_us, &end_us);
+                std::vector<block_id_t> pruned_roots;
+                for (size_t chunk_idx :
+                        catalog.chunk_index.overlapping_chunks(
+                            start_us, end_us)) {
+                    pruned_roots.push_back(
+                        catalog.chunk_index.chunks[chunk_idx].root_block);
+                }
+                rdb_ts_rget_slice(
+                    btree,
+                    *rget.current_shard,
+                    rget.region.inner,
+                    pruned_roots,
+                    rget.primary_keys,
+                    superblock,
+                    env,
+                    rget.batchspec,
+                    rget.transforms,
+                    rget.terminal,
+                    rget.sorting,
+                    res,
+                    release_superblock,
+                    rget.ts_range);
+            } else {
+                /* PHASE3-TS-2: time-series rows live in chunk sub-trees; scan
+                 * every chunk root with one shared accumulator so terminals
+                 * and streams merge correctly. */
+                rdb_ts_rget_slice(
+                    btree,
+                    *rget.current_shard,
+                    rget.region.inner,
+                    chunk_roots,
+                    rget.primary_keys,
+                    superblock,
+                    env,
+                    rget.batchspec,
+                    rget.transforms,
+                    rget.terminal,
+                    rget.sorting,
+                    res,
+                    release_superblock);
+            }
         } else {
             rdb_rget_slice(
                 btree,

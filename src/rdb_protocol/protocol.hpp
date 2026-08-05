@@ -3,6 +3,7 @@
 #define RDB_PROTOCOL_PROTOCOL_HPP_
 
 #include <algorithm>
+#include <limits>
 #include <list>
 #include <map>
 #include <set>
@@ -327,6 +328,51 @@ struct parallel_hints_t {
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(parallel_hints_t);
 
+/* PHASE3-TS-3: time-series `between` read window (spec §4.2/§6.3).
+ *
+ * Carried on rget_read_t for primary-index reads on time-series tables.
+ * Bounds are the raw microsecond conversions of the ReQL time bounds
+ * (`r.minval`/`r.maxval` bounds are unbounded: has_left/has_right false),
+ * with the standard between open/closed flags preserved so the store can
+ * prune via `time_chunk_index_t::overlapping_chunks` and filter rows to
+ * the exact window. `time_field` is the table's time-series field name,
+ * used to extract each row's timestamp. */
+struct ts_between_range_t {
+    bool has_left = false;
+    bool left_open = false;
+    uint64_t start_us = 0;
+    bool has_right = false;
+    bool right_open = false;
+    uint64_t end_us = 0;  // exclusive, meaningful only when has_right
+
+    std::string time_field;
+};
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(ts_between_range_t);
+
+/* Normalizes a between window to a half-open [start_us, end_us) interval
+ * over the integer-microsecond domain: open bounds shift by one micro, a
+ * closed right bound is exclusive-incremented, unbounded ends become
+ * 0 / UINT64_MAX. An empty window (start >= end) matches nothing. */
+inline void normalize_ts_range(const ts_between_range_t &r,
+                               uint64_t *start_us_out, uint64_t *end_us_out) {
+    uint64_t start_us = 0;
+    uint64_t end_us = std::numeric_limits<uint64_t>::max();
+    if (r.has_left) {
+        start_us = r.start_us;
+        if (r.left_open && start_us != std::numeric_limits<uint64_t>::max()) {
+            ++start_us;
+        }
+    }
+    if (r.has_right) {
+        end_us = r.end_us;
+        if (!r.right_open && end_us != std::numeric_limits<uint64_t>::max()) {
+            ++end_us;
+        }
+    }
+    *start_us_out = start_us;
+    *end_us_out = end_us;
+}
+
 struct changefeed_stamp_t {
     changefeed_stamp_t() : region(region_t::universe()) { }
     explicit changefeed_stamp_t(ql::changefeed::client_t::addr_t _addr)
@@ -392,6 +438,12 @@ public:
     // Empty means the client did not request parallel execution (serial).
     // Optional for backward compatibility with clusters that don't support it.
     optional<parallel_hints_t> parallel_hints;
+
+    // PHASE3-TS-3: when set, this is a time-series `between` on the table's
+    // time field. The store prunes the scanned chunk roots to those
+    // overlapping [start_us, end_us) and filters rows to the window.
+    // Only meaningful when `sindex` is unset (primary-index read).
+    optional<ts_between_range_t> ts_range;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(rget_read_t);
 

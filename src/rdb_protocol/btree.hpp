@@ -169,7 +169,11 @@ void rdb_rget_slice(
  * serves every chunk (like rdb_brin_rget_slice serves multiple key ranges),
  * so terminals (count/sum/...) and scans merge correctly across chunks.
  * `chunk_roots` must be non-empty (the caller checks for a catalog); empty
- * chunk roots (NULL_BLOCK_ID) are skipped. */
+ * chunk roots (NULL_BLOCK_ID) are skipped.
+ *
+ * PHASE3-TS-3: `ts_range`, when set, restricts the traversal to rows whose
+ * time-field value falls in the between window (the caller must already
+ * have pruned `chunk_roots` to the overlapping chunks). */
 void rdb_ts_rget_slice(
     btree_slice_t *slice,
     const region_t &shard,
@@ -183,7 +187,8 @@ void rdb_ts_rget_slice(
     const optional<ql::terminal_variant_t> &terminal,
     sorting_t sorting,
     rget_read_response_t *response,
-    release_superblock_t release_superblock);
+    release_superblock_t release_superblock,
+    const optional<ts_between_range_t> &ts_range = r_nullopt);
 
 /* Primary-key range scan with BRIN recheck: for every row, apply the sindex
 mapping and emit only rows whose mapped value satisfies `datumspec`. Multiple

@@ -2200,6 +2200,15 @@ RDB_IMPL_SERIALIZABLE_4_FOR_CLUSTER(sindex_rangespec_t,
 
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(parallel_hints_t, parallel, max_workers);
 
+RDB_IMPL_SERIALIZABLE_7_FOR_CLUSTER(ts_between_range_t,
+    has_left,
+    left_open,
+    start_us,
+    has_right,
+    right_open,
+    end_us,
+    time_field);
+
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sorting_t, int8_t,
         sorting_t::UNORDERED, sorting_t::DESCENDING);
@@ -2225,7 +2234,7 @@ RDB_IMPL_SERIALIZABLE_7_FOR_CLUSTER(
     transforms,
     terminal,
     serializable_env);
-RDB_IMPL_SERIALIZABLE_13_FOR_CLUSTER(
+RDB_IMPL_SERIALIZABLE_14_FOR_CLUSTER(
     rget_read_t,
     stamp,
     region,
@@ -2239,7 +2248,8 @@ RDB_IMPL_SERIALIZABLE_13_FOR_CLUSTER(
     terminal,
     sindex,
     sorting,
-    parallel_hints);
+    parallel_hints,
+    ts_range);
 RDB_IMPL_SERIALIZABLE_9_FOR_CLUSTER(
     intersecting_geo_read_t,
     stamp,

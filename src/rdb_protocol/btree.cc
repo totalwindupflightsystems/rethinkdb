@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -33,6 +34,7 @@
 #include "rdb_protocol/geo_traversal.hpp"
 #include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
+#include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/serialize_datum_onto_blob.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/table_common.hpp"
@@ -1137,7 +1139,8 @@ void rdb_rget_slice(
 class ts_rget_cb_t : public concurrent_traversal_callback_t {
 public:
     ts_rget_cb_t(rget_io_data_t &&_io,
-                 job_data_t &&_job)
+                 job_data_t &&_job,
+                 const optional<ts_between_range_t> &_ts_range)
         : io(std::move(_io)),
           job(std::move(_job)),
           bad_init(false),
@@ -1145,6 +1148,12 @@ public:
         disabler.init(new profile::disabler_t(job.env->trace));
         sampler.init(new profile::sampler_t(
             "Time-series chunk traversal doc evaluation.", job.env->trace));
+        if (_ts_range.has_value()) {
+            /* PHASE3-TS-3: precompute the half-open row window once so the
+             * per-row check is two integer compares. */
+            normalize_ts_range(*_ts_range, &eff_start_us, &eff_end_us);
+            time_field = _ts_range->time_field;
+        }
     }
 
     /* The number of copies to attribute to rows of the upcoming traversal
@@ -1169,6 +1178,20 @@ public:
         try {
             ql::datum_t val = row.get();
             guarantee(!row.references_parent());
+            if (!time_field.empty()) {
+                /* PHASE3-TS-3: drop rows outside the between window. Rows
+                 * in a scanned chunk are pkey-ordered, so the window must
+                 * be re-checked per row; time_series_ops_t::extract_time_us
+                 * can only fire for corrupt data (writes enforce the time
+                 * field), in which case it raises a ql::exc_t caught below. */
+                uint64_t ts_us = time_series_ops_t::extract_time_us(
+                    val, time_field);
+                if (ts_us < eff_start_us || ts_us >= eff_end_us) {
+                    keyvalue.reset();
+                    waiter.wait_interruptible();
+                    return continue_bool_t::CONTINUE;
+                }
+            }
             keyvalue.reset();
             waiter.wait_interruptible();
             collected.emplace_back(std::move(key), std::move(val),
@@ -1243,6 +1266,10 @@ private:
     std::vector<collected_row_t> collected;
     bool bad_init;
     size_t default_copies;
+    /* PHASE3-TS-3: between row window (empty time_field = no filtering). */
+    std::string time_field;
+    uint64_t eff_start_us = 0;
+    uint64_t eff_end_us = std::numeric_limits<uint64_t>::max();
     scoped_ptr_t<profile::disabler_t> disabler;
     scoped_ptr_t<profile::sampler_t> sampler;
 };
@@ -1268,7 +1295,8 @@ void rdb_ts_rget_slice(
         const optional<terminal_variant_t> &terminal,
         sorting_t sorting,
         rget_read_response_t *response,
-        release_superblock_t release_superblock) {
+        release_superblock_t release_superblock,
+        const optional<ts_between_range_t> &ts_range) {
     r_sanity_check(boost::get<ql::exc_t>(&response->result) == nullptr);
     PROFILE_STARTER_IF_ENABLED(
         ql_env->profile() == profile_bool_t::PROFILE,
@@ -1288,7 +1316,8 @@ void rdb_ts_rget_slice(
                    shard,
                    initial_last,
                    sorting,
-                   require_sindexes_t::NO));
+                   require_sindexes_t::NO),
+        ts_range);
 
     direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
     continue_bool_t cont = continue_bool_t::CONTINUE;

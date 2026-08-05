@@ -47,6 +47,11 @@ public:
     datum_range_t with_left_bound(datum_t d, key_range_t::bound_t type);
     datum_range_t with_right_bound(datum_t d, key_range_t::bound_t type);
 
+    /* PHASE3-TS-3: accessors for the raw bound datums (minval/maxval for
+     * unbounded ends). Used by the time-series between dispatch. */
+    datum_t get_left_bound() const { return left_bound; }
+    datum_t get_right_bound() const { return right_bound; }
+
     std::string print() const {
         return strprintf("%c%s,%s%c",
                          left_bound_type == key_range_t::open ? '(' : '[',

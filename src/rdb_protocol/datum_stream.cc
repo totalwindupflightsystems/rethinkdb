@@ -35,7 +35,9 @@
 #include "rdb_protocol/geo/s2/s2polygon.h"
 #include "rdb_protocol/geo/s2/s2polyline.h"
 #include "rdb_protocol/math_utils.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/term.hpp"
+#include "rdb_protocol/time_series_errors.hpp"
 #include "rdb_protocol/val.hpp"
 #include "utils.hpp"
 
@@ -1225,6 +1227,188 @@ changefeed::keyspec_t::range_t sindex_readgen_t::get_range_spec(
         std::vector<transform_variant_t> transforms) const {
     return changefeed::keyspec_t::range_t{
         std::move(transforms), sindex_name(), sorting_, datumspec, r_nullopt};
+}
+
+/* PHASE3-TS-3: time-series `between` readgen (spec §4.2/§6.3). */
+
+namespace {
+
+/* Classification of one between bound for the time-series read path. */
+enum class ts_bound_kind_t { MINVAL, MAXVAL, TIME, INVALID };
+
+ts_bound_kind_t classify_ts_bound(const datum_t &bound) {
+    if (bound.get_type() == datum_t::type_t::MINVAL) {
+        return ts_bound_kind_t::MINVAL;
+    }
+    if (bound.get_type() == datum_t::type_t::MAXVAL) {
+        return ts_bound_kind_t::MAXVAL;
+    }
+    if (bound.is_ptype(ql::pseudo::time_string)) {
+        return ts_bound_kind_t::TIME;
+    }
+    return ts_bound_kind_t::INVALID;
+}
+
+/* Converts a ReQL time bound datum to microseconds since epoch, mirroring
+ * time_series_ops_t::extract_time_us (pre-epoch clamped to 0). */
+uint64_t ts_bound_datum_to_us(const datum_t &bound) {
+    double epoch_seconds = ql::pseudo::time_to_epoch_time(bound);
+    if (epoch_seconds < 0) {
+        epoch_seconds = 0;
+    }
+    return static_cast<uint64_t>(epoch_seconds * 1e6);
+}
+
+/* Converts a between datum range into the ts_between_range_t read window.
+ * minval/maxval bounds become unbounded; a maxval lower bound or minval
+ * upper bound degenerates to an empty window (normalization yields
+ * start >= end). Non-time bounds raise the TIME_SERIES_BOUND_INVALID
+ * error. */
+ts_between_range_t build_ts_between_range(
+        const datum_range_t &dr, const std::string &time_field) {
+    ts_between_range_t out;
+    out.time_field = time_field;
+
+    ts_bound_kind_t lb = classify_ts_bound(dr.get_left_bound());
+    if (lb == ts_bound_kind_t::INVALID) {
+        time_series_error::raise_op_failed(
+            time_series_error::TIME_SERIES_BOUND_INVALID,
+            "lower bound of a time-series `between` must be a ReQL time "
+            "value or r.minval, got %s.",
+            dr.get_left_bound().get_type_name().c_str());
+    }
+    if (lb == ts_bound_kind_t::TIME) {
+        out.has_left = true;
+        out.start_us = ts_bound_datum_to_us(dr.get_left_bound());
+        out.left_open = dr.left_bound_type == key_range_t::open;
+    } else if (lb == ts_bound_kind_t::MAXVAL) {
+        /* Everything at-or-after maxval: normalize to an empty window. */
+        out.has_left = true;
+        out.start_us = std::numeric_limits<uint64_t>::max();
+        out.left_open = true;
+    }
+
+    ts_bound_kind_t rb = classify_ts_bound(dr.get_right_bound());
+    if (rb == ts_bound_kind_t::INVALID) {
+        time_series_error::raise_op_failed(
+            time_series_error::TIME_SERIES_BOUND_INVALID,
+            "upper bound of a time-series `between` must be a ReQL time "
+            "value or r.maxval, got %s.",
+            dr.get_right_bound().get_type_name().c_str());
+    }
+    if (rb == ts_bound_kind_t::TIME) {
+        out.has_right = true;
+        out.end_us = ts_bound_datum_to_us(dr.get_right_bound());
+        out.right_open = dr.right_bound_type == key_range_t::open;
+    } else if (rb == ts_bound_kind_t::MINVAL) {
+        /* Everything before minval: normalize to an empty window. */
+        out.has_right = true;
+        out.end_us = 0;
+        out.right_open = true;
+    }
+
+    return out;
+}
+
+}  // namespace
+
+ts_readgen_t::ts_readgen_t(
+    serializable_env_t s_env,
+    std::string _table_name,
+    const datumspec_t &_datumspec,
+    profile_bool_t _profile,
+    read_mode_t _read_mode,
+    sorting_t _sorting,
+    const std::string &_time_field)
+    : rget_readgen_t(
+        std::move(s_env),
+        std::move(_table_name),
+        /* The key space of a time-series read is the full primary-key
+         * range; the time window travels in `ts_range`. */
+        datumspec_t(datum_range_t::universe()),
+        _profile,
+        _read_mode,
+        _sorting,
+        require_sindexes_t::NO),
+      ts_range(build_ts_between_range(_datumspec.covering_range(),
+                                      _time_field)) { }
+
+scoped_ptr_t<readgen_t> ts_readgen_t::make(
+    env_t *env,
+    std::string table_name,
+    read_mode_t read_mode,
+    const datumspec_t &datumspec,
+    sorting_t sorting,
+    const std::string &time_field) {
+    return scoped_ptr_t<readgen_t>(
+        new ts_readgen_t(
+            env->get_serializable_env(),
+            std::move(table_name),
+            datumspec,
+            env->profile(),
+            read_mode,
+            sorting,
+            time_field));
+}
+
+rget_read_t ts_readgen_t::next_read_impl(
+    const optional<active_ranges_t> &active_ranges,
+    const optional<reql_version_t> &,
+    optional<changefeed_stamp_t> stamp,
+    std::vector<transform_variant_t> transforms,
+    const batchspec_t &batchspec) const {
+    region_t region = active_ranges
+        ? region_t(active_ranges_to_range(*active_ranges))
+        : region_t(datumspec.covering_range().to_primary_keyrange());
+    r_sanity_check(!region.inner.is_empty());
+    rget_read_t read(
+        std::move(stamp),
+        std::move(region),
+        active_ranges_to_hints(sorting(batchspec), active_ranges),
+        r_nullopt,
+        serializable_env,
+        table_name,
+        batchspec,
+        std::move(transforms),
+        optional<terminal_variant_t>(),
+        optional<sindex_rangespec_t>(),
+        sorting(batchspec));
+    read.ts_range = make_optional(ts_range);
+    return read;
+}
+
+void ts_readgen_t::sindex_sort(
+    std::vector<rget_item_t> *, const batchspec_t &) const {
+    return;
+}
+
+key_range_t ts_readgen_t::original_keyrange(reql_version_t) const {
+    return datumspec.covering_range().to_primary_keyrange();
+}
+
+optional<std::string> ts_readgen_t::sindex_name() const {
+    return optional<std::string>();
+}
+
+changefeed::keyspec_t::range_t ts_readgen_t::get_range_spec(
+        std::vector<transform_variant_t> transforms) const {
+    return changefeed::keyspec_t::range_t{
+        std::move(transforms),
+        sindex_name(),
+        sorting_,
+        datumspec,
+        r_nullopt};
+}
+
+bool ts_bounds_are_time_like(const datumspec_t &datumspec) {
+    if (datumspec.is_universe() || datumspec.is_empty()) {
+        return false;
+    }
+    datum_range_t dr = datumspec.covering_range();
+    ts_bound_kind_t lb = classify_ts_bound(dr.get_left_bound());
+    ts_bound_kind_t rb = classify_ts_bound(dr.get_right_bound());
+    return lb != ts_bound_kind_t::INVALID && rb != ts_bound_kind_t::INVALID
+        && (lb == ts_bound_kind_t::TIME || rb == ts_bound_kind_t::TIME);
 }
 
 intersecting_readgen_t::intersecting_readgen_t(

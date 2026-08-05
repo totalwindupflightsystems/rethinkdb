@@ -29,6 +29,10 @@ constexpr const char *config_invalid          = "TIME_SERIES_CONFIG_INVALID";
 constexpr const char *config_immutable        = "TIME_SERIES_CONFIG_IMMUTABLE";
 constexpr const char *retention_exceeded      = "TIME_SERIES_RETENTION_EXCEEDED";
 
+/* Read-path validation (PHASE3-TS-3): a between bound on the time-series
+ * implicit index is not a ReQL time / r.minval / r.maxval (→ OP_FAILED). */
+constexpr const char *bound_invalid            = "TIME_SERIES_BOUND_INVALID";
+
 /* Storage-engine failures (later phases). */
 constexpr const char *chunk_corrupt           = "TIME_SERIES_CHUNK_CORRUPT";
 constexpr const char *downsample_conflict     = "TIME_SERIES_DOWNSAMPLE_CONFLICT";
@@ -42,6 +46,7 @@ constexpr const char *TIME_SERIES_FIELD_INVALID_TYPE = field_invalid_type;
 constexpr const char *TIME_SERIES_CONFIG_INVALID = config_invalid;
 constexpr const char *TIME_SERIES_CONFIG_IMMUTABLE = config_immutable;
 constexpr const char *TIME_SERIES_RETENTION_EXCEEDED = retention_exceeded;
+constexpr const char *TIME_SERIES_BOUND_INVALID = bound_invalid;
 constexpr const char *TIME_SERIES_CHUNK_CORRUPT = chunk_corrupt;
 constexpr const char *TIME_SERIES_DOWNSAMPLE_CONFLICT = downsample_conflict;
 constexpr const char *TIME_SERIES_OUT_OF_ORDER_WINDOW = out_of_order_window;
