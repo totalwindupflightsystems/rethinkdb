@@ -69,6 +69,7 @@
 |~~INT-07-BUG~~ | ✅ Fixed in tick #34 — graph_block.reset_buf_lock() before txn->commit() in protocol.cc:427 | High | 1 | INT-07 | ++debugging, +++backend | DeepSeek V4 Flash | 1-line fix: release buf_lock before transaction commit. Verified: 215/215 unit tests PASS | — |
 | PERF-BENCH | Performance benchmarks (0 exist for CDC/vector/FTS) | Medium | 3 | CDC-10 | ++testing, +performance | DeepSeek V4 Flash | Mechanical: Google Benchmark scaffolding for existing features | MiniMax M3 |
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | deepseek-v4-flash | Audit runs every tick; finds new gaps | GLM-5.2 |
+| RT-GAP-001 | No user-facing docs for the PHASE3 time-series extension: repo has NO docs/ dir; README is upstream RethinkDB's quickstart. A user cannot learn what the TS extension is, how to create a time-series table (tableCreate timeSeries optargs), what between() chunk-pruning/retention/downsample do, or current status. Fix: write docs/time-series.md (overview, config syntax, query semantics, roadmap status) and link from README. | Medium | 3 | PHASE3-TS | ++documentation | deepseek-v4-flash | PM probe 2026-08-05: grep time_series docs/ → no docs dir exists; README mentions nothing of PHASE3 | GLM-5.2 |
 
 **Assumptions:** CDC-09 decomposition reviewed by Bane; C++17 toolchain available; container memory ≥ 8GB for linker; fork push events require manual CI trigger.
 
