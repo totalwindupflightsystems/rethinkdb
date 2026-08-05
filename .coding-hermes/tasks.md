@@ -4829,3 +4829,47 @@ VERDICT: **PRODUCTIVE (stewardship complete)** — tick #92's fix worker output 
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **PRODUCTIVE (dispatch)** — TS-3 (between read pruning via chunk index) is the next queued task; foreman verified state, compiled a fact-grounded worker brief, and dispatched. Next tick: verify worker output (probe + units + regression + guard), then gitreins task + judge + commit/push.
+
+## Coordination Tick #95 — 2026-08-05 11:30 UTC (TS-3 worker in flight — no dispatch)
+
+**Mission:** Poll tick #94's TS-3 worker (PID 2937023, session proc_3f2a0ad6f371, deepseek-v4-flash @ deepseek-foreman, prompt /tmp/rethinkdb-t94-worker-prompt.txt). Verify liveness + scope read-only. Do NOT dispatch, do NOT touch worker files.
+
+### Worker liveness (real tool output)
+
+| Check | Result |
+|-------|--------|
+| Worker process | ✅ PID 2937023 alive since 09:19 (hermes chat CLI, runtime tree intact: node + python3 children) |
+| Expected-files dirty | ✅ git status matches TS-3 scope exactly: btree.cc/hpp, datum_stream.cc + readgens.hpp, datumspec.hpp, protocol.cc/hpp, real_table.cc, store.cc, time_series_errors.hpp, unittest/time_series_test.cc (+135), test/ts3_e2e_probe.py (untracked) |
+| Active build waves | ✅ make -j4 observed compiling btree.cc + store.cc (cc1plus @ 100%) at 11:26-11:28; file mtimes advancing (btree.cc 11:27, probe 11:23) |
+| Diff scope | ✅ on-brief: `sindex_read_dispatch_t` classify (BRIN/TS_TIME_FIELD/REGULAR/UNKNOWN), `ts_bound_kind_t` (MINVAL/MAXVAL/TIME/INVALID), bound→µs conversion, empty-window degeneration, TIME_SERIES_BOUND_INVALID error; 842+/84− across 12 files |
+| TSDBG remnants | ✅ 0 in modified files |
+| Zombies / ports | ✅ none (no rethinkdb procs, no 39xxx listeners) |
+| Remote drift | ✅ `git fetch` → HEAD == origin/main (0 ahead) |
+| New board task | ⚠️ RT-GAP-001 added by stand-in PM (commit ac08b599f7, 2026-08-05): docs/time-series.md missing — queued after TS queue (docs-only, no collision with TS-3 code) |
+| Stray artifacts | ⚠️ `dagger.db` + `-shm`/`-wal` untracked at repo root (NOT in worker brief scope; likely worker-session dagger MCP init) — flag for completion tick to remove/verify before TS-3 close |
+
+### Actions this tick
+
+1. ✅ Loaded foreman skill (batch 1) + rethinkdb-foreman-ops + worker-in-flight-coordination refs; board tail read via git-log gate (tick #94 = TS-3 dispatched)
+2. ✅ Liveness: process tree + expected-files-dirty cross-check vs brief scope (all 11 paths match); build waves confirmed active
+3. ✅ Read-only diff skim: between dispatch classification + bound handling on-spec (§4.2/§6.3); no TSDBG; no scope creep
+4. ✅ External signal scan: no remote commits, no zombies, no port conflicts
+5. ⛔ **No dispatch** — worker actively progressing (2h+ runtime is normal for full C++ rebuild + TS-3 scope)
+6. ⏳ GitReins task PHASE3-TS-3: create AFTER worker commit (timing pitfall, tick #92)
+7. ⏳ Verification → judge → commit → push → DuckBrain: next tick when worker returns
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1, **PHASE3-TS-2** | all prior + 16/16 TS + 238/238 regression + 20/20 + 15/15 E2E | ✅ Complete (TS-2 closed tick #93) |
+| **PHASE3-TS-3 (QUEUE #3c)** | — | 🔄 Worker in flight (build waves active) |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ Next after TS-3 |
+| RT-GAP-001 (docs) | — | ⏳ Queued after TS queue (stand-in PM, 2026-08-05) |
+| CDC/Vector/HNSW/BRIN/FTS/Sindex unit | 238/238 (filtered) | ✅ Stable |
+
+**Execution order:** ... → PHASE3-TS-1 ✅ → PHASE3-TS-2 ✅ (tick #93) → **TS-3 🔄 (worker in flight)** → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM → RT-GAP-001 (docs)
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **COORDINATION** — tick #94's TS-3 worker confirmed alive and actively progressing (expected files dirty, build waves, on-brief diff, no TSDBG, no zombies, no drift). No dispatch; board-only commit. Next tick: verify worker output (ts3_e2e_probe + 16/16 TS units + 238/238 regression + guard), then gitreins task + judge + commit/push. Watch: dagger.db stray trio + RT-GAP-001 queue placement.
