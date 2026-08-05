@@ -4787,3 +4787,44 @@ VERDICT: **PRODUCTIVE (stewardship complete)** — tick #92's fix worker output 
 - **tier1**: build ✓ secrets ✓ tests ✓ (evaluator's own gtest run); lint ✗ = pre-existing debt (documented ticks #90/#91: protocol.cc BRIN `unsigned long` logs + `using namespace ql` in CDC unittest files) — new TS-2 files lint-clean.
 - **tier3**: cppcheck path config error + clang-tidy timeout — pre-existing tooling config, not code.
 - Disposition identical to PHASE3-TS-1/VEC: partial verdict + guard PASS + foreman-verified build/regression/E2E = complete with evidence.
+
+## Productive Tick #94 — 2026-08-05 10:20 UTC (PHASE3-TS-3 dispatched — QUEUE #3c)
+
+**Mission:** Continue the PHASE3 time-series queue. Tick #93 closed TS-2 (verified, judged, committed 22f797de2c, pushed). This tick: confirm clean state, prepare and dispatch the TS-3 worker.
+
+### State verification (this tick, real tool output)
+
+| Check | Result |
+|-------|--------|
+| Git | ✅ clean except `.vfs/graph/edges.jsonl` (hilo — left uncommitted per prior practice); HEAD == origin/main (0 ahead, fetch confirms no remote drift) |
+| GitReins tasks | ✅ PHASE3-TS-2 complete; TS-3 not yet created (creation AFTER worker commit per gitreins-task-creation-timing pitfall, tick #92) |
+| Zombie servers | ✅ none running |
+| DuckBrain recall | ✅ ns rethinkdb up (:3000); latest status = tick #91 (TS-1 done) — no TS-3-relevant new findings |
+| CRON_PAUSE_REQUESTED | stale (2026-07-29, tick #59 era) — superseded by the PHASE3 queue execution order (TS-1→TS-6) that ticks #90-93 followed; TS-3 pending = no pause |
+| Hilo impact | ⚠️ graph sparse for C++ ("No dependents found" for seq.cc/time_series_ops.cc) — blast radius assessed manually: between_term_t (seq.cc:686) → with_bounds → rget read path (store.cc) → rdb_ts_rget_slice (btree.cc:1258) → time_chunk/time_series_ops; non-TS between must stay byte-identical |
+
+### Actions this tick
+
+1. ✅ Board tail read (tick #93 = TS-2 verified + judge addendum; commit 22f797de2c pushed)
+2. ✅ Read spec §4.2 (read pruning) / §6.3 (read path) / §8.2 (chunk-pruning test) — verbatim requirements embedded in worker brief
+3. ✅ Verified TS-2 read-path facts for the brief: rdb_ts_rget_slice + ts_rget_cb_t (btree.cc:1137/1258, called store.cc:254/1231), `time_chunk_index_t::overlapping_chunks(start_us, end_us)` implemented (time_chunk.cc:12), NO sindex on time field today (between `{index:'ts'}` currently fails), pkey between works via full chunk scan
+4. ✅ Worker prompt compiled (/tmp/rethinkdb-t94-worker-prompt.txt — task, spec excerpts, verified facts, design guidance, acceptance criteria, mandatory verification incl. new test/ts3_e2e_probe.py, commit instructions, constraints)
+5. ✅ Dispatched TS-3 worker (deepseek-v4-flash @ deepseek-foreman, PID 2937023, session proc_3f2a0ad6f371)
+6. ✅ External signal scan: no new remote commits, no new issues (disabled), no zombies
+7. ⏳ GitReins task PHASE3-TS-3: create AFTER worker commit (timing pitfall, tick #92)
+8. ⏳ Verification → judge → commit board + probe → push → DuckBrain: next tick when worker returns
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1, **PHASE3-TS-2** | all prior + 16/16 TS + 238/238 regression + 20/20 + 15/15 E2E | ✅ Complete (TS-2 closed tick #93) |
+| **PHASE3-TS-3 (QUEUE #3c)** | — | 🔄 **Worker dispatched this tick** |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ Next after TS-3 |
+| CDC/Vector/HNSW/BRIN/FTS/Sindex unit | 238/238 (filtered) | ✅ Stable |
+
+**Execution order:** ... → PHASE3-TS-1 ✅ → PHASE3-TS-2 ✅ (tick #93) → **TS-3 🔄 (worker dispatched)** → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (dispatch)** — TS-3 (between read pruning via chunk index) is the next queued task; foreman verified state, compiled a fact-grounded worker brief, and dispatched. Next tick: verify worker output (probe + units + regression + guard), then gitreins task + judge + commit/push.
