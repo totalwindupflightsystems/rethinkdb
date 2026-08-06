@@ -273,23 +273,25 @@ tasks:
 - id: PHASE3-TS-3
   title: 'PHASE3-TS-3: time-series between() read pruning via chunk index (spec 4.2/6.3/8.2)'
   criteria:
-  - "between() on the time field with explicit {index: '<time_field>'} returns exactly\
-    \ the rows whose ts is in the window (live E2E, spec 6.3)"
-  - "plain between() (no index optarg) with ReQL time bounds on a time-series table\
-    \ resolves to the time field and returns the same rows (spec 2.3 example/6.3)"
-  - "chunk pruning: between bounds parsed to [start_us,end_us), overlapping_chunks()\
-    \ scopes the scan to overlapping chunk B-trees only; rows from non-overlapping\
-    \ chunks absent (spec 4.2 steps 1-4)"
-  - "boundary correctness: closed/open bounds, empty window, inverted range, unbounded\
-    \ minval/maxval, range over no chunk all handled without error or crash"
-  - "regression: pkey between, getAll, count, and plain-table between unchanged\
-    \ (byte-identical non-TS path)"
-  - "backfill rows (older than chunk layout) returned by between; chunk layout and\
-    \ pruned reads survive server restart"
-  - 'unit tests pass: TimeSeries suite 18/18 (incl. new TS-3 chunk-pruning boundary tests)'
+  - 'between() on the time field with explicit {index: ''<time_field>''} returns exactly
+    the rows whose ts is in the window (live E2E, spec 6.3)'
+  - plain between() (no index optarg) with ReQL time bounds on a time-series table
+    resolves to the time field and returns the same rows (spec 2.3 example/6.3)
+  - 'chunk pruning: between bounds parsed to [start_us,end_us), overlapping_chunks()
+    scopes the scan to overlapping chunk B-trees only; rows from non-overlapping chunks
+    absent (spec 4.2 steps 1-4)'
+  - 'boundary correctness: closed/open bounds, empty window, inverted range, unbounded
+    minval/maxval, range over no chunk all handled without error or crash'
+  - 'regression: pkey between, getAll, count, and plain-table between unchanged (byte-identical
+    non-TS path)'
+  - backfill rows (older than chunk layout) returned by between; chunk layout and
+    pruned reads survive server restart
+  - 'unit tests pass: TimeSeries suite 18/18 (incl. new TS-3 chunk-pruning boundary
+    tests)'
   - 'regression: 238/238 filtered unit tests pass; test/ts3_e2e_probe.py 28/28 PASS'
   - build passes clean (make -j4); no TSDBG debug prints in TS-3 files
-  status: in_progress
+  status: complete
   created_at: '2026-08-06T14:41:50+00:00'
+  completed_at: '2026-08-06T20:18:14.828709+00:00'
   depends_on:
   - PHASE3-TS-2

@@ -1,0 +1,94 @@
+{
+  "task_id": "PHASE3-TS-3",
+  "task_title": "PHASE3-TS-3: time-series between() read pruning via chunk index (spec 4.2/6.3/8.2)",
+  "task_criteria": [
+    "between() on the time field with explicit {index: '<time_field>'} returns exactly the rows whose ts is in the window (live E2E, spec 6.3)",
+    "plain between() (no index optarg) with ReQL time bounds on a time-series table resolves to the time field and returns the same rows (spec 2.3 example/6.3)",
+    "chunk pruning: between bounds parsed to [start_us,end_us), overlapping_chunks() scopes the scan to overlapping chunk B-trees only; rows from non-overlapping chunks absent (spec 4.2 steps 1-4)",
+    "boundary correctness: closed/open bounds, empty window, inverted range, unbounded minval/maxval, range over no chunk all handled without error or crash",
+    "regression: pkey between, getAll, count, and plain-table between unchanged (byte-identical non-TS path)",
+    "backfill rows (older than chunk layout) returned by between; chunk layout and pruned reads survive server restart",
+    "unit tests pass: TimeSeries suite 18/18 (incl. new TS-3 chunk-pruning boundary tests)",
+    "regression: 238/238 filtered unit tests pass; test/ts3_e2e_probe.py 28/28 PASS",
+    "build passes clean (make -j4); no TSDBG debug prints in TS-3 files"
+  ],
+  "passed": false,
+  "items": [],
+  "stages": {
+    "tier1": {
+      "id": "tier1",
+      "passed": false,
+      "any_failed": true,
+      "summary": "  \u2713 build:     [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n\n  \u2713 secrets: \n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m3:08PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75506835 \n  \u2717 lint: Done processing ./src/clustering/administration/logs/log_transfer.cc\nDone processing ./src/clusterin\n  \u2713 tests: Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] R",
+      "steps": [
+        {
+          "id": "build",
+          "type": "script",
+          "passed": true,
+          "output": "    [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n",
+          "error": ""
+        },
+        {
+          "id": "secrets",
+          "type": "script",
+          "passed": true,
+          "output": "\n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m3:08PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75506835 bytes (75.51 MB) in 10.5s\u001b[0m\n\u001b[90m3:08PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mno leaks found\u001b[0m\n",
+          "error": ""
+        },
+        {
+          "id": "lint",
+          "type": "script",
+          "passed": false,
+          "output": "Done processing ./src/clustering/administration/logs/log_transfer.cc\nDone processing ./src/clustering/administration/logs/log_transfer.hpp\nDone processing ./src/clustering/immediate_consistency/remote_replicator_server.cc\nDone processing ./src/clustering/administration/perfmon_collection_repo.hpp\nDone processing ./src/clustering/administration/cluster_config.hpp\nDone processing ./src/clustering/administration/http/cyanide.hpp\nDone processing ./src/containers/archive/archive.cc\nDone processing ./",
+          "error": ""
+        },
+        {
+          "id": "tests",
+          "type": "script",
+          "passed": true,
+          "output": "Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] Running 200 tests from 24 test cases.\n[----------] Global test environment set-up.\n[----------] 1 test from PartitionConfigTest\n[ RUN      ] PartitionConfigTest.RouteHashKnownVectors\n[       OK ] PartitionConfigTest.RouteHashKnownVectors (0 ms)\n[----------] 1 test from PartitionConfigTest (0 ms total)\n\n[----------] 3 tests from OptargRegressionTest\n[ RUN      ] OptargRegressionTest.FtsOptargIsValid",
+          "error": ""
+        }
+      ]
+    },
+    "tier2": {
+      "id": "tier2",
+      "passed": false,
+      "any_failed": true,
+      "summary": "INCOMPLETE\n\nCap exceeded: Input token budget (2.0M) exceeded (2.0M used). Increase max_input_tokens or reduce message context.",
+      "steps": [
+        {
+          "id": "tier2",
+          "type": "ai_eval",
+          "passed": false,
+          "output": "INCOMPLETE\n\nCap exceeded: Input token budget (2.0M) exceeded (2.0M used). Increase max_input_tokens or reduce message context.",
+          "error": ""
+        }
+      ]
+    },
+    "tier3": {
+      "id": "tier3",
+      "passed": true,
+      "any_failed": false,
+      "summary": "  \u2713 cppcheck: === cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bi\n  \u2713 clang-tidy: Command timed out",
+      "steps": [
+        {
+          "id": "cppcheck",
+          "type": "script",
+          "passed": true,
+          "output": "=== cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bin/sh: 9: src/: Permission denied\ncppcheck done (informational only)\n",
+          "error": ""
+        },
+        {
+          "id": "clang-tidy",
+          "type": "script",
+          "passed": true,
+          "output": "",
+          "error": "Command timed out"
+        }
+      ]
+    }
+  },
+  "summary": "Judge Result: PHASE3-TS-3\n\nStage tier1: FAIL\n    \u2713 build:     [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n\n  \u2713 secrets: \n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m3:08PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75506835 \n  \u2717 lint: Done processing ./src/clustering/administration/logs/log_transfer.cc\nDone processing ./src/clusterin\n  \u2713 tests: Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] R\n\nStage tier2: FAIL\n  INCOMPLETE\n\nCap exceeded: Input token budget (2.0M) exceeded (2.0M used). Increase max_input_tokens or reduce message context.\n\nStage tier3: PASS\n    \u2713 cppcheck: === cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bi\n  \u2713 clang-tidy: Command timed out\n\nOverall: FAIL \u2717",
+  "evaluated_at": "2026-08-06T20:17:28.319418"
+}
