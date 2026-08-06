@@ -5095,3 +5095,13 @@ VERDICT: **PRODUCTIVE (dispatch)** — tick #96 close-out confirmed fully pushed
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **PRODUCTIVE (verification/close-out)** — RT-BUG-001 fix independently verified and closed: RDBInterrupt 5/5 + 255/255 regression+TS + 28/28 live E2E on fresh rebuild; original crash reproduced on pre-fix parent (`make unit` auto-run) proving the fix is real. New pre-existing full-suite hang discovered, A/B-proven, filed as RT-BUG-002 (RT-BUG-001 exonerated). Judge running; commit + push this tick.
+
+### Tick #98 addendum — judge verdict (2026-08-06 23:10 UTC)
+
+**GitReins judge RT-BUG-001:** verdict **72128b58** — Overall FAIL (machine reasons only):
+- **tier2 (LLM eval): 9/9 criteria PASS — FIRST FULL C++ tier2 VERDICT in this repo** (16M/4M cap bump from 238b637bce worked). Evaluator independently: ran `--gtest_filter='*RDBInterrupt*'` → 5/5 PASS; confirmed all 3 guards at real_table.cc:514/528/498 (empty map/optional returns); ran the combined 255/255 regression+TS filter; verified 28/28 probe; confirmed commit fae959615e scope (only real_table.cc, +9) + Co-authored-by trailer. Line-level citations for every criterion.
+- **tier1 ✗**: lint = pre-existing full-tree check_style debt (cluster_config.cc etc. — none in fix scope; same debt as ticks #90/#91/#96). secrets ✓ build ✓ tests ✓ (judge's tier1 test filter ran diff-mode reduced set — `*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*` — passed; full-suite hang avoided by filter design).
+- **tier3 ✓** (informational: cppcheck path config error + clang-tidy timeout — pre-existing tooling config).
+- **Disposition: COMPLETE with evidence** — same pattern as TS-1/TS-2/TS-3: tier2 verified + foreman-verified build/regression/E2E, only machine-lint debt outstanding (pre-existing, outside scope). Task RT-BUG-001 marked complete (completed_at 23:02Z, verdict 72128b58 committed in tasks.yaml).
+
+**Next tick:** dispatch RT-BUG-002 fix worker (full-suite hang: diagnose pk_directory deadlock or disable test) → then PHASE3-TS-4 (QUEUE #3d, retention TTL + background jobs).
