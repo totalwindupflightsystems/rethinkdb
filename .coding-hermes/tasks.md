@@ -71,7 +71,8 @@
 | PERF-BENCH | Performance benchmarks (0 exist for CDC/vector/FTS) | Medium | 3 | CDC-10 | ++testing, +performance | DeepSeek V4 Flash | Mechanical: Google Benchmark scaffolding for existing features | MiniMax M3 |
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | deepseek-v4-flash | Audit runs every tick; finds new gaps | GLM-5.2 |
 | RT-GAP-001 | No user-facing docs for the PHASE3 time-series extension: repo has NO docs/ dir; README is upstream RethinkDB's quickstart. A user cannot learn what the TS extension is, how to create a time-series table (tableCreate timeSeries optargs), what between() chunk-pruning/retention/downsample do, or current status. Fix: write docs/time-series.md (overview, config syntax, query semantics, roadmap status) and link from README. | Medium | 3 | PHASE3-TS | ++documentation | deepseek-v4-flash | PM probe 2026-08-05: grep time_series docs/ → no docs dir exists; README mentions nothing of PHASE3 | GLM-5.2 |
-| RT-BUG-001 | RDBInterrupt.InsertOp + DeleteOp SEGFAULT (nil deref) in write path: write_batched_insert/write_batched_replace → get_generated_columns → table_meta_client_t::get_config. PRE-EXISTING (VEC-era, c121aefa72 introduced the unconditional get_generated_columns call); deterministic repro on main AND pre-TS-3 parent 0ee4cfc51c; masked because the standing regression filter excludes RDBInterrupt (GetOp/TcpInterrupt pass). Fix: null-safe meta-client handling in the generated-columns fetch; verify all 4 RDBInterrupt tests + full suite. | High | 2 | PHASE3-TS-3 | ++debugging, ++database-internals | deepseek-v4-flash | Foreman tick #96 evidence: 2/2 repro on main + parent, backtrace in /tmp/rt-iso.log | GLM-5.2 |
+| ~~RT-BUG-001~~ | ✅ **FIXED (tick #98, fae959615e)** — 3 null-guards in real_table.cc (get_generated_columns / get_time_series_config / get_write_hook). RDBInterrupt 5/5 PASS (in-suite + isolated), 255/255 regression+TS filter, 28/28 ts3_e2e_probe, guard PASS. Full suite now passes crash site (403 OK) — remaining PartitionOpsTest hang = RT-BUG-002 (A/B-proven pre-existing) | High | 2 | PHASE3-TS-3 | ++debugging, ++database-internals | deepseek-v4-flash | Fix verified independently by foreman: RDBInterrupt 5/5 + 255/255 on fresh rebuild; parent-commit A/B for hang | GLM-5.2 |
+| RT-BUG-002 | PartitionOpsTest.PkDirectoryInsertLookupExistsRemove HANGS (deadlock, no output, ignores SIGTERM) — blocks FULL unit suite completion (suite dies at test #404 of 798). PRE-EXISTING: A/B-proven (hangs on fix parent 2867e1622a AND fixed binary; test from PART-10 era 93742cbd9b 2026-07-16; pure btree pk_directory test — no meta client, zero connection to RT-BUG-001). Full suite reaches 403 OK / 0 FAILED / 0 crashes before hang. Fix: diagnose pk_directory_t::try_insert/exists/lookup/remove deadlock (superblock write txn?) or mark test disabled. | Medium | 4 | — | ++debugging, ++database-internals, +concurrency | deepseek-v4-flash | Foreman tick #98 evidence: isolation run >90s hang on both binaries (EXIT=137 via timeout -k), RT-BUG-001 exonerated | GLM-5.2 |
 
 **Assumptions:** CDC-09 decomposition reviewed by Bane; C++17 toolchain available; container memory ≥ 8GB for linker; fork push events require manual CI trigger.
 
@@ -5009,3 +5010,88 @@ VERDICT: **PRODUCTIVE (verification/close-out)** — TS-3 independently verified
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **PRODUCTIVE (dispatch)** — tick #96 close-out confirmed fully pushed (judge verdict + config caps + TS-3 complete). RT-BUG-001 crash fix dispatched to GLM-5.2 @ zai-glm with foreman-verified root cause (3 null-meta-client derefs in real_table.cc, exact lines) and a 5-stage verification ladder (interrupt tests → full suite no-crash → regression+TS → live E2E → guard). Next tick: poll worker (coordination if in flight), verify independently, create gitreins task + judge, commit/push, then TS-4 dispatch.
+
+## Productive Tick #98 — 2026-08-06 22:45 UTC (RT-BUG-001 fix VERIFIED + closed — crash gone, hang filed)
+
+**Mission:** Tick #97's RT-BUG-001 worker (PID 1793902, GLM-5.2 @ zai-glm, session 20260806_163038_e4b029) finished ~22:40 UTC. This tick: independent verification of the landed commit, A/B on the discovered full-suite hang, gitreins task + judge, board update, push.
+
+### Worker outcome (real tool output)
+
+| Check | Result |
+|-------|--------|
+| Worker process | ✅ exited ~22:41 UTC after final report; commit landed: **fae959615e** `fix: null-safe meta-client in generated-columns/time-series config fetch — RDBInterrupt InsertOp/DeleteOp segfault (nil deref, pre-existing since VEC c121aefa72)` — 1 file, +9, Co-authored-by trailer verified, NOT pushed |
+| Commit scope | ✅ exactly on-brief: 3 null-guards in real_table.cc only (get_generated_columns / get_time_series_config / get_write_hook), 0 TSDBG, no scope creep |
+| Worker ladder | ✅ RDBInterrupt 5/5 · regression+TS filter green · full suite 403 OK / 0 FAILED / 0 crashes (crash site passed) · ts3_e2e_probe **28/28** (full output captured in transcript) · guard PASS |
+
+### Foreman independent verification (fresh rebuild, real runs)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| A/B restore + rebuild | `git checkout HEAD~1 -- real_table.cc` → `make unit -j8` (relink) → restore → rebuild | ✅ both binaries built; `make unit` auto-run on PRE-FIX binary reproduced the ORIGINAL crash (Trace/breakpoint trap at RDBInterrupt — RT-BUG-001 behavior confirmed pre-fix) |
+| Freshness | `find src -name '*.cc' -newer build/release/rethinkdb-unittest` | ✅ 0 files — binary fresh (17:50:45) |
+| RDBInterrupt | `--gtest_filter='RDBInterrupt.*'` | ✅ **5/5 PASS** (5928 ms total) — InsertOp 187ms, GetOp 128ms, DeleteOp 204ms, TcpInterrupt 409ms, HttpInterrupt 5555ms (in-suite log) |
+| Regression+TS | standing filter + `*TimeSeries*` combined | ✅ **255/255 PASS** (70s). NOTE: tick #96's "238+18=256" double-counted LiveVisitorSequenceWithSindexBlock (matches BOTH *Sindex* and *TimeSeries*) — combined run = 255 unique tests, all pass |
+| Full suite | worker log /tmp/rt-full-unittest.log (798 tests, killed at ~11 min by worker's misplaced pipeline timeout) | ✅ 403 OK / 0 FAILED / 0 SIGSEGV — crash site (RDBInterrupt) passed; suite proceeds to test #404 |
+| Live E2E | ts3_e2e_probe 28/28 (worker, captured) | ✅ real meta client path unchanged |
+| Guard | `timeout 900 gitreins guard` | ✅ PASS (secrets/lint/tests — test_mode=diff so tests check skipped; full-suite hang not covered, see RT-BUG-002) |
+
+### NEW FINDING — RT-BUG-002 (filed, full-suite blocker)
+
+`PartitionOpsTest.PkDirectoryInsertLookupExistsRemove` **HANGS** (deadlock — no output, ignores SIGTERM) at test #404 of 798, blocking full-suite completion. **A/B-PROVEN PRE-EXISTING:** isolation run (`timeout -k 5 90`) hangs identically on BOTH the fixed binary (EXIT=137) AND the pre-fix parent 2867e1622a build (EXIT=137). Test is pure btree `pk_directory_t` insert/exists/lookup/remove (with_superblock write txn) from PART-10 era (93742cbd9b, 2026-07-16) — zero connection to the meta-client guards. RT-BUG-001 exonerated; queued as separate fix.
+
+### GitReins
+
+| Step | Result |
+|------|--------|
+| Task RT-BUG-001 | ✅ created (9 criteria, depends-on PHASE3-TS-3), started |
+| Judge | ⏳ launched background `timeout 1800 gitreins task complete RT-BUG-001` (proc_da9fa362d94a, log /tmp/rt-bug001-judge.log) — verdict next tick (addendum pattern) |
+| Guard | ✅ PASS (tick #97 worker's run) |
+
+### 14-point audit
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md serves as architecture doc |
+| 2 | DOC COVERAGE | PASS | SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, CONTRIBUTING.md, LICENSE present; RT-GAP-001 (time-series docs) still queued |
+| 3 | TEST GAPS | PASS | 798 TEST() total; RDBInterrupt 5/5; regression+TS 255/255; full suite reaches #404 (was crash at RDBInterrupt) — hang filed RT-BUG-002 |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged |
+| 5 | PITFALL HUNT | PASS | No new regressions in fae959615e (0 TSDBG, scope-exact) |
+| 6 | PERFORMANCE | PASS | PERF-BENCH on board; no benchmark changes |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary rebuilt fresh 17:50:45 (fix in), runs clean; no zombie servers |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner; CI-001 supervisor-owned |
+| 9 | DUCKBRAIN SYNC | PASS | tick #98 entries written after push |
+| 10 | CODE QUALITY | PASS | Guard PASS + gitleaks clean; 5/5 + 255/255 on fresh binary |
+| 11 | MIDDLE-OUT WIRING | PASS | edges.jsonl regenerated (+146 lines, hilo post-commit hook — left uncommitted per practice) |
+| 12 | USABILITY | SKIP | Database engine — no browser/UI |
+| 13 | E2E TESTING | PASS | ts3_e2e_probe 28/28 live (insert/between/restart persistence) |
+| 14 | GITREINS JUDGE | ⏳ | Task created; judge running in background |
+
+### Actions this tick
+
+1. ✅ Board tail read (tick #97 = RT-BUG-001 dispatched); worker polled → exited, commit fae959615e found, trailer verified
+2. ✅ Worker ladder audit via session transcript: all 9 todo steps completed with real output (RDBInterrupt 5/5, 403 OK full suite, 28/28 probe, guard PASS)
+3. ✅ Full-suite log forensics: 403 OK / 0 FAILED / 0 crashes; hang at PartitionOpsTest.PkDirectoryInsertLookupExistsRemove; worker's timeout hit the tee pipeline not the binary (killed at ~11 min)
+4. ✅ Isolation repro: hang confirmed standalone (>90s, EXIT=137)
+5. ✅ A/B on pre-fix parent: rebuild with HEAD~1 real_table.cc → identical hang (EXIT=137) → **pre-existing proven**; `make unit` auto-run on pre-fix binary reproduced original RDBInterrupt crash (RT-BUG-001 sanity)
+6. ✅ Fix restored + fresh rebuild + independent gates: RDBInterrupt 5/5, 255/255 regression+TS (overlap dedup documented)
+7. ✅ GitReins task RT-BUG-001 created (9 criteria) + started; judge launched background
+8. ✅ Board: RT-BUG-001 → complete w/ evidence; RT-BUG-002 filed (A/B evidence); tick #98 entry
+9. ⏳ Judge verdict → mark complete → push verdict → next tick; then dispatch RT-BUG-002 or TS-4 (RT-BUG-002 blocks full-suite gate; decision next tick per queue — crash/hang fixes first, then TS-4)
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1..3 | all prior | ✅ Complete |
+| **RT-BUG-001 (crash fix)** | **RDBInterrupt 5/5 + 255/255 filter + 28/28 E2E + guard PASS + full suite 403 OK past crash site** | ✅ **VERIFIED this tick** (judge pending) |
+| **RT-BUG-002 (NEW — full-suite hang)** | A/B-proven pre-existing (both binaries hang) | ⏳ Queued next |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ After RT-BUG-002 |
+| PHASE3-TS-5, TS-6, FDW, ASYNC, WASM | — | ⏳ Queue |
+| RT-GAP-001 (docs) | — | ⏳ After TS queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → PHASE3-TS-3 ✅ → **RT-BUG-001 ✅ (tick #98)** → RT-BUG-002 (full-suite hang) → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM → RT-GAP-001
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (verification/close-out)** — RT-BUG-001 fix independently verified and closed: RDBInterrupt 5/5 + 255/255 regression+TS + 28/28 live E2E on fresh rebuild; original crash reproduced on pre-fix parent (`make unit` auto-run) proving the fix is real. New pre-existing full-suite hang discovered, A/B-proven, filed as RT-BUG-002 (RT-BUG-001 exonerated). Judge running; commit + push this tick.

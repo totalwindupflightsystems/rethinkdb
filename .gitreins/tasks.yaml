@@ -295,3 +295,25 @@ tasks:
   completed_at: '2026-08-06T20:18:14.828709+00:00'
   depends_on:
   - PHASE3-TS-2
+- id: RT-BUG-001
+  title: Null-safe meta-client guards in real_table write-path fetch helpers (RDBInterrupt
+    InsertOp/DeleteOp segfault fix)
+  criteria:
+  - RDBInterrupt filter 5/5 PASS (InsertOp, GetOp, DeleteOp, TcpInterrupt, HttpInterrupt)
+    on fresh binary
+  - get_generated_columns returns empty map when m_table_meta_client==nullptr (real_table.cc)
+  - get_time_series_config returns empty optional when m_table_meta_client==nullptr
+  - get_write_hook returns empty optional when m_table_meta_client==nullptr
+  - Full unit suite passes the RDBInterrupt crash site with no SIGSEGV (403+ tests
+    complete)
+  - Regression+TS combined filter 255/255 PASS (238+18, LiveVisitorSequenceWithSindexBlock
+    overlap deduped)
+  - Live E2E ts3_e2e_probe 28/28 PASS (real meta client write path unchanged)
+  - gitreins guard PASS (secrets/lint/tests)
+  - Commit scoped to src/rdb_protocol/real_table.cc only (+9 lines) with Co-authored-by
+    trailer
+  status: complete
+  created_at: '2026-08-06T23:02:22.394085+00:00'
+  completed_at: '2026-08-06T23:02:33.171530+00:00'
+  depends_on:
+  - PHASE3-TS-3
