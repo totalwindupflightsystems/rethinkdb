@@ -71,6 +71,7 @@
 | PERF-BENCH | Performance benchmarks (0 exist for CDC/vector/FTS) | Medium | 3 | CDC-10 | ++testing, +performance | DeepSeek V4 Flash | Mechanical: Google Benchmark scaffolding for existing features | MiniMax M3 |
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | deepseek-v4-flash | Audit runs every tick; finds new gaps | GLM-5.2 |
 | RT-GAP-001 | No user-facing docs for the PHASE3 time-series extension: repo has NO docs/ dir; README is upstream RethinkDB's quickstart. A user cannot learn what the TS extension is, how to create a time-series table (tableCreate timeSeries optargs), what between() chunk-pruning/retention/downsample do, or current status. Fix: write docs/time-series.md (overview, config syntax, query semantics, roadmap status) and link from README. | Medium | 3 | PHASE3-TS | ++documentation | deepseek-v4-flash | PM probe 2026-08-05: grep time_series docs/ → no docs dir exists; README mentions nothing of PHASE3 | GLM-5.2 |
+| RT-BUG-001 | RDBInterrupt.InsertOp + DeleteOp SEGFAULT (nil deref) in write path: write_batched_insert/write_batched_replace → get_generated_columns → table_meta_client_t::get_config. PRE-EXISTING (VEC-era, c121aefa72 introduced the unconditional get_generated_columns call); deterministic repro on main AND pre-TS-3 parent 0ee4cfc51c; masked because the standing regression filter excludes RDBInterrupt (GetOp/TcpInterrupt pass). Fix: null-safe meta-client handling in the generated-columns fetch; verify all 4 RDBInterrupt tests + full suite. | High | 2 | PHASE3-TS-3 | ++debugging, ++database-internals | deepseek-v4-flash | Foreman tick #96 evidence: 2/2 repro on main + parent, backtrace in /tmp/rt-iso.log | GLM-5.2 |
 
 **Assumptions:** CDC-09 decomposition reviewed by Bane; C++17 toolchain available; container memory ≥ 8GB for linker; fork push events require manual CI trigger.
 
@@ -4874,3 +4875,63 @@ VERDICT: **PRODUCTIVE (dispatch)** — TS-3 (between read pruning via chunk inde
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **COORDINATION** — tick #94's TS-3 worker confirmed alive and actively progressing (expected files dirty, build waves, on-brief diff, no TSDBG, no zombies, no drift). No dispatch; board-only commit. Next tick: verify worker output (ts3_e2e_probe + 16/16 TS units + 238/238 regression + guard), then gitreins task + judge + commit/push. Watch: dagger.db stray trio + RT-GAP-001 queue placement.
+
+## Verification Tick #96 — 2026-08-06 14:41 UTC (TS-3 verified — close-out)
+
+**Mission:** Poll tick #94's TS-3 worker (PID 2937023, now exited). Verify the landed commit independently, run all standing gates, create gitreins task + judge, commit/push board, DuckBrain write. Also: close out tick #95's flagged strays; file the discovered pre-existing crash as a tracked task.
+
+### Worker outcome (real tool output)
+
+| Check | Result |
+|-------|--------|
+| Worker process | ✅ exited; left NO uncommitted source — commit landed: **bbfe74bb86** `feat: time-series TS-3 read pruning — between() on time field scoped to overlapping chunks via chunk index` (main, 2026-08-05 11:36 -0500, Co-authored-by trailer present) |
+| Commit scope | ✅ exactly on-brief: 12 files, 915+/84− (btree.cc/hpp, datum_stream.cc + readgens.hpp, datumspec.hpp, protocol.cc/hpp, real_table.cc, store.cc, time_series_errors.hpp, time_series_test.cc +135, test/ts3_e2e_probe.py +247); 0 TSDBG |
+| Probe in commit | ✅ test/ts3_e2e_probe.py committed (worker left only TS3PRUNE_proof_log.txt untracked — evidence its own run passed; removed with other strays) |
+| Git state | ✅ main = bbfe74bb86, 1 ahead of origin/main (push this tick); HEAD was left detached at parent by the worker's final `git checkout` — foreman restored main |
+| Zombies / ports | ✅ none (no rethinkdb procs, no 39xxx listeners) |
+| Remote drift | ✅ fetch → no new remote commits (CI-001 board injection by supervisor cron 78c8c59846 arrived mid-tick — supervisor-owned, untouched) |
+
+### Independent verification (fresh rebuild, real runs)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| Rebuild | `make -j8` + `make unit -j8` after `git checkout main` (worker binaries predated commit by 2 min — rebuilt for rigor) | ✅ server 15:03 / unittest 15:04, exit 0 |
+| TS units | `--gtest_filter='*TimeSeries*'` | ✅ **18/18 PASS** (16 prior + 2 new TS-3 pruning tests) |
+| Regression | standing filter `*Cdc*:*cdc*:*Conflict*:*Vector*:*Fts*:*Brin*:*Sindex*:*GeneratedColumn*:*Term*:*Btree*:*Reql*` | ✅ **238/238 PASS** (31s) |
+| Live E2E | `python3 test/ts3_e2e_probe.py` (fresh server, ports 39115-17) | ✅ **28/28 PASS** (twice: 14:46 + 15:05; explicit+plain index between, open/closed/empty/inverted/unbounded bounds, backfill, restart persistence, chunk info 24 chunks/150 rows) |
+| Guard | `gitreins guard` (tier1: secrets/lint/build/tests) | ✅ PASS |
+| GitReins task | PHASE3-TS-3 created in tasks.yaml (post-commit timing per tick #92 pitfall) | ✅ 9 spec-derived criteria (spec §4.2/§6.3/§8.2) |
+| Judge | tier2 AI eval (deepseek-v4-flash, 100 iter/30m caps) | ⏳ launched background proc_7979b9364d0c — verdict next tick (addendum if it lands) |
+| DuckBrain | remember /foreman/rethinkdb/2026-08-06 (ID 6a82d612-a597-4cff-8e10-b6d600898edd) | ✅ written |
+
+### NEW FINDING — RT-BUG-001 (filed, queued ahead of TS-4)
+
+`RDBInterrupt.InsertOp` + `RDBInterrupt.DeleteOp` **segfault** (nil deref) in the write path: `write_batched_insert/replace → get_generated_columns → table_meta_client_t::get_config`. Full-suite run crashes (also crashes `make unit`'s auto-run). Evidence: deterministic 2/2 repro on main AND on pre-TS-3 parent 0ee4cfc51c → **pre-existing, NOT a TS-3 regression**. Root-cause hypothesis: VEC commit c121aefa72 added the unconditional `get_generated_columns(env)` call in the write path; interrupt tests construct an env where the meta client is null. Masked for 20+ ticks because the standing regression filter excludes RDBInterrupt (GetOp/TcpInterrupt pass). Board row added; fix dispatch = next tick after this close-out, BEFORE TS-4 (crash bug > feature).
+
+### Actions this tick
+
+1. ✅ Board tail read (tick #95 = coordination); worker polled → exited, commit found via reflog (`git log --all` + branch check)
+2. ✅ Commit audit: scope 12 files on-brief, TSDBG 0, trailer valid, probe committed
+3. ✅ Restored main (worker left detached HEAD at parent), fresh rebuild, all gates re-run independently
+4. ✅ Pre-existing crash triaged with parent-commit A/B build (decisive: parent crashes identically) — RT-BUG-001 filed with repro + backtrace evidence
+5. ✅ Strays closed: `dagger.db` + `TS3PRUNE_proof_log.txt` removed (tick #95 flag); DuckBrain CLI's transient `namespaces/` copy removed
+6. ✅ GitReins task PHASE3-TS-3 created (9 criteria), guard PASS, judge launched in background
+7. ✅ DuckBrain entry written
+8. ⏳ Judge verdict → mark task complete → push verdict → next tick
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1, PHASE3-TS-2 | all prior + 16/16 TS + 238/238 regression + 20/20 + 15/15 E2E | ✅ Complete |
+| **PHASE3-TS-3 (QUEUE #3c)** | **18/18 TS + 238/238 regression + 28/28 E2E + guard PASS** | ✅ **VERIFIED this tick** (judge pending) |
+| **RT-BUG-001 (NEW)** | — | ⏳ Fix dispatch next tick (pre-existing RDBInterrupt crash) |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ After RT-BUG-001 |
+| RT-GAP-001 (docs) | — | ⏳ Queued after TS queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned (configure fails on all compilers) |
+
+**Execution order:** ... → PHASE3-TS-2 ✅ → TS-3 ✅ (judge running) → **RT-BUG-001 (fix)** → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM → RT-GAP-001 (docs)
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (verification/close-out)** — TS-3 independently verified on a fresh rebuild: 18/18 units, 238/238 regression, 28/28 live E2E, guard PASS. Worker's commit adopted on main. Pre-existing write-path crash discovered + filed as RT-BUG-001 with parent-repro evidence (queued ahead of TS-4). Next tick: collect judge verdict (proc_7979b9364d0c), mark PHASE3-TS-3 complete + commit verdict, push, then dispatch RT-BUG-001 fix worker.
