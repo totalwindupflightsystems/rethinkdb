@@ -495,6 +495,9 @@ optional<counted_t<const ql::func_t> > real_table_t::get_write_hook(
     if (ignore_write_hook == ignore_write_hook_t::YES) {
         return write_hook;
     }
+    if (m_table_meta_client == nullptr) {
+        return write_hook;
+    }
 
     m_table_meta_client->get_config(uuid, env->interruptor, &config);
 
@@ -508,6 +511,9 @@ std::map<std::string, ql::wire_func_t> real_table_t::get_generated_columns(
     ql::env_t *env) {
     std::map<std::string, ql::wire_func_t> out;
     table_config_and_shards_t config;
+    if (m_table_meta_client == nullptr) {
+        return out;
+    }
     m_table_meta_client->get_config(uuid, env->interruptor, &config);
     out = config.config.generated_columns;
     return out;
@@ -519,6 +525,9 @@ optional<ql::time_series_config_t> real_table_t::get_time_series_config(
     ql::env_t *env) {
     optional<ql::time_series_config_t> out;
     table_config_and_shards_t config;
+    if (m_table_meta_client == nullptr) {
+        return out;
+    }
     m_table_meta_client->get_config(uuid, env->interruptor, &config);
     out = config.config.time_series_config;
     return out;
