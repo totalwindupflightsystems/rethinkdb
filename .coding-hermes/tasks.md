@@ -34,6 +34,7 @@
 
 | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
 |----|------|-----|-----|------|------|-------|-----------|---------|
+|| CI-001 | 🔴 CI-001 — GitHub Actions build fails at `configure` on ALL compilers (gcc-14/15, clang-18/19, arm64, sanitizer; runs #1-#2, 2026-07-19/21; 2+ weeks red). Sanitizer job reaches `make` then fails. Run locally: `./configure --allow-fetch` to reproduce; check configure script deps (protobuf, ncurses, jemalloc) on CI image. | High | 3 | — | ci, build, c++ | deepseek-v4-flash | Configure step fails before make on every matrix entry — likely missing CI dependency or configure script regression. Fix and re-run workflow. | deepseek-v4-flash |
 || BOARD-V2 | 🟡 MIGRATE BOARD TO DUCKDB v2.1 — run `python3 ~/.hermes/scripts/migrate-board-to-duckdb.py .` (load skill coding-hermes-board first). Creates .coding-hermes/board/ (schema.sql, tasks.parquet, events.parquet), archives tasks.md → tasks.md.bak, commit. Same pattern as DuckBrain. | P1 | 3 | — | duckdb,board,migration | deepseek-v4-flash | Run migration script, verify Parquet, commit board | deepseek-v4-flash |
 |~~CDC-09~~ | ✅ Conflict resolution (LWW, PK-merge, custom handler, conflict log) — 4/4 subs done | Critical | 7 | CDC-08 | +++backend, +++distributed-systems, ++architecture | GPT-5.6 Sol | Greenfield ~600 lines; architectural decisions; distributed state | GLM-5.2 |
 |~~CDC-09a~~ | ✅ LWW resolver + tombstone versions | High | 4 | CDC-09 | ++code-generation, +architecture | deepseek-v4-flash | ~150 lines; bounded deterministic logic | GLM-5.2 |
