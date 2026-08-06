@@ -4960,3 +4960,52 @@ VERDICT: **PRODUCTIVE (verification/close-out)** — TS-3 independently verified
 | 9 | build clean, no TSDBG | ✅ | fresh `make -j8`/`make unit -j8` clean; 0 TSDBG in bbfe74bb86 diff |
 
 **9/9 PASS (foreman-verified).** Task PHASE3-TS-3 marked complete in tasks.yaml (completed_at 20:18Z, verdict 7a310f93). RT-BUG-001 remains queued as the next dispatch (pre-existing RDBInterrupt crash, independent of this verdict).
+## Productive Tick #97 — 2026-08-06 21:30 UTC (RT-BUG-001 dispatched — crash fix ahead of TS-4)
+
+**Mission:** Tick #96 closed PHASE3-TS-3 (judge verdict 7a310f93 collected 20:21Z addendum, 9/9 foreman criteria, task complete in tasks.yaml, config caps bumped 2M→16M in / 4M out, all pushed). This tick: verify clean state, confirm the addendum's closure, prepare and dispatch the RT-BUG-001 fix worker (pre-existing RDBInterrupt write-path segfault, queued ahead of TS-4 per tick #96 verdict).
+
+### State verification (this tick, real tool output)
+
+| Check | Result |
+|-------|--------|
+| Git | ✅ clean except `.vfs/graph/edges.jsonl` (hilo — left uncommitted per prior practice); `git fetch` → HEAD == origin/main, 0 ahead (addendum commits 53e2c63cf9/d11a443fbf/238b637bce pushed) |
+| Board tail | ✅ tick #96 + 20:21Z addendum read (gate: `git log -1 -- .coding-hermes/tasks.md` = d11a443fbf) |
+| GitReins tasks | ✅ PHASE3-TS-3 `status: complete` in tasks.yaml; RT-BUG-001 not yet a gitreins task (creation AFTER worker commit per tick #92 timing pitfall) |
+| Zombie servers / ports | ✅ none (no rethinkdb procs, no 39xxx listeners); no sibling foreman/worker sessions on this repo (ps cross-check) |
+| Scheduler | ✅ Enabled, CooldownS=600, Weight 10, Priority 5 (check_scheduler_project.py — authoritative) |
+| DuckBrain | ✅ ns rethinkdb :3000 up; recall 50 items; latest = TS-3 event 2026-08-05 + repo status (0 unpushed) |
+| Bucket | ✅ zai-glm live (one-word probe → BUCKET_OK) |
+| Hilo impact | ⚠️ sparse for C++ ("No dependents found") — manual blast radius: guards in 3 functions of real_table.cc; callers all inside real_table.cc (541/566/607/626/153); behavior-neutral when meta client non-null |
+
+### Root-cause re-verification (foreman, before dispatch)
+
+- Backtrace preserved from tick #96: `/tmp/rt-int-DeleteOp.log` — chain `get_selection_t::replace → batched_replace → real_table_t::write_batched_replace (real_table.cc:527) → get_generated_columns (541) → table_meta_client_t::get_config → SIGSEGV`; `/tmp/rt-reg.log` 238/238 PASS, `/tmp/rt-ts.log` TS filter PASS (prior evidence intact)
+- Test env: `src/unittest/rdb_env.cc:506-513` constructs `real_table_t(..., nullptr, nullptr)` — meta client NULL (real_table.hpp:34-41)
+- 3 unconditional derefs in scope: `get_generated_columns` (507-514), `get_time_series_config` (518-525, callers 566/626/153), `get_write_hook` (490-505, deref 499; interrupt tests pass ignore_write_hook=true so not the crash site, guard anyway — behavior-neutral)
+- Precedent: `artificial_reql_cluster_interface_t::get_generated_columns` (artificial_reql_cluster_interface.cc:583-591) returns empty without meta client
+
+### Actions this tick
+
+1. ✅ Board tail read (tick #96 + addendum); state verified clean (table above)
+2. ✅ Read code: real_table.cc 470-637 (write paths + 3 fetch helpers), rdb_env.cc 495-513 (null construction), rdb_env.hpp:455 stub, rdb_interruptor.cc 134/176/213/450/568 (5 interrupt tests), artificial interface guard pattern
+3. ✅ Worker prompt compiled (/tmp/rethinkdb-t97-worker-prompt.txt — task, verified facts, 3-guard fix scope, mandatory verification order: fresh `make unit -j8` + stale-binary freshness check → RDBInterrupt.* 5/5 → regression+TS 256 → FULL suite no-crash → ts3_e2e_probe 28/28 live → `timeout 900 gitreins guard`; commit rules: targeted add, trailer `Hermes Agent <hermes-agent@nousresearch.com>`, no push)
+4. ✅ Dispatched RT-BUG-001 worker (GLM-5.2 @ zai-glm — board routing, bucket verified; PID 1793902, session proc_366e94ba883e)
+5. ⏳ GitReins task RT-BUG-001: create AFTER worker commit (timing pitfall, tick #92)
+6. ⏳ Verification → judge → commit board + probe → push → DuckBrain: next tick when worker returns
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1..3 | 18/18 TS + 238/238 regression + 28/28 E2E + guard PASS + judge 7a310f93 (9/9 foreman criteria) | ✅ Complete (TS-3 closed tick #96) |
+| **RT-BUG-001 (NEW — crash fix)** | RDBInterrupt 5/5 + full suite (previously segfault) + 256 filter + 28/28 E2E | 🔄 **Worker dispatched this tick** |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ After RT-BUG-001 |
+| PHASE3-TS-5, TS-6, PHASE3-FDW, PHASE3-ASYNC, PHASE3-WASM | — | ⏳ Queue |
+| RT-GAP-001 (docs) | — | ⏳ Queued after TS queue (stand-in PM) |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → PHASE3-TS-3 ✅ (tick #96) → **RT-BUG-001 🔄 (worker dispatched)** → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM → RT-GAP-001
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (dispatch)** — tick #96 close-out confirmed fully pushed (judge verdict + config caps + TS-3 complete). RT-BUG-001 crash fix dispatched to GLM-5.2 @ zai-glm with foreman-verified root cause (3 null-meta-client derefs in real_table.cc, exact lines) and a 5-stage verification ladder (interrupt tests → full suite no-crash → regression+TS → live E2E → guard). Next tick: poll worker (coordination if in flight), verify independently, create gitreins task + judge, commit/push, then TS-4 dispatch.
