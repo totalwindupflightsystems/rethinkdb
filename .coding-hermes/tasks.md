@@ -5469,3 +5469,19 @@ Applied the worker's exact retiming (retention 60→3600s, old rows 100→5000s 
 **Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (verification + close)** — TS-4 closed: worker's engine work independently re-verified on a fresh binary (806/806), probe finished foreman-direct with one genuine semantics correction (spec §4.1 tile model — stamp-seal pins the last open chunk per store for one retention period; documented in probe + DuckBrain as a learning, NOT an engine bug). Commit 071405cfa4. Next tick: poll guard/judge result, then dispatch PHASE3-TS-5 (downsample pipeline + planner auto-selection, §4.3/§5.3/§6.4) per execution order.
+
+## Productive Tick #104 — 2026-08-07 12:33 UTC (RT-GAP-002 COMPLETE — python driver packaging)
+
+**Mission:** Migrate stand-in PM gap tasks to JSONL board, dispatch RT-GAP-002 (P1 python driver packaging). Worker + foreman verification.
+
+| Item | Detail |
+|------|--------|
+| Board | RT-GAP-002/003 migrated from tasks.md to board/tasks.jsonl (events 9-10); RT-GAP-002 dispatched (event 11) |
+| Worker | deepseek-v4-flash @ deepseek-foreman, PID 3459729, commit 3bc51407db: driver/python3/pyproject.toml (six>=1.10, protobuf>=3.8, looseversion>=0.2; numpy optional extra; no entry points) |
+| Foreman discovery | AC-spirit gap: `ssl.match_hostname` removed in Py3.12 → `rethinkdb.backports` missing in vendored driver → import FAILS on 3.12/3.13/3.14 (host /usr/bin/python3 = 3.12!). Worker's 3.11-only verification was insufficient |
+| Foreman-direct fix | baa407af64: vendored upstream rethinkdb/backports/ssl_match_hostname (Apache-2.0, official 2.4.4 wheel) + packages list extended. Mechanical exception (exact upstream file) |
+| Verification | pip install + import PASS on 3.12/3.13/3.14 (foreman venv battery); 3.11 worker-proven; PYTHONPATH source-tree OK with deps present |
+| Judge | 7516661e: tier2 3/3 PASS (evaluator ran own venv tests on 3.11/3.12/3.14); overall FAIL machine-only (build timeout + pre-existing lint/tier3 noise) — complete with evidence per RT-BUG-001/002 pattern |
+| Self-heal | Killed 4 stale stand-in-PM-sweep processes (2 rethinkdb daemons + hung timeout-60 unittest, 2h+ old, /tmp dirs deleted) |
+
+**Next:** RT-GAP-003 (web UI 404 — P2) → PHASE3-TS-5 (downsample pipeline).
