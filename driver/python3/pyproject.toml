@@ -16,4 +16,8 @@ dependencies = [
 vector = ["numpy"]
 
 [tool.setuptools]
-packages = ["rethinkdb"]
+packages = [
+    "rethinkdb",
+    "rethinkdb.backports",
+    "rethinkdb.backports.ssl_match_hostname",
+]
