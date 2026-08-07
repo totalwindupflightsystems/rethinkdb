@@ -72,7 +72,7 @@
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | deepseek-v4-flash | Audit runs every tick; finds new gaps | GLM-5.2 |
 | RT-GAP-001 | No user-facing docs for the PHASE3 time-series extension: repo has NO docs/ dir; README is upstream RethinkDB's quickstart. A user cannot learn what the TS extension is, how to create a time-series table (tableCreate timeSeries optargs), what between() chunk-pruning/retention/downsample do, or current status. Fix: write docs/time-series.md (overview, config syntax, query semantics, roadmap status) and link from README. | Medium | 3 | PHASE3-TS | ++documentation | deepseek-v4-flash | PM probe 2026-08-05: grep time_series docs/ → no docs dir exists; README mentions nothing of PHASE3 | GLM-5.2 |
 | ~~RT-BUG-001~~ | ✅ **FIXED (tick #98, fae959615e)** — 3 null-guards in real_table.cc (get_generated_columns / get_time_series_config / get_write_hook). RDBInterrupt 5/5 PASS (in-suite + isolated), 255/255 regression+TS filter, 28/28 ts3_e2e_probe, guard PASS. Full suite now passes crash site (403 OK) — remaining PartitionOpsTest hang = RT-BUG-002 (A/B-proven pre-existing) | High | 2 | PHASE3-TS-3 | ++debugging, ++database-internals | deepseek-v4-flash | Fix verified independently by foreman: RDBInterrupt 5/5 + 255/255 on fresh rebuild; parent-commit A/B for hang | GLM-5.2 |
-| 🔄 RT-BUG-002 | 🔄 **DISPATCHED tick #99** (GLM-5.2 @ zai-glm, worker PID 1330844, session proc_f0214d976e67; A/B open question: hang may be TS-2 superblock-pinning regression — c347269324, NOT proven PART-10 era) — PartitionOpsTest.PkDirectoryInsertLookupExistsRemove HANGS (deadlock, no output, ignores SIGTERM) — blocks FULL unit suite completion (suite dies at test #404 of 798). PRE-EXISTING: A/B-proven vs RT-BUG-001 only (hangs on fix parent 2867e1622a AND fixed binary; test from PART-10 era 93742cbd9b 2026-07-16; pure btree pk_directory test — no meta client, zero connection to RT-BUG-001). Full suite reaches 403 OK / 0 FAILED / 0 crashes before hang. Fix: diagnose pk_directory_t::try_insert/exists/lookup/remove deadlock (superblock write txn?) or mark test disabled. | Medium | 4 | — | ++debugging, ++database-internals, +concurrency | deepseek-v4-flash | Foreman tick #98 evidence: isolation run >90s hang on both binaries (EXIT=137 via timeout -k), RT-BUG-001 exonerated; tick #99: worker instructed to A/B pre-TS-2 (60d88f1103) | GLM-5.2 |
+| ✅ RT-BUG-002 | ✅ **FIXED (f357ff4c4f, verified tick #100)** — root cause: pk_directory_t::init() SELF-DEADLOCK (PART-08 era 40b395cd03): allocate_dir_block() holds a write buf_lock_t, then save() acquired a SECOND write lock on the SAME block_id in the same txn → two write acquirers on one current_page_t, second waits for a pulse that never fires. Masked 2nd bug: all 11 TPTEST sites committed with superblock alive (live_acqs_!=0 guarantee — would crash once hang fixed). Fix: removed redundant save() (allocate_dir_block zeroes blob-ref slot; load() returns default pk_directory_blob_t for zero-size blob — semantically identical) + superblock.reset() before each txn->commit(). A/B: pk_directory.cc byte-identical PART-08→HEAD — PREDATES PHASE3-TS-2 (c347269324); TS-2 exonerated. VERIFIED (foreman re-runs): isolate 55ms (was >90s hang EXIT=137), PartitionOpsTest 13/13, regression+TS 255/255, FULL suite 798/798 (246s, passes #404), guard PASS. Judge verdict 02011c6f: tier2 9/9 PASS, tier1 lint pre-existing only, tier3 informational. Commit scoped: pk_directory.cc +9/-3, partition_ops_test.cc +11, trailer present | Medium | 4 | — | ++debugging, ++database-internals, +concurrency | deepseek-v4-flash | Worker GLM-5.2 @ zai-glm (PID 1330844) diagnosis + foreman source-level confirmation (save() re-lock at pk_directory.cc:106-108; load() zero-blob default at 92-94) | GLM-5.2 |
 
 **Assumptions:** CDC-09 decomposition reviewed by Bane; C++17 toolchain available; container memory ≥ 8GB for linker; fork push events require manual CI trigger.
 
@@ -5183,3 +5183,72 @@ Tick #98 proved the hang is independent of RT-BUG-001's fix (hangs on both fae95
 **Cooldown:** 600s — scheduler-verified (authoritative)
 
 VERDICT: **PRODUCTIVE (dispatch)** — RT-BUG-002 fix worker dispatched to GLM-5.2 @ zai-glm with an expanded mandate: the "pre-existing" claim (tick #98) only held vs RT-BUG-001, so the worker must A/B the hang on the pre-TS-2 tree (60d88f1103) to determine whether TS-2's superblock machinery (time_series_mutex, SUPERBLOCK_ID pinning) introduced the deadlock. Verification ladder ends with a FULL 798-test suite run past test #404. Next tick: poll, verify independently, gitreins task + judge, then TS-4.
+
+## Productive Tick #100 — 2026-08-07 01:30 UTC (RT-BUG-002 FIXED + VERIFIED — full-suite hang closed, judge pending)
+
+**Mission:** Stewardship tick — tick #99's RT-BUG-002 worker (GLM-5.2 @ zai-glm, PID 1330844, session 20260806_191739_5dfbbc) landed fix commit f357ff4c4f at 00:40Z and exited clean (EXIT=0). This tick: independently verify EVERY ladder claim on the fresh binary, create gitreins task + judge, flip board matrix, commit + push, off-by-one, DuckBrain.
+
+### Board state at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | f357ff4c4f `fix: pk_directory init() self-deadlock + test superblock-before-commit invariant — RT-BUG-002` (worker commit 19:40 local, trailer present, UNPUSHED) |
+| Worker | exited EXIT=0; full report at /tmp/rt-bug002-worker.log; NO rethinkdb worker in flight (only ai_plays_poke sibling worker — unrelated) |
+| Full-suite log | /tmp/rt-full-unittest2.log — `[  PASSED  ] 798 tests` (246169 ms) — REAL log verified, hang point #404 passed |
+| Binary freshness | `find src -name '*.cc' -newer build/release/rethinkdb-unittest` → 0 files (built 19:32, after final edits) |
+| Git state | clean except `.vfs/graph/edges.jsonl` + untracked `dagger.db` (hilo/dagger artifacts — left uncommitted per practice) |
+| CRON_PAUSE_REQUESTED | STALE artifact from tick #59 (2026-07-29) — project active, ignored |
+| GitReins tasks.yaml | 17 tasks; RT-BUG-002 created THIS tick (post-worker-commit timing rule) |
+
+### Root cause (worker diagnosis, foreman source-verified)
+
+**Bug 1 — the hang (deadlock):** `pk_directory_t::init()` (src/btree/pk_directory.cc:37-56, PART-08 era 40b395cd03) called `allocate_dir_block(parent)` (returns write-locked `buf_lock_t` held in `block`), then called `save()` which acquires a SECOND write `buf_lock_t` on the SAME block_id (pk_directory.cc:106-108). Two write acquirers on one `current_page_t` in one txn deadlock — second waits for first's acquisition pulse that never fires. **Fix:** removed the redundant `save()` call — `allocate_dir_block` zeroes the blob-ref slot (lines 30-33); `load()` returns a default `pk_directory_blob_t` (format_version = PK_DIRECTORY_FORMAT_VERSION, empty entries) for zero-size blob (lines 92-94). Semantically identical for the empty case, deadlock gone.
+
+**Bug 2 — masked by Bug 1:** all 11 TPTEST sites in src/unittest/partition_ops_test.cc called `txn->commit()` while `superblock` scoped_ptr still alive → `live_acqs_ != 0` guarantee crash at page_cache flush. Added `superblock.reset();` before each commit (btree_whole.cc pattern). Fixing only Bug 1 would have converted the hang into a crash.
+
+**Pre-TS-2 A/B (foreman-verified, no rebuild needed):** `git log -- src/btree/pk_directory.cc` = exactly 2 commits (PART-08 + this fix); `git diff 40b395cd03 HEAD` shows only the fix. Bug code byte-identical since 2026-07-16 → **PREDATES PHASE3-TS-2 (c347269324)**. TS-2 superblock machinery (time_series_mutex, SUPERBLOCK_ID pinning) exonerated. Worker skipped the worktree rebuild with this justification — sound.
+
+### Independent verification (foreman re-runs on fresh binary)
+
+| Ladder step | Worker claim | Foreman verification | Result |
+|-------------|-------------|----------------------|--------|
+| Isolate `PkDirectoryInsertLookupExistsRemove` | 41ms PASS | **55ms PASS** (was >90s hang, EXIT=137) | ✅ |
+| `PartitionOpsTest.*` | 13/13 | **13/13 PASS** (469ms) | ✅ |
+| Regression+TS filter (255) | 255/255 | **255/255 PASS** (45908ms) | ✅ |
+| FULL suite (798) | 798/798, 246s | **log verified 798/798 PASSED** (246169ms), passes #404 | ✅ |
+| `gitreins guard` | PASS | **PASS** (secrets clean, lint ok, tests) | ✅ |
+| Commit f357ff4c4f | scoped 2 files + trailer | **verified** (pk_directory.cc +9/-3, partition_ops_test.cc +11, Co-authored-by present) | ✅ |
+
+### Judge (GitReins)
+
+| Stage | Result |
+|-------|--------|
+| tier1 | FAIL (machine-only) — lint = pre-existing full-tree check_style debt (cluster_config.cc etc., none in fix scope; same debt as ticks #90/#91/#96/#98). build ✓ secrets ✓ tests ✓ |
+| tier2 | **PASS — 9/9 criteria** (evaluator independently ran isolate / PartitionOps / 255 / full-suite / guard checks + code review of both fixes) |
+| tier3 | PASS (informational — cppcheck path config error + clang-tidy timeout, pre-existing tooling config) |
+| Verdict | **02011c6f** saved (.gitreins/history/2026-08-07/b4828700/) — same disposition as RT-BUG-001 (72128b58): COMPLETE with evidence |
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb worker in flight; git state clean (fix unpushed); pause file confirmed stale
+2. ✅ Board tail read (tick #99); worker report + full-suite log reviewed
+3. ✅ Fix diff + source-level verification: deadlock mechanism confirmed in `save()` (second write lock on same block_id); load() zero-blob default confirmed; history proves pre-TS-2
+4. ✅ Full independent verification ladder (isolate → PartitionOps → 255 → full-suite log → guard)
+5. ✅ GitReins task RT-BUG-002 created (10 criteria); first `task complete` run hit 540s timeout (status flipped, no verdict) → re-ran `gitreins judge` → **verdict 02011c6f, tier2 9/9 PASS**
+6. ✅ Board matrix flipped (RT-BUG-002 → ✅ FIXED) + tick #100 entry appended
+7. ⏳ Commit + push → off-by-one → DuckBrain
+8. ⏳ Next tick: PHASE3-TS-4 (QUEUE #3d — retention TTL + background jobs §5.2/§6.4/§7) per execution order
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE/VEC/TS-1..3, RT-BUG-001 | all prior | ✅ Complete |
+| **RT-BUG-002 (full-suite hang)** | isolate PASS + 13/13 + 255/255 + FULL 798/798 + guard PASS | ✅ **FIXED (f357ff4c4f, tick #100 verified)** |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ Next after RT-BUG-002 close |
+| PHASE3-TS-5, TS-6, FDW, ASYNC, WASM | — | ⏳ Queue |
+| RT-GAP-001 (docs), CI-001 (supervisor) | — | ⏳ |
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (stewardship/verification)** — RT-BUG-002 closed: root cause was a self-deadlock in `pk_directory_t::init()` (second write lock on same block_id via save()) from PART-08, NOT a TS-2 regression; second masked bug (superblock-alive commit) fixed in the same commit. All six ladder claims independently re-verified by the foreman. Judge verdict 02011c6f (tier2 9/9 PASS).
