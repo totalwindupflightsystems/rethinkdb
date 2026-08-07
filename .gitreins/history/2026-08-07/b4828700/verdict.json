@@ -1,0 +1,94 @@
+{
+  "task_id": "RT-BUG-002",
+  "task_title": "Fix PartitionOpsTest.PkDirectoryInsertLookupExistsRemove full-suite hang (pk_directory init self-deadlock + superblock-before-commit)",
+  "task_criteria": [
+    "Isolated PartitionOpsTest.PkDirectoryInsertLookupExistsRemove completes with PASS (no hang, no EXIT=137) on fresh binary",
+    "PartitionOpsTest.* 13/13 PASS",
+    "Regression+TS combined filter 255/255 PASS",
+    "Full unit suite 798/798 completes with PASSED summary (passes test #404, no hang)",
+    "pk_directory_t::init() no longer self-deadlocks (no second write lock on same block_id while first held)",
+    "All partition_ops_test.cc TPTEST sites release superblock before txn->commit() (live_acqs_ == 0 invariant)",
+    "Pre-TS-2 A/B: hang proven predating PHASE3-TS-2 (pk_directory.cc diff empty PART-08 -> HEAD)",
+    "gitreins guard PASS",
+    "Commit f357ff4c4f scoped to src/btree/pk_directory.cc + src/unittest/partition_ops_test.cc with Co-authored-by trailer"
+  ],
+  "passed": false,
+  "items": [],
+  "stages": {
+    "tier1": {
+      "id": "tier1",
+      "passed": false,
+      "any_failed": true,
+      "summary": "  \u2713 build:     [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n\n  \u2713 secrets: \n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m8:33PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75534445 \n  \u2717 lint: Done processing ./src/clustering/generic/multi_client_client.cc\nDone processing ./src/containers/bac\n  \u2713 tests: Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] R",
+      "steps": [
+        {
+          "id": "build",
+          "type": "script",
+          "passed": true,
+          "output": "    [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n",
+          "error": ""
+        },
+        {
+          "id": "secrets",
+          "type": "script",
+          "passed": true,
+          "output": "\n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m8:33PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75534445 bytes (75.53 MB) in 10s\u001b[0m\n\u001b[90m8:33PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mno leaks found\u001b[0m\n",
+          "error": ""
+        },
+        {
+          "id": "lint",
+          "type": "script",
+          "passed": false,
+          "output": "Done processing ./src/clustering/generic/multi_client_client.cc\nDone processing ./src/containers/backindex_bag.hpp\nDone processing ./src/clustering/generic/multi_client_client.hpp\nDone processing ./src/clustering/administration/perfmon_collection_repo.hpp\nDone processing ./src/clustering/generic/multi_client_metadata.hpp\nDone processing ./src/containers/buffer_group.cc\nDone processing ./src/clustering/administration/cluster_config.cc\nDone processing ./src/containers/auth_key.cc\nDone processing .",
+          "error": ""
+        },
+        {
+          "id": "tests",
+          "type": "script",
+          "passed": true,
+          "output": "Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] Running 200 tests from 24 test cases.\n[----------] Global test environment set-up.\n[----------] 1 test from PartitionConfigTest\n[ RUN      ] PartitionConfigTest.RouteHashKnownVectors\n[       OK ] PartitionConfigTest.RouteHashKnownVectors (1 ms)\n[----------] 1 test from PartitionConfigTest (1 ms total)\n\n[----------] 3 tests from OptargRegressionTest\n[ RUN      ] OptargRegressionTest.FtsOptargIsValid",
+          "error": ""
+        }
+      ]
+    },
+    "tier2": {
+      "id": "tier2",
+      "passed": true,
+      "any_failed": false,
+      "summary": "COMPLETE\n  \u2713 Isolated PartitionOpsTest.PkDirectoryInsertLookupExistsRemove completes with PASS (no hang, no EXIT=137) on fresh binary: Ran `./build/release/rethinkdb-unittest --gtest_filter='PartitionOpsTest.PkDirectoryInsertLookupExistsRemove'` on fresh binary (built 19:32:51 after source edits 19:25/19:32) \u2192 [PASSED] 1 test in 82ms, no hang, no EXIT=137. Worker log /tmp/rt-bug002-worker.log (a): 'COMPLETES in 41ms (was hanging >90s, EXIT=137)'.\n  \u2713 PartitionOpsTest.* 13/13 PASS: Ran `--gtest_filter='PartitionOpsTest.*'` \u2192 '[==========] 13 tests from 1 test case ran. [PASSED] 13 tests.' Also confirmed in /tmp/full_suite.log and /tmp/rt-full-unittest2.log (13 tests all OK).\n  \u2713 Regression+TS combined filter 255/255 PASS: /tmp/rt-t100-reg255.log: '[==========] 255 tests from 26 test cases ran. [PASSED] 255 tests. EXIT=0'.\n  \u2713 Full unit suite 798/798 completes with PASSED summary (passes test #404, no hang): /tmp/full_suite.log and /tmp/rt-full-unittest2.log: '[==========] 798 tests from 104 test cases ran. [PASSED] 798 tests.' Test #404 PartitionOpsTest.PkDirectoryInsertLookupExistsRemove OK (46ms/75ms), no hang.\n  \u2713 pk_directory_t::init() no longer self-deadlocks (no second write lock on same block_id while first held): src/btree/pk_directory.cc init() no longer calls save(). save() (line 112) creates `buf_lock_t dir_block(parent, dir_block_id, access_t::write)` \u2014 a second write lock on the same block_id while `block` from allocate_dir_block is still held. Fix removes the save() call, eliminating the self-deadlock.\n  \u2713 All partition_ops_test.cc TPTEST sites release superblock before txn->commit() (live_acqs_ == 0 invariant): All 11 txn->commit() sites (lines 231,258,298,339,373,396,423,447,465,490,556) each immediately preceded by superblock.reset(). Verified via awk context check on HEAD:src/unittest/partition_ops_test.cc.\n  \u2713 Pre-TS-2 A/B: hang proven predating PHASE3-TS-2 (pk_directory.cc diff empty PART-08 -> HEAD): `git diff 40b395cd03(PART-08) 1019010b79(pre-fix parent) -- src/btree/pk_directory.cc` is EMPTY; `git log 40b395cd03..1019010b79 -- pk_directory.cc` empty. Bug code byte-identical from PART-08 (07-16) through TS-2 (08-04) to pre-fix (08-06), proving hang predates PHASE3-TS-2.\n  \u2713 gitreins guard PASS: /tmp/guard2.log (19:51), /tmp/rt-t100-guard.log (20:23), /tmp/guard.log (20:27) all show 'Tier 1 Guards: PASS (secrets clean, lint ok, tests) GUARD_EXIT=0'. Worker log (e) confirms guard PASS.\n  \u2713 Commit f357ff4c4f scoped to src/btree/pk_directory.cc + src/unittest/partition_ops_test.cc with Co-authored-by trailer: `git show --name-only f357ff4c4f` \u2192 only src/btree/pk_directory.cc (+6/-3) and src/unittest/partition_ops_test.cc (+11/0). Commit body contains 'Co-authored-by: Hermes Agent <hermes-agent@nousresearch.com>'.\nAll 9 criteria verified PASS: the pk_directory init() self-deadlock fix (removed redundant save() second write-lock) plus superblock-before-commit resets in all 11 TPTEST sites resolve the full-suite hang, confirmed by isolated 1-test PASS, PartitionOpsTest 13/13, regression+TS 255/255, full suite 798/798 (test #404 passes), empty PART-08\u2192pre-fix pk_directory.cc diff proving pre-TS-2 provenance, gitreins guard PASS, and a properly scoped commit f357ff4c4f with Co-authored-by trailer.",
+      "steps": [
+        {
+          "id": "tier2",
+          "type": "ai_eval",
+          "passed": true,
+          "output": "COMPLETE\n  \u2713 Isolated PartitionOpsTest.PkDirectoryInsertLookupExistsRemove completes with PASS (no hang, no EXIT=137) on fresh binary: Ran `./build/release/rethinkdb-unittest --gtest_filter='PartitionOpsTest.PkDirectoryInsertLookupExistsRemove'` on fresh binary (built 19:32:51 after source edits 19:25/19:32) \u2192 [PASSED] 1 test in 82ms, no hang, no EXIT=137. Worker log /tmp/rt-bug002-worker.log (a): 'COMPLETES in 41ms (was hanging >90s, EXIT=137)'.\n  \u2713 PartitionOpsTest.* 13/13 PASS: Ran `--gtest_f",
+          "error": ""
+        }
+      ]
+    },
+    "tier3": {
+      "id": "tier3",
+      "passed": true,
+      "any_failed": false,
+      "summary": "  \u2713 cppcheck: === cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bi\n  \u2713 clang-tidy: Command timed out",
+      "steps": [
+        {
+          "id": "cppcheck",
+          "type": "script",
+          "passed": true,
+          "output": "=== cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bin/sh: 9: src/: Permission denied\ncppcheck done (informational only)\n",
+          "error": ""
+        },
+        {
+          "id": "clang-tidy",
+          "type": "script",
+          "passed": true,
+          "output": "",
+          "error": "Command timed out"
+        }
+      ]
+    }
+  },
+  "summary": "Judge Result: RT-BUG-002\n\nStage tier1: FAIL\n    \u2713 build:     [1/1] BUILD quickjs_0.15.1\nmake[1]: warning: undefined variable 'GNUMAKEFLAGS'\n\n  \u2713 secrets: \n    \u25cb\n    \u2502\u2572\n    \u2502 \u25cb\n    \u25cb \u2591\n    \u2591    gitleaks\n\n\u001b[90m8:33PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~75534445 \n  \u2717 lint: Done processing ./src/clustering/generic/multi_client_client.cc\nDone processing ./src/containers/bac\n  \u2713 tests: Note: Google Test filter = *Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*\n[==========] R\n\nStage tier2: PASS\n  COMPLETE\n  \u2713 Isolated PartitionOpsTest.PkDirectoryInsertLookupExistsRemove completes with PASS (no hang, no EXIT=137) on fresh binary: Ran `./build/release/rethinkdb-unittest --gtest_filter='PartitionOpsTest.PkDirectoryInsertLookupExistsRemove'` on fresh binary (built 19:32:51 after source edits 19:25/19:32) \u2192 [PASSED] 1 test in 82ms, no hang, no EXIT=137. Worker log /tmp/rt-bug002-worker.log (a): 'COMPLETES in 41ms (was hanging >90s, EXIT=137)'.\n  \u2713 PartitionOpsTest.* 13/13 PASS: Ran `--gtest_filter='PartitionOpsTest.*'` \u2192 '[==========] 13 tests from 1 test case ran. [PASSED] 13 tests.' Also confirmed in /tmp/full_suite.log and /tmp/rt-full-unittest2.log (13 tests all OK).\n  \u2713 Regression+TS combined filter 255/255 PASS: /tmp/rt-t100-reg255.log: '[==========] 255 tests from 26 test cases ran. [PASSED] 255 tests. EXIT=0'.\n  \u2713 Full unit suite 798/798 completes with PASSED summary (passes test #404, no hang): /tmp/full_suite.log and /tmp/rt-full-unittest2.log: '[==========] 798 tests from 104 test cases ran. [PASSED] 798 tests.' Test #404 PartitionOpsTest.PkDirectoryInsertLookupExistsRemove OK (46ms/75ms), no hang.\n  \u2713 pk_directory_t::init() no longer self-deadlocks (no second write lock on same block_id while first held): src/btree/pk_directory.cc init() no longer calls save(). save() (line 112) creates `buf_lock_t dir_block(parent, dir_block_id, access_t::write)` \u2014 a second write lock on the same block_id while `block` from allocate_dir_block is still held. Fix removes the save() call, eliminating the self-deadlock.\n  \u2713 All partition_ops_test.cc TPTEST sites release superblock before txn->commit() (live_acqs_ == 0 invariant): All 11 txn->commit() sites (lines 231,258,298,339,373,396,423,447,465,490,556) each immediately preceded by superblock.reset(). Verified via awk context check on HEAD:src/unittest/partition_ops_test.cc.\n  \u2713 Pre-TS-2 A/B: hang proven predating PHASE3-TS-2 (pk_directory.cc diff empty PART-08 -> HEAD): `git diff 40b395cd03(PART-08) 1019010b79(pre-fix parent) -- src/btree/pk_directory.cc` is EMPTY; `git log 40b395cd03..1019010b79 -- pk_directory.cc` empty. Bug code byte-identical from PART-08 (07-16) through TS-2 (08-04) to pre-fix (08-06), proving hang predates PHASE3-TS-2.\n  \u2713 gitreins guard PASS: /tmp/guard2.log (19:51), /tmp/rt-t100-guard.log (20:23), /tmp/guard.log (20:27) all show 'Tier 1 Guards: PASS (secrets clean, lint ok, tests) GUARD_EXIT=0'. Worker log (e) confirms guard PASS.\n  \u2713 Commit f357ff4c4f scoped to src/btree/pk_directory.cc + src/unittest/partition_ops_test.cc with Co-authored-by trailer: `git show --name-only f357ff4c4f` \u2192 only src/btree/pk_directory.cc (+6/-3) and src/unittest/partition_ops_test.cc (+11/0). Commit body contains 'Co-authored-by: Hermes Agent <hermes-agent@nousresearch.com>'.\nAll 9 criteria verified PASS: the pk_directory init() self-deadlock fix (removed redundant save() second write-lock) plus superblock-before-commit resets in all 11 TPTEST sites resolve the full-suite hang, confirmed by isolated 1-test PASS, PartitionOpsTest 13/13, regression+TS 255/255, full suite 798/798 (test #404 passes), empty PART-08\u2192pre-fix pk_directory.cc diff proving pre-TS-2 provenance, gitreins guard PASS, and a properly scoped commit f357ff4c4f with Co-authored-by trailer.\n\nStage tier3: PASS\n    \u2713 cppcheck: === cppcheck static analysis ===\ncppcheck: error: could not find or open any of the paths given.\n/bi\n  \u2713 clang-tidy: Command timed out\n\nOverall: FAIL \u2717",
+  "evaluated_at": "2026-08-07T01:39:32.268983"
+}

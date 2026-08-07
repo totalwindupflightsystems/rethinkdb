@@ -317,3 +317,24 @@ tasks:
   completed_at: '2026-08-06T23:02:33.171530+00:00'
   depends_on:
   - PHASE3-TS-3
+- id: RT-BUG-002
+  title: Fix PartitionOpsTest.PkDirectoryInsertLookupExistsRemove full-suite hang
+    (pk_directory init self-deadlock + superblock-before-commit)
+  criteria:
+  - Isolated PartitionOpsTest.PkDirectoryInsertLookupExistsRemove completes with PASS
+    (no hang, no EXIT=137) on fresh binary
+  - PartitionOpsTest.* 13/13 PASS
+  - Regression+TS combined filter 255/255 PASS
+  - 'Full unit suite 798/798 completes with PASSED summary (passes test #404, no hang)'
+  - pk_directory_t::init() no longer self-deadlocks (no second write lock on same
+    block_id while first held)
+  - All partition_ops_test.cc TPTEST sites release superblock before txn->commit()
+    (live_acqs_ == 0 invariant)
+  - 'Pre-TS-2 A/B: hang proven predating PHASE3-TS-2 (pk_directory.cc diff empty PART-08
+    -> HEAD)'
+  - gitreins guard PASS
+  - Commit f357ff4c4f scoped to src/btree/pk_directory.cc + src/unittest/partition_ops_test.cc
+    with Co-authored-by trailer
+  status: complete
+  created_at: '2026-08-07T01:22:47.564048+00:00'
+  completed_at: '2026-08-07T01:23:57.584121+00:00'
