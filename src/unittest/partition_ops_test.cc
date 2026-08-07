@@ -227,6 +227,7 @@ TPTEST(PartitionOpsTest, PkDirectoryInsertLookupExistsRemove) {
                   pk_directory_t::lookup(
                       txn.get(), superblock->expose_buf(), dir_id, pk));
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -253,6 +254,7 @@ TPTEST(PartitionOpsTest, PkDirectoryDuplicateDetection) {
                   pk_directory_t::lookup(
                       txn.get(), superblock->expose_buf(), dir_id, pk));
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -292,6 +294,7 @@ TPTEST(PartitionOpsTest, PkDirectoryMoveEntryAtomic) {
                   pk_directory_t::lookup(
                       txn.get(), superblock->expose_buf(), dir_id, pk));
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -332,6 +335,7 @@ TPTEST(PartitionOpsTest, PkDirectoryRemoveAllForPartition) {
                       txn.get(), superblock->expose_buf(), dir_id,
                       store_key_t("b1")));
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -365,6 +369,7 @@ TPTEST(PartitionOpsTest, PkDirectoryReleaseCleanup) {
                 txn.get(), superblock->expose_buf(), NULL_BLOCK_ID,
                 store_key_t("x")).is_nil());
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -387,6 +392,7 @@ TPTEST(PartitionOpsTest, CatalogLoadEmptyWhenAbsent) {
         EXPECT_TRUE(cat.stores.empty());
         EXPECT_EQ(NULL_BLOCK_ID, cat.primary_key_directory_block);
 
+        superblock.reset();
         txn->commit();
     });
 }
@@ -413,6 +419,7 @@ TPTEST(PartitionOpsTest, CatalogSaveLoadRoundTripActiveFailedDrained) {
                 txn.get(), superblock.get(), original);
             EXPECT_NE(NULL_BLOCK_ID,
                       superblock->get_partition_catalog_block_id());
+            superblock.reset();
             txn->commit();
         }
 
@@ -436,6 +443,7 @@ TPTEST(PartitionOpsTest, CatalogSaveLoadRoundTripActiveFailedDrained) {
             EXPECT_EQ(3u, loaded.stores[0].epoch);
             EXPECT_EQ(2u, loaded.stores[1].epoch);
             EXPECT_EQ(1u, loaded.stores[2].epoch);
+            superblock.reset();
             txn->commit();
         }
     });
@@ -453,6 +461,7 @@ TPTEST(PartitionOpsTest, CatalogReleaseClearsSuperblockRef) {
                 txn.get(), superblock.get(), make_catalog_with_states());
             ASSERT_NE(NULL_BLOCK_ID,
                       superblock->get_partition_catalog_block_id());
+            superblock.reset();
             txn->commit();
         }
 
@@ -477,6 +486,7 @@ TPTEST(PartitionOpsTest, CatalogReleaseClearsSuperblockRef) {
                 txn.get(), superblock.get());
             EXPECT_EQ(NULL_BLOCK_ID,
                       superblock->get_partition_catalog_block_id());
+            superblock.reset();
             txn->commit();
         }
     });
@@ -542,6 +552,7 @@ TPTEST(PartitionOpsTest, EnsurePkDirectoryPersistsInCatalog) {
             partition_ops_t::load_catalog(txn.get(), superblock.get());
         EXPECT_EQ(first, reloaded.primary_key_directory_block);
 
+        superblock.reset();
         txn->commit();
     });
 }

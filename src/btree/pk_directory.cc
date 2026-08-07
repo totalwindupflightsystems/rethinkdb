@@ -47,9 +47,12 @@ void pk_directory_t::init(txn_t *txn, buf_parent_t parent,
     buf_lock_t block = allocate_dir_block(parent);
     *dir_block_id = block.block_id();
 
-    pk_directory_blob_t empty;
-    empty.format_version = PK_DIRECTORY_FORMAT_VERSION;
-    save(txn, parent, *dir_block_id, empty);
+    /* allocate_dir_block zeroes the blob-ref slot, yielding an empty blob.
+     * load() returns a default pk_directory_blob_t (format_version =
+     * PK_DIRECTORY_FORMAT_VERSION, empty entries) for a zero-size blob, so
+     * the block is already correctly initialized. We must NOT call save()
+     * here: it would acquire a second write lock on the same block_id while
+     * `block` is still held, deadlocking the transaction. */
 }
 
 void pk_directory_t::ensure_allocated(txn_t *txn, buf_parent_t parent,
