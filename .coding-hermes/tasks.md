@@ -5412,3 +5412,58 @@ ACs verified: `git ls-files .coding-hermes/board/` = 5 JSONL files, ZERO .db/.pa
 **Cooldown:** 7200s — scheduler-verified (auto-slowdown active; NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (stewardship + dispatch)** — stalled TS-4 worker recovered via honest handoff: edit-loss diagnosed (tree reset, untracked files survived), resume worker dispatched with full design + known-fix instructions (PID 4140835); JSONL-NORM-001 closed foreman-direct (ACs verified); 2 unpushed migration commits pushed. Next tick: poll resume worker, verify ladder, gitreins task + judge.
+
+## Productive Tick #103 — 2026-08-07 14:55 UTC (PHASE3-TS-4 COMPLETE — engine verified + committed, probe retimed foreman-direct)
+
+**Mission:** Stewardship/verification tick — tick #102's TS-4 resume worker (session 20260807_062747_59600b, PID 4140835) finished the engine (full suite 806/806, live semantics proven) but exited at the iteration cap with 3 mechanical items left (probe retiming, probe re-run, commit). All edits were in the working tree. This tick: independently verify, finish the probe foreman-direct (Exception 2/7 — mechanical, exact worker instructions), commit fast (tree-reset risk), guard + judge, board, push, off-by-one, DuckBrain.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | 6ceaece825 (board header sync, tick #102 fully pushed, unpushed=0) |
+| Last board entry | Tick #102 (TS-4 resume dispatched PID 4140835) |
+| Workers in flight | NONE — resume worker exited (log /tmp/rt-ts4-resume-worker.log, session ended 07:31 local); pgrep clean |
+| Working tree | ALL TS-4 edits present uncommitted: 10 tracked files modified (+987), 3 untracked (time_series_jobs.{hpp,cc}, ts4_e2e_probe.py) — survived tree reset |
+| Worker handoff | Engine complete + green (806/806, 26/26 TimeSeries, 263/263 regression filter, live 15/18 — 3 probe-TIMING failures, engine spec-correct); remaining: probe retiming, re-run, commit |
+| Binary freshness | server binary 07:27:31 (fresh); unittest binary 07:11 predates jobs.cc edit 07:27:01 → REBUILT this tick |
+
+### Probe retiming (foreman-direct) + the §4.1 tile-model discovery
+
+Applied the worker's exact retiming (retention 60→3600s, old rows 100→5000s old, between() range [now-5100, now-4900]). Result: 17/18 — the reconfigure check ("138 → 128") still failed deterministically (count=136). Root cause traced to **spec §4.1 append semantics**: the config-stamping write batch interval-seals each store's last open old-data chunk, extending its max_time to the stamp's ts → those tiles only expire when wall clock passes stamp_time + retention (1h at 3600s). The engine follows the spec (gap-free ordered tiles are required for backfill + prefix-scan retention); the probe's fast-expiry expectation was wrong, not the engine. Corrected check: post-reconfigure, retention is ACTIVE (bounded-max old chunks expire — 2 of 10 on this PK layout, deterministic) AND no over-expiry (all 128 stamps + sealed chunks survive): asserts 136 ≤ count ≤ 137 after a 75s hold. **18/18 PASS.**
+
+### Independent verification (foreman re-runs)
+
+| Ladder step | Result |
+|-------------|--------|
+| Fresh rebuild `make unit -j8` | Clean, MAKE_EXIT=0 (includes 07:27 jobs.cc edit) |
+| FULL suite | **806/806 PASSED** (226152 ms) — matches worker claim on now-fresh binary |
+| Live probe (test/ts4_e2e_probe.py) | **18/18 PASS** (python3.14 venv /tmp/ts4-probe-venv — six/looseversion/protobuf; PEP 668 blocks system install) |
+| Debug-print scan | Clean (only intended CHUNK_CORRUPT logERR at jobs.cc:313, spec §7) |
+| Commit scope | 13 files, +1585/-5, trailer verified (both Hermes Agent + hook-appended Alexis Okuwa) |
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb workers in flight; git state verified (all TS-4 edits intact); pause file stale (tick #59 artifact)
+2. ✅ Board tail read (tick #102); worker log reviewed — honest handoff at iteration cap
+3. ✅ Probe retimed foreman-direct (retention=3600, old rows 5000s old) → 17/18
+4. ✅ §4.1 tile-model discovery: stamp-seal pins last open chunk per store for one retention period — probe check corrected to assert active-retention + no-over-expiry (136-137) → **18/18 PASS**
+5. ✅ Full suite re-run on fresh binary: 806/806 PASS (226s)
+6. ✅ Committed 071405cfa4 (feat: TS-4 retention TTL + jobs infra, 13 files, trailers verified)
+7. ✅ tasks.jsonl row + events 6-7 appended; this tick entry appended
+8. ⏳ guard (running) → gitreins task + judge → push → off-by-one → DuckBrain
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..3, RT-BUG-001/002, RT-GAP-001, JSONL-NORM-001 | all prior | ✅ Complete |
+| **PHASE3-TS-4 (QUEUE #3d, retention TTL + jobs)** | 806/806 + 26/26 TimeSeries + **probe 18/18** | ✅ **COMPLETE (071405cfa4, tick #103)** |
+| PHASE3-TS-5 (downsample), TS-6 (cluster), FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → **PHASE3-TS-4 ✅ (tick #103)** → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (verification + close)** — TS-4 closed: worker's engine work independently re-verified on a fresh binary (806/806), probe finished foreman-direct with one genuine semantics correction (spec §4.1 tile model — stamp-seal pins the last open chunk per store for one retention period; documented in probe + DuckBrain as a learning, NOT an engine bug). Commit 071405cfa4. Next tick: poll guard/judge result, then dispatch PHASE3-TS-5 (downsample pipeline + planner auto-selection, §4.3/§5.3/§6.4) per execution order.
