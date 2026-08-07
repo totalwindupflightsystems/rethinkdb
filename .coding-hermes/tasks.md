@@ -37,7 +37,7 @@
 || CI-001 | 🔴 CI-001 — GitHub Actions build fails at `configure` on ALL compilers (gcc-14/15, clang-18/19, arm64, sanitizer; runs #1-#2, 2026-07-19/21; 2+ weeks red). Sanitizer job reaches `make` then fails. Run locally: `./configure --allow-fetch` to reproduce; check configure script deps (protobuf, ncurses, jemalloc) on CI image. | High | 3 | — | ci, build, c++ | deepseek-v4-flash | Configure step fails before make on every matrix entry — likely missing CI dependency or configure script regression. Fix and re-run workflow. | deepseek-v4-flash |
 || BOARD-V2 | 🟡 MIGRATE BOARD TO DUCKDB v2.1 — run `python3 ~/.hermes/scripts/migrate-board-to-duckdb.py .` (load skill coding-hermes-board first). Creates .coding-hermes/board/ (schema.sql, tasks.parquet, events.parquet), archives tasks.md → tasks.md.bak, commit. Same pattern as DuckBrain. | P1 | 3 | — | duckdb,board,migration | deepseek-v4-flash | Run migration script, verify Parquet, commit board | deepseek-v4-flash |
 || RT-GAP-002 | 🔴 Python driver not installable by the documented path: `pip install ./driver/python3` (driver/python3/README.md:23) fails — no setup.py/pyproject.toml ("does not appear to be a Python project"); the PYTHONPATH workaround then fails with `ModuleNotFoundError: No module named 'six'` (imported by rethinkdb._export, never declared). Three consecutive quickstart failures for a Python user (verified 2026-08-07 stand-in PM sweep). Fix: add packaging metadata at driver/python3/ (setup.py or pyproject.toml) declaring `six` (or vendor it). PASS: `pip install ./driver/python3` succeeds AND `python3 -c "import rethinkdb; print(rethinkdb.version)"` works in a clean venv. | P1 | 3 | — | python, packaging | deepseek-v4-flash | broken install path + undeclared dep | deepseek-v4-flash |
-|| RT-GAP-003 | 🟡 Web admin UI 404s: `rethinkdb --bind 127.0.0.1` then `curl http://localhost:8080/` → "404 page not found" — the admin dashboard assets were moved to the `old_admin` branch and never bundled into src/gen/web_assets.cc (CONTRIBUTING.md:27-29 admits this). A user following the README's web-UI workflow hits a dead end; only the ReQL port (28015) works. Fix: build the UI assets into web_assets.cc OR document that the web UI is unavailable and the driver is the supported surface. PASS: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/` returns 200 with HTML, OR README/AGENTS explicitly document the UI as unavailable with driver-only workflow. | P2 | 2 | — | web, docs | deepseek-v4-flash | phantom UI | deepseek-v4-flash |
+|| ~~RT-GAP-003~~ | ✅ Web admin UI 404 — **premise STALE (tick #105): assets ARE bundled (208 entries incl /index.html, src/gen/web_assets.cc); live verify HTTP 200 + admin console HTML; reported 404 = port collision with asce-krakend-1 container on host:8080. README now documents Web Admin UI + `--http-port` override.** | P2 | 2 | — | web, docs | deepseek-v4-flash | phantom UI — root-caused, docs fixed | deepseek-v4-flash |
 |~~CDC-09~~ | ✅ Conflict resolution (LWW, PK-merge, custom handler, conflict log) — 4/4 subs done | Critical | 7 | CDC-08 | +++backend, +++distributed-systems, ++architecture | GPT-5.6 Sol | Greenfield ~600 lines; architectural decisions; distributed state | GLM-5.2 |
 |~~CDC-09a~~ | ✅ LWW resolver + tombstone versions | High | 4 | CDC-09 | ++code-generation, +architecture | deepseek-v4-flash | ~150 lines; bounded deterministic logic | GLM-5.2 |
 |~~CDC-09b~~ | ✅ Primary-key merge | High | 4 | CDC-09a | ++code-generation, +testing | deepseek-v4-flash | ~120 lines; upsert logic well-specified | GLM-5.2 |
@@ -5485,3 +5485,41 @@ VERDICT: **PRODUCTIVE (verification + close)** — TS-4 closed: worker's engine 
 | Self-heal | Killed 4 stale stand-in-PM-sweep processes (2 rethinkdb daemons + hung timeout-60 unittest, 2h+ old, /tmp dirs deleted) |
 
 **Next:** RT-GAP-003 (web UI 404 — P2) → PHASE3-TS-5 (downsample pipeline).
+
+## Productive Tick #105 — 2026-08-07 15:55 UTC (RT-GAP-003 CLOSED — premise stale, docs fixed foreman-direct)
+
+**Mission:** Resolve RT-GAP-003 (web admin UI 404, P2 web/docs). Foreman-direct investigation + docs fix (shortened loop — no worker needed).
+
+### Premise verification (foreman-direct)
+
+| Check | Result |
+|-------|--------|
+| src/gen/web_assets.cc | EXISTS, 8.9MB, **208 asset entries** incl `/index.html` — "never bundled" claim FALSE |
+| Live server test | `rethinkdb create` + `serve --http-port 38080` → **HTTP 200**, admin console HTML (`<title>RethinkDB Administration Console</title>`) |
+| Reported 404 root cause | Host port 8080 is owned by **asce-krakend-1** Docker container (KrakenD gateway), NOT rethinkdb — port collision, not a missing UI |
+| README docs gap | Real: README had zero web-UI documentation → added "Web Admin UI" section (default port 8080, `--http-port` override, asset regeneration pointer to CONTRIBUTING.md) |
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb workers in flight (sibling projects only); stray `dagger.db` + `rethinkdb.egg-info/` left untracked (not committed)
+2. ✅ Board tail read (tick #104); JSONL board confirmed canonical (tasks.jsonl/events.jsonl tracked, board.db gitignored)
+3. ✅ Premise verified: assets bundled, UI live-verified HTTP 200 on fresh server — 404 was Krakend container port collision
+4. ✅ Docs fix: README "Web Admin UI" section (foreman-direct, docs task = shortened loop)
+5. ✅ Board: tasks.jsonl RT-GAP-003 → complete (foreman_note with root cause), event id=14, tasks.md matrix row struck through
+6. ✅ edges.jsonl delta (123 legit TS-4 edges, all files tracked in HEAD) committed alongside
+7. ✅ Test server stopped, port 38080 free; /tmp/rt-gap3-verify/db left for reuse
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..4, RT-BUG-001/002, RT-GAP-001/002, JSONL-NORM-001 | all prior | ✅ Complete |
+| **RT-GAP-003 (web UI docs)** | live HTTP 200 verified | ✅ **COMPLETE (tick #105, premise-stale disposition)** |
+| PHASE3-TS-5 (downsample), TS-6 (cluster), FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → **RT-GAP-003 ✅ (tick #105)** → PHASE3-TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (premise verification + docs close)** — RT-GAP-003 closed as premise-stale with live evidence (HTTP 200 admin console, 208 bundled assets; 404 = external port collision). README docs gap fixed. Next: PHASE3-TS-5 (downsample pipeline + planner auto-selection, §4.3/§5.3/§6.4) per execution order.

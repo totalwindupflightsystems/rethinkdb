@@ -61,6 +61,30 @@ Looking to explore what else RethinkDB offers or the specifics of
 ReQL? Check out [our RethinkDB docs](https://rethinkdb.com/docs/) and
 [ReQL API](https://rethinkdb.com/api/).
 
+Web Admin UI
+------------
+
+The bundled administrative web UI is served by the server on port
+`8080` by default. Start a server (see [Building](#building) below),
+then open <http://localhost:8080> in a browser — or, with the Python
+driver, connect to the driver port (default `28015`):
+
+    rethinkdb serve
+
+To change the HTTP port (for example when `8080` is already taken by
+another service on the host, or when running multiple instances), pass
+`--http-port`:
+
+    rethinkdb serve --http-port 8081
+
+The UI's static assets are pre-generated into
+`src/gen/web_assets.cc` (see `CONTRIBUTING.md` — "Building the admin
+UI" — for how to regenerate them from the [`old_admin`][old_admin]
+branch). The ReQL driver remains the primary supported interface for
+programmatic access.
+
+[old_admin]: https://github.com/rethinkdb/rethinkdb/tree/old_admin
+
 Building
 --------
 
