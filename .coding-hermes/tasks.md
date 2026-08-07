@@ -72,7 +72,7 @@
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, ++debugging, +testing | deepseek-v4-flash | Audit runs every tick; finds new gaps | GLM-5.2 |
 | RT-GAP-001 | No user-facing docs for the PHASE3 time-series extension: repo has NO docs/ dir; README is upstream RethinkDB's quickstart. A user cannot learn what the TS extension is, how to create a time-series table (tableCreate timeSeries optargs), what between() chunk-pruning/retention/downsample do, or current status. Fix: write docs/time-series.md (overview, config syntax, query semantics, roadmap status) and link from README. | Medium | 3 | PHASE3-TS | ++documentation | deepseek-v4-flash | PM probe 2026-08-05: grep time_series docs/ → no docs dir exists; README mentions nothing of PHASE3 | GLM-5.2 |
 | ~~RT-BUG-001~~ | ✅ **FIXED (tick #98, fae959615e)** — 3 null-guards in real_table.cc (get_generated_columns / get_time_series_config / get_write_hook). RDBInterrupt 5/5 PASS (in-suite + isolated), 255/255 regression+TS filter, 28/28 ts3_e2e_probe, guard PASS. Full suite now passes crash site (403 OK) — remaining PartitionOpsTest hang = RT-BUG-002 (A/B-proven pre-existing) | High | 2 | PHASE3-TS-3 | ++debugging, ++database-internals | deepseek-v4-flash | Fix verified independently by foreman: RDBInterrupt 5/5 + 255/255 on fresh rebuild; parent-commit A/B for hang | GLM-5.2 |
-| RT-BUG-002 | PartitionOpsTest.PkDirectoryInsertLookupExistsRemove HANGS (deadlock, no output, ignores SIGTERM) — blocks FULL unit suite completion (suite dies at test #404 of 798). PRE-EXISTING: A/B-proven (hangs on fix parent 2867e1622a AND fixed binary; test from PART-10 era 93742cbd9b 2026-07-16; pure btree pk_directory test — no meta client, zero connection to RT-BUG-001). Full suite reaches 403 OK / 0 FAILED / 0 crashes before hang. Fix: diagnose pk_directory_t::try_insert/exists/lookup/remove deadlock (superblock write txn?) or mark test disabled. | Medium | 4 | — | ++debugging, ++database-internals, +concurrency | deepseek-v4-flash | Foreman tick #98 evidence: isolation run >90s hang on both binaries (EXIT=137 via timeout -k), RT-BUG-001 exonerated | GLM-5.2 |
+| 🔄 RT-BUG-002 | 🔄 **DISPATCHED tick #99** (GLM-5.2 @ zai-glm, worker PID 1330844, session proc_f0214d976e67; A/B open question: hang may be TS-2 superblock-pinning regression — c347269324, NOT proven PART-10 era) — PartitionOpsTest.PkDirectoryInsertLookupExistsRemove HANGS (deadlock, no output, ignores SIGTERM) — blocks FULL unit suite completion (suite dies at test #404 of 798). PRE-EXISTING: A/B-proven vs RT-BUG-001 only (hangs on fix parent 2867e1622a AND fixed binary; test from PART-10 era 93742cbd9b 2026-07-16; pure btree pk_directory test — no meta client, zero connection to RT-BUG-001). Full suite reaches 403 OK / 0 FAILED / 0 crashes before hang. Fix: diagnose pk_directory_t::try_insert/exists/lookup/remove deadlock (superblock write txn?) or mark test disabled. | Medium | 4 | — | ++debugging, ++database-internals, +concurrency | deepseek-v4-flash | Foreman tick #98 evidence: isolation run >90s hang on both binaries (EXIT=137 via timeout -k), RT-BUG-001 exonerated; tick #99: worker instructed to A/B pre-TS-2 (60d88f1103) | GLM-5.2 |
 
 **Assumptions:** CDC-09 decomposition reviewed by Bane; C++17 toolchain available; container memory ≥ 8GB for linker; fork push events require manual CI trigger.
 
@@ -5105,3 +5105,81 @@ VERDICT: **PRODUCTIVE (verification/close-out)** — RT-BUG-001 fix independentl
 - **Disposition: COMPLETE with evidence** — same pattern as TS-1/TS-2/TS-3: tier2 verified + foreman-verified build/regression/E2E, only machine-lint debt outstanding (pre-existing, outside scope). Task RT-BUG-001 marked complete (completed_at 23:02Z, verdict 72128b58 committed in tasks.yaml).
 
 **Next tick:** dispatch RT-BUG-002 fix worker (full-suite hang: diagnose pk_directory deadlock or disable test) → then PHASE3-TS-4 (QUEUE #3d, retention TTL + background jobs).
+
+## Productive Tick #99 — 2026-08-07 00:20 UTC (RT-BUG-002 dispatched — full-suite hang fix, pre-TS-2 A/B open)
+
+**Mission:** Tick #98 closed RT-BUG-001 (judge verdict 72128b58, tier2 9/9 PASS, all pushed — HEAD c24afe9c01). This tick: self-heal, verify no worker in flight, dispatch the RT-BUG-002 fix worker (full-suite hang at test #404 of 798) with an expanded A/B mandate, board update, off-by-one, DuckBrain.
+
+### Board state at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | c24afe9c01 `chore: gitreins verdict 72128b58 for RT-BUG-001` — tick #98 fully pushed |
+| Last board entry | Tick #98 addendum (judge verdict 23:10Z) — RT-BUG-001 complete, RT-BUG-002 next |
+| Workers in flight | NONE for rethinkdb (hivemind/h4f/mafia workers running — unrelated projects) |
+| Git state | clean except `.vfs/graph/edges.jsonl` (hilo post-commit hook artifact — left uncommitted per practice) |
+| Binary freshness | `find src -name '*.cc' -newer build/release/rethinkdb-unittest` → 0 files (fresh, built 17:50) |
+| Scheduler | enabled, CooldownS=600, weight 10, priority 5, deepseek-v4-flash @ deepseek-foreman (foreman model) — verified live via :9090 |
+| CRON_PAUSE_REQUESTED | STALE artifact from tick #59 (2026-07-29, pre-PHASE3 approval) — project active, ignored |
+| GitReins tasks.yaml | 16 tasks, none for RT-BUG-002 yet (create AFTER worker commit — timing pitfall tick #92) |
+
+### Key insight this tick — the "pre-existing" claim needs a second A/B
+
+Tick #98 proved the hang is independent of RT-BUG-001's fix (hangs on both fae959615e and parent 2867e1622a). But BOTH binaries include PHASE3-TS-2 chunked storage (landed c347269324, 2026-08-03: btree_store time_series_mutex + catalog enshrine, page_cache SUPERBLOCK_ID pinning). The test itself is from PART-10 era (93742cbd9b, 2026-07-16) but NOBODY ran the full suite to completion between PART-10 and tick #98 — so the hang could be a TS-2 superblock-machinery regression, not a PART-10-era bug. Worker instructed to A/B on pre-TS-2 tree (git worktree at 60d88f1103 = parent of c347269324, rebuild, isolate run). This determines fix approach: TS-2 interaction vs pk_directory write path.
+
+### Dispatch
+
+| Field | Value |
+|-------|-------|
+| Task | RT-BUG-002 — diagnose/fix PartitionOpsTest.PkDirectoryInsertLookupExistsRemove deadlock (or justified disable) |
+| Model | GLM-5.2 @ zai-glm (proven on RT-BUG-001 — first full tier2 9/9 PASS; flat-rate bucket; board fallback for this row) |
+| Worker | PID 1330844, session proc_f0214d976e67, log /tmp/rt-bug002-worker.log |
+| Prompt | /tmp/rt-bug002-worker-prompt.txt — verified facts, gdb repro, pre-TS-2 A/B mandate, 6-step verification ladder (isolate pass → PartitionOpsTest.* → 255/255 regression+TS → FULL 798-test suite to completion → guard → commit w/ trailer) |
+| Commit rules | targeted add, `fix: ... Addresses RT-BUG-002.`, trailer `Hermes Agent <hermes-agent@nousresearch.com>`, NO push, NO gitreins task |
+
+### 14-point audit (dispatch tick — light)
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | N/A | No specs/ dir; AGENTS.md = architecture doc |
+| 2 | DOC COVERAGE | PASS | SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, CONTRIBUTING.md, LICENSE; RT-GAP-001 still queued |
+| 3 | TEST GAPS | PASS | 798 TEST() total; state unchanged from tick #98 (verified fresh binary, no source edits since) |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged |
+| 5 | PITFALL HUNT | PASS | No new commits since fae959615e; no regressions introduced |
+| 6 | PERFORMANCE | PASS | PERF-BENCH on board; unchanged |
+| 7 | ENDPOINT VERIFICATION | PASS | Binary fresh (17:50); no zombie servers (ps check) |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner; CI-001 supervisor-owned |
+| 9 | DUCKBRAIN SYNC | PASS | Tick #99 status + RT-BUG-002 dispatch written |
+| 10 | CODE QUALITY | PASS | Guard PASS was tick #98 state; worker will re-run guard on its change |
+| 11 | MIDDLE-OUT WIRING | PASS | hilo graph intact; edges.jsonl regenerated (uncommitted per practice) |
+| 12 | USABILITY | SKIP | Database engine — no browser/UI |
+| 13 | E2E TESTING | PASS | ts3_e2e_probe 28/28 at tick #98; unchanged this tick (no source edits) |
+| 14 | GITREINS JUDGE | ⏳ | RT-BUG-002: create task + judge after worker commit (next tick) |
+
+### Actions this tick
+
+1. ✅ Self-heal: scheduler verified live (enabled, 600s), pause request file confirmed stale (tick #59 artifact)
+2. ✅ Board tail read (tick #98 + addendum); git state verified clean; no rethinkdb worker in flight
+3. ✅ A/B insight: pre-TS-2 (60d88f1103) comparison added to worker mandate — "pre-existing" currently only proven vs RT-BUG-001
+4. ✅ Worker prompt compiled (/tmp/rt-bug002-worker-prompt.txt) + dispatched GLM-5.2 @ zai-glm (PID 1330844)
+5. ✅ Board matrix updated (RT-BUG-002 → 🔄 DISPATCHED) + tick #99 entry appended
+6. ✅ Off-by-one submit + discover (hang-deadlock class)
+7. ✅ DuckBrain: tick #99 status + RT-BUG-002 dispatch
+8. ⏳ Next tick: poll worker (coordination if in flight), independent verification (fresh rebuild, isolate test, PartitionOpsTest.*, 255/255, full suite past #404), create gitreins task + judge, commit/push, then TS-4 dispatch (or RT-BUG-002 re-dispatch if worker failed)
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE, PHASE3-VEC, PHASE3-TS-1..3, RT-BUG-001 | all prior (255/255 + 28/28 + judge 72128b58 9/9) | ✅ Complete |
+| **RT-BUG-002 (full-suite hang)** | isolate pass + PartitionOpsTest.* + 255/255 + FULL suite past #404 + guard | 🔄 **Worker dispatched this tick** |
+| PHASE3-TS-4 (QUEUE #3d) | — | ⏳ After RT-BUG-002 |
+| PHASE3-TS-5, TS-6, FDW, ASYNC, WASM | — | ⏳ Queue |
+| RT-GAP-001 (docs) | — | ⏳ After TS queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → RT-BUG-001 ✅ (tick #98) → **RT-BUG-002 🔄 (worker dispatched)** → TS-4 → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM → RT-GAP-001
+
+**Cooldown:** 600s — scheduler-verified (authoritative)
+
+VERDICT: **PRODUCTIVE (dispatch)** — RT-BUG-002 fix worker dispatched to GLM-5.2 @ zai-glm with an expanded mandate: the "pre-existing" claim (tick #98) only held vs RT-BUG-001, so the worker must A/B the hang on the pre-TS-2 tree (60d88f1103) to determine whether TS-2's superblock machinery (time_series_mutex, SUPERBLOCK_ID pinning) introduced the deadlock. Verification ladder ends with a FULL 798-test suite run past test #404. Next tick: poll, verify independently, gitreins task + judge, then TS-4.
