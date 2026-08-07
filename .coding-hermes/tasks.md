@@ -5523,3 +5523,58 @@ VERDICT: **PRODUCTIVE (verification + close)** — TS-4 closed: worker's engine 
 **Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (premise verification + docs close)** — RT-GAP-003 closed as premise-stale with live evidence (HTTP 200 admin console, 208 bundled assets; 404 = external port collision). README docs gap fixed. Next: PHASE3-TS-5 (downsample pipeline + planner auto-selection, §4.3/§5.3/§6.4) per execution order.
+
+## Productive Tick #106 — 2026-08-07 18:10 UTC (PHASE3-TS-5 DISPATCHED — downsample pipeline)
+
+**Mission:** Dispatch PHASE3-TS-5 (downsample pipeline + planner auto-selection, spec §4.3/§5.3/§6.4/§6.1) per execution order. Task row created on JSONL board, worker prompt compiled with verified facts + design guidance, worker spawned in background.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | f29962358a (RT-GAP-003 docs, tick #105 fully pushed) |
+| Last board entry | Tick #105 (RT-GAP-003 closed, premise-stale) |
+| Workers in flight | NONE for rethinkdb (siblings: mafia-ai-benchmark, eduos.dexdat.com.co, 9router — verified via ps) |
+| Working tree | Clean except 2 untracked (dagger.db, driver/python3/rethinkdb.egg-info/ — left untracked, tick #105 precedent) |
+| Board storage | JSONL canonical (.coding-hermes/board/{tasks,events}.jsonl tracked; board.db untracked cache, stale schema "no tasks table" — re-sync later) |
+| Scheduler | rethinkdb Enabled, CooldownS=7200 (scheduler-verified, no PUT per policy) |
+
+### TS-5 scope analysis (foreman)
+
+| Piece | State | TS-5 work |
+|-------|-------|-----------|
+| Config layer (§3.1) | DONE (TS-1) | `downsample_step_t` {age, to, aggregates: map<name_string_t, wire_func_t>}, `select_downsample()`, `validate_or_throw()` w/ DOWNSAMPLE_CONFLICT — reuse verbatim |
+| Chunked storage (§5.1) | DONE (TS-2) | `time_series_catalog_t` blob, `load/save/release_catalog`, `time_chunk_superblock_t`, route_insert/select_chunk |
+| Read pruning (§4.2) | DONE (TS-3) | `rget.ts_range` → store.cc:250-284 prunes chunk roots; auto-selection hooks here |
+| Retention + jobs (§5.2/§6.4) | DONE (TS-4) | `time_series_jobs_t` coroutine; `run_downsample_pass()` = deliberate no-op awaiting this task |
+| **Downsample storage (§5.3)** | **MISSING** | per-step parallel B-trees in catalog (sindex-style), serializable |
+| **Merge job (§6.4)** | **MISSING** | wire run_downsample_pass: sealed chunks → bucket by target_interval → evaluate aggregate wire_funcs → write downsample rows; idempotent watermark |
+| **Planner auto-selection (§4.3)** | **MISSING** | range_seconds > age → read downsample tree instead of chunk roots |
+| **tableDrop cascade (§6.1)** | **MISSING** | free downsample trees on drop |
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb workers in flight; git state clean; untracked artifacts left as-is
+2. ✅ Board tail read (tick #105) + JSONL board confirmed canonical
+3. ✅ DuckBrain recall: status + 50-key namespace scan (34 project keys; status stale at tick #91 — will update)
+4. ✅ Hilo: graph.db warm (4.7MB); stats tail shows C++ system-dep dominance (expected — C++ sparse per ops ref); blast radius passed in prompt (time_series_ops/store.cc/btree_store.cc/table_config.cc)
+5. ✅ PHASE3-TS-5 task row created (tasks.jsonl, event id=15, tick #106, P1 complexity 5)
+6. ✅ Worker prompt compiled (12.8KB: task verbatim, verified facts ×9, design guidance ×4, ACs ×7, verification ×4, commit instructions) — /tmp/rethinkdb_t106_ts5_worker_prompt.md
+7. ✅ Worker dispatched: deepseek-v4-flash @ deepseek-foreman, PID 1441654, session proc_a4ac9dfe5891 (background, notify_on_complete)
+8. ✅ task_dispatched event appended (events.jsonl id=16, tick #106); board.jsonl header updated
+9. ⏳ Next tick: poll worker → verify ladder independently (fresh unittest binary, full suite, *TimeSeries* filter) → gitreins task + judge → close
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..4, RT-BUG-001/002, RT-GAP-001/002/003, JSONL-NORM-001 | all prior | ✅ Complete |
+| **PHASE3-TS-5 (downsample pipeline)** | — | 🔄 **In flight (worker PID 1441654)** |
+| PHASE3-TS-6 (cluster), FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → **PHASE3-TS-5 🔄 (dispatched tick #106)** → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (dispatch)** — PHASE3-TS-5 dispatched per execution order with a fully pre-loaded worker prompt (verified facts + design guidance from foreman analysis of the existing config/storage/jobs layers). Task row + dispatch event on JSONL board. Next tick: poll worker, verify independently, judge, close.
