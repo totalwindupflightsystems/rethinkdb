@@ -338,3 +338,23 @@ tasks:
   status: complete
   created_at: '2026-08-07T01:22:47.564048+00:00'
   completed_at: '2026-08-07T01:23:57.584121+00:00'
+- id: PHASE3-TS-4
+  title: "Time-series retention TTL + background jobs (spec \xA75.2/\xA76.4/\xA77):\
+    \ per-store job coroutine, retention pass (chunk-granular, one txn per chunk,\
+    \ index-as-checkpoint), compaction, corrupt read-only, retention-only reconfigure,\
+    \ live probe"
+  criteria:
+  - expired_chunks/expire_chunk/compact_chunk in time_series_ops + 8 new unit tests
+    pass (26/26 TimeSeries filter)
+  - retention=0 disables; strict-less-than TTL; clock-underflow clamp
+  - time_series_jobs_t drainer lifecycle; CORO_PRIORITY_TIME_SERIES_JOBS in scheduler
+    range
+  - corrupt chunk raises TIME_SERIES_CHUNK_CORRUPT; table read-only for TS writes
+  - retention-only reconfigure accepted; immutable field change rejected
+  - test/ts4_e2e_probe.py 18/18 on live server
+  - full suite 806/806 on fresh build
+  - gitreins guard PASS
+  - commit 071405cfa4 scoped, co-author trailer present
+  status: complete
+  created_at: '2026-08-07T15:06:41.813878+00:00'
+  completed_at: '2026-08-07T15:06:46.562578+00:00'
