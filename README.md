@@ -120,6 +120,16 @@ possible without the support and contributions of hundreds of people
 from all over the world. We could use your help too! Check out our
 [contributing guidelines](CONTRIBUTING.md) to get started.
 
+Fork extensions
+---------------
+
+This fork adds PHASE3 extensions on top of upstream RethinkDB. Current
+documentation:
+
+* [Time-series extension](docs/time-series.md) — chunked time-ordered
+  storage, `between()` chunk pruning, retention TTL (in progress),
+  downsampling (queued).
+
 Donors
 ------
 
