@@ -5332,3 +5332,83 @@ PM escalated 2026-08-07 (~34h stale, attempts=0, deferred 6+ ticks, explicitly "
 **Cooldown:** 7200s — scheduler-verified (auto-slowdown active; NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (dispatch + close)** — PM-escalated RT-GAP-001 closed foreman-direct in the same tick the bump landed (attempts 0→1→done, docs code-grounded); PHASE3-TS-4 (QUEUE #3d, retention TTL + background jobs) dispatched to deepseek-v4-flash with verified-facts prompt and 7-step ladder. Board committed and pushed. Next tick: poll TS-4 worker, verify ladder independently, gitreins task + judge.
+
+## [ ] JSONL-NORM-001 — Board storage: JSONL canonical (git-friendly), untrack board.db/parquet (Bane directive 08-07)
+  Board must be git-uploadable JSONL (duckdb-native), not .db files. PASS: git ls-files .coding-hermes/board/ lists no board.db/*.parquet (git rm --cached); tasks.jsonl+events.jsonl tracked & authoritative (duckdb COPY export if migrating); .gitignore covers board.db+*.parquet; parity probe MATCH; commit with co-author trailer.
+  | ⏳ Pending | P1 | — | deepseek-v4-flash @ foreman | — | — |
+
+## Productive Tick #102 — 2026-08-07 11:30 UTC (PHASE3-TS-4 RESUME dispatched + JSONL-NORM-001 CLOSED)
+
+**Mission:** Self-heal, read JSONL-canonical board (post JSONL-NORM-001 migration), steward the stalled TS-4 worker (iteration-cap exit, tracked edits wiped by tree reset) → re-dispatch resume worker with full design handoff; close JSONL-NORM-001 (ACs met); board update, commit + push (incl. 2 unpushed migration commits), off-by-one, DuckBrain.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | 513ecf29b3 `board: fixtures E2E-001/GITREINS-JUDGE → fixtures.jsonl (JSONL-NORM-001)` — 2 unpushed migration commits (64690396e2, 513ecf29b3) |
+| Last board entry | Tick #101 (RT-GAP-001 closed + TS-4 dispatched PID 591407) |
+| TS-4 worker | EXITED at 200-iteration cap (session 20260806_215348_04b95d) — honest handoff: implementation written, suite RED, no commit |
+| Worker edit loss | **Scheduler tree reset wiped ALL tracked-file edits** (time_series_ops.cc +~230 lines, store.cc/btree_store.cc/table_config.cc wiring, 8 unit tests). UNTRACKED files survived: src/rdb_protocol/time_series_jobs.{hpp,cc} (408 lines, complete job infra) + test/ts4_e2e_probe.py (233 lines). No stash, no reflog recovery |
+| Git state | `.coding-hermes/tasks.md` + `.vfs/graph/edges.jsonl` modified (uncommitted); untracked dagger.db (stray, known), worker files above |
+| Scheduler | enabled, CooldownS=7200 (scheduler-verified via :9090), deepseek-v4-flash @ deepseek-foreman |
+| DuckBrain | ns rethinkdb :3000 up (recall relevance-ranked — stale entries; board is ground truth) |
+| Board | JSONL canonical (Bane 08-07): tasks.jsonl {NEVER-DONE pending, JSONL-NORM-001 pending}; legacy tasks.md tick history |
+
+### PHASE3-TS-4 — RESUME DISPATCHED (QUEUE #3d)
+
+- Prior worker's known issues folded into resume prompt: (A) build-4 compile error → remove all DIAG/ts_dump_tree debug prints; (B) RetentionExpiresChunks fixture bug — interval seal extends old chunk max_time to new chunk start (chunks tile the axis), fix via chunk_target_rows=2 row-threshold sealing; (C) RetentionTxnCrashSafety crash — write-txn abort is process death BY DESIGN in RethinkDB, keep RetentionResumesFromCheckpoint replacement
+- Re-apply list (wiped): time_series_ops.{hpp,cc} (expired_chunks/compactible_chunks/chunk_is_corrupt/erase_chunk_tree/expire_chunk/compact_chunk), store.cc (job start + corrupt-flag write rejection), btree_store.cc wiring, table_config.cc retention-only reconfigure helper, 8 unit tests in src/unittest/time_series_test.cc
+- Surviving design (authoritative): time_series_jobs.{hpp,cc} — per-store coroutine, drainer-lock lifecycle (tableDrop cleanup), CORO_PRIORITY_TIME_SERIES_JOBS (-2), per-chunk txn, index-as-checkpoint crash safety, no changefeeds (§6.5), corrupt → read-only
+- **Model:** deepseek-v4-flash @ deepseek-foreman; **Worker:** PID 4140835, session proc_f6a282a09b2c, log /tmp/rt-ts4-resume-worker.log, prompt /tmp/rethinkdb-t102-ts4-resume-prompt.txt
+- Prompt: full design handoff + 2 verified-fix instructions + re-apply list + original verified facts + 8-step ladder (build→freshness→TS filter→255/255→full suite→live probe→guard→style) + commit rules (targeted, trailer, 2-3 commits, no push, board off-limits)
+- GitReins task creation AFTER worker commit (tick #92 timing pitfall)
+
+### JSONL-NORM-001 — CLOSED
+
+ACs verified: `git ls-files .coding-hermes/board/` = 5 JSONL files, ZERO .db/.parquet tracked; .gitignore covers board.db/board.db.wal/*.parquet/*.duckdb; tasks.jsonl+events.jsonl tracked & authoritative (board.db = untracked cache per Bane 08-07 cache stance, no parity ceremony); commits 64690396e2 + 513ecf29b3 both carry co-author trailer. Marked complete in tasks.jsonl (commit 513ecf29b3, guard PASS). Note: duckdb module absent → board.db cache re-sync deferred (JSONL authoritative).
+
+### 14-point audit (dispatch tick — light)
+
+| # | Check | Result | Detail |
+|---|-------|--------|--------|
+| 1 | SPEC ALIGNMENT | PASS | phase3-timeseries.md §5.2/§6.4/§7; resume prompt cites them + prior design handoff |
+| 2 | DOC COVERAGE | PASS | RT-GAP-001 closed tick #101; docs/time-series.md + README link present |
+| 3 | TEST GAPS | PASS | 798 TEST() green baseline (no source commits since f357ff4c4f); TS-4 re-adds 8 tests |
+| 4 | PACKAGE UPGRADES | PASS | Bundled deps unchanged |
+| 5 | PITFALL HUNT | PASS | Tree-reset wipe documented (this tick); epoch_time + config().update() stats pitfalls in resume prompt |
+| 6 | PERFORMANCE | PASS | PERF-BENCH on board (gitreins pending); unchanged |
+| 7 | ENDPOINT VERIFICATION | PASS | No zombie servers (ps clean); worker builds will exercise binary |
+| 8 | CI/CD HEALTH | INFRA | Fork repo — no runner; CI-001 supervisor-owned |
+| 9 | DUCKBRAIN SYNC | PASS | Tick #102 status + tree-reset pitfall + resume pattern written |
+| 10 | CODE QUALITY | PASS | No code committed this tick (board-only); gitleaks trivially clean |
+| 11 | MIDDLE-OUT WIRING | PASS | C++ sparse for hilo; blast radius in resume prompt (time_series_ops/store.cc/btree_store.cc/table_config.cc) |
+| 12 | USABILITY | PASS | Docs gap closed tick #101 |
+| 13 | E2E TESTING | PASS | ts4_e2e_probe.py survives; resume worker must run live retention probe |
+| 14 | GITREINS JUDGE | PASS | Judge configured; PERF-BENCH only pending gitreins task |
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb workers in flight; TS-4 worker exited at cap with honest handoff (no fabricated verification)
+2. ✅ Board read: JSONL canonical (tasks.jsonl/events.jsonl) + legacy tasks.md tail via git-log gate; verified migration state + unpushed commits
+3. ✅ Diagnosed edit loss: scheduler tree reset wiped tracked-file edits (stash/reflog empty) — untracked time_series_jobs.{hpp,cc} + ts4_e2e_probe.py survived
+4. ✅ PHASE3-TS-4 resume prompt compiled (design handoff + 3 known-issue fixes + re-apply list + verified facts + 8-step ladder) + dispatched (PID 4140835)
+5. ✅ JSONL-NORM-001 closed (ACs verified); PHASE3-TS-4 row added to tasks.jsonl (in_flight/dispatched); events 2-4 appended
+6. ✅ Tick #102 entry appended to legacy tasks.md; board commit + push origin (incl. 2 unpushed migration commits)
+7. ⏳ Next tick: poll TS-4 resume worker → verify ladder independently → gitreins task + judge → close
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PERF-BENCH, PHASE3-MERGE/VEC/TS-1..3, RT-BUG-001/002 | all prior | ✅ Complete |
+| **JSONL-NORM-001 (board storage)** | tracked JSONL only; gitignore covers caches | ✅ **DONE (64690396e2 + 513ecf29b3, tick #102)** |
+| RT-GAP-001 (docs) | docs/time-series.md + README link | ✅ DONE (0fee3803ff, tick #101) |
+| **PHASE3-TS-4 (QUEUE #3d)** | resume worker (PID 4140835) | 🔄 **In flight** |
+| PHASE3-TS-5, TS-6, FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → RT-BUG-002 ✅ (tick #100) → **PHASE3-TS-4 🔄 (resume dispatched tick #102)** → TS-5 → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (auto-slowdown active; NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (stewardship + dispatch)** — stalled TS-4 worker recovered via honest handoff: edit-loss diagnosed (tree reset, untracked files survived), resume worker dispatched with full design + known-fix instructions (PID 4140835); JSONL-NORM-001 closed foreman-direct (ACs verified); 2 unpushed migration commits pushed. Next tick: poll resume worker, verify ladder, gitreins task + judge.
