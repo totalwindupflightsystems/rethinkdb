@@ -26,3 +26,10 @@ agent-sdlc-interaction-map.json
 build-artifacts/
 rethinkdb-artifact-*/
 driver/python/
+
+# .coding-hermes board: track JSONL + tasks.md, cache board.db/parquet locally
+.coding-hermes/board/board.db
+.coding-hermes/board/board.db.wal
+.coding-hermes/board/*.parquet
+.coding-hermes/board/*.duckdb
+
