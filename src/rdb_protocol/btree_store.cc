@@ -23,6 +23,7 @@
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/time_series_jobs.hpp"
 #include "stl_utils.hpp"
 
 // The maximal number of writes that can be in line for a superblock acquisition
@@ -176,6 +177,13 @@ store_t::store_t(const region_t &_region,
     default:
         unreachable();
     }
+
+    /* PHASE3-TS-4: start the per-store time-series maintenance jobs
+     * (retention, compaction, downsample trigger — spec §6.4). The job
+     * coroutine takes a drainer lock; `store_t::~store_t()` drains it, so
+     * the coroutine exits before any store state is torn down. */
+    time_series_jobs.init(new time_series_jobs_t(this));
+    time_series_jobs->start(&drainer);
 }
 
 store_t::~store_t() {

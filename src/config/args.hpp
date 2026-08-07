@@ -202,6 +202,11 @@
 #define CORO_PRIORITY_RESET_DATA                (-2)
 #define CORO_PRIORITY_DIRECTORY_CHANGES         (-2)
 #define CORO_PRIORITY_LBA_GC                    (-2)
+/* PHASE3-TS-4: per-store time-series maintenance jobs (retention,
+ * compaction) run strictly behind live queries and other background work
+ * (spec §9.3). Must stay within the scheduler's inclusive priority range
+ * [MESSAGE_SCHEDULER_MIN_PRIORITY, MESSAGE_SCHEDULER_MAX_PRIORITY]. */
+#define CORO_PRIORITY_TIME_SERIES_JOBS          (-2)
 
 #endif  // CONFIG_ARGS_HPP_
 

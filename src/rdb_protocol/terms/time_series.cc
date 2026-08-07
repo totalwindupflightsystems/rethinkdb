@@ -279,4 +279,38 @@ datum_t format_time_series_chunk_info_datum(
     return std::move(builder).to_datum();
 }
 
+bool time_series_reconfigure_allows_retention_change(
+        const datum_t &old_datum, const datum_t &new_datum) {
+    if (old_datum == new_datum) {
+        return true;
+    }
+    if (!old_datum.has() || !new_datum.has()
+            || old_datum.get_type() != datum_t::R_OBJECT
+            || new_datum.get_type() != datum_t::R_OBJECT) {
+        return false;
+    }
+    /* Same key set, and every key except `retention` must hold the same
+     * value. The key-count check rejects datums that dropped `retention`
+     * or carry extra keys. */
+    if (old_datum.obj_size() != new_datum.obj_size()) {
+        return false;
+    }
+    const datum_string_t retention_key("retention");
+    for (size_t i = 0; i < old_datum.obj_size(); ++i) {
+        const datum_string_t &field = old_datum.get_pair(i).first;
+        const datum_t new_val = new_datum.get_field(field, NOTHROW);
+        if (!new_val.has()) {
+            return false;
+        }
+        if (field == retention_key) {
+            continue;
+        }
+        const datum_t old_val = old_datum.get_field(field, NOTHROW);
+        if (old_val != new_val) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace ql

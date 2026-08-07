@@ -41,6 +41,7 @@ class io_backender_t;
 class real_superblock_t;
 class sindex_superblock_t;
 class superblock_t;
+class time_series_jobs_t;
 class txn_t;
 class cache_balancer_t;
 struct rdb_modification_report_t;
@@ -479,6 +480,27 @@ public:
     // Mind the constructor ordering. We must destruct drainer before destructing
     // many of the other structures.
     auto_drainer_t drainer;
+
+    /* PHASE3-TS-4: per-store time-series maintenance jobs (retention,
+     * compaction, downsample trigger — spec §6.4). Started at the end of
+     * the store constructor; the job coroutine holds a drainer lock, so
+     * `drainer.drain()` in the destructor joins it before any store state
+     * is torn down. Declared before `drainer` so it is destroyed after the
+     * drain completes. */
+    scoped_ptr_t<time_series_jobs_t> time_series_jobs;
+
+    /* PHASE3-TS-4 (§7): set by the jobs coroutine when a structurally
+     * corrupt chunk is found (rows claimed in the index but no tree root).
+     * Time-series writes are then rejected with TIME_SERIES_CHUNK_CORRUPT
+     * while reads keep working. Home-thread only, like the rest of the
+     * store's state. */
+    bool time_series_corrupt_ = false;
+    void mark_time_series_corrupt() {
+        time_series_corrupt_ = true;
+    }
+    bool time_series_corrupt() const {
+        return time_series_corrupt_;
+    }
 
     // ── CDC capture seam (CDC-03) ──
     //

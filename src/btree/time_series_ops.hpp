@@ -36,8 +36,10 @@ class txn_t;
 class btree_slice_t;
 class real_superblock_t;
 class deletion_context_t;
+class signal_t;
 struct point_write_response_t;
 struct rdb_modification_info_t;
+struct rdb_modification_report_t;
 
 namespace profile {
 class trace_t;
@@ -53,6 +55,11 @@ static constexpr uint32_t TIME_SERIES_CATALOG_FORMAT_VERSION = 1;
  * 1M rows ≈ ~256 MB of leaf data at ~256 bytes/doc, a reasonable balance
  * between chunk-index size and append locality. */
 static constexpr uint64_t TIME_SERIES_CHUNK_TARGET_ROWS = 1000000;
+
+/* Erase batch cap for chunk deletion (PHASE3-TS-4, §9.3 memory bound):
+ * rdb_erase_small_range uses O(batch) memory, so a chunk tree is freed in
+ * bounded passes of at most this many rows. */
+static constexpr uint64_t TIME_SERIES_RETENTION_ERASE_BATCH = 1000;
 
 /* Durable time-series catalog blob. Serialized at LATEST_DISK like the
  * partition catalog (Phase-3 data never existed in an older format). */
@@ -157,6 +164,54 @@ public:
 
     /* Total rows across all chunks. */
     static uint64_t total_rows(const ql::time_chunk_index_t &chunk_index);
+
+    /* ── retention + compaction (PHASE3-TS-4, spec §5.2/§6.4/§7) ───────── */
+
+    /* Indices of chunks whose newest row is strictly older than the
+     * retention cutoff (chunk.max_time_us < now_us - retention; exactly-
+     * at-TTL chunks are kept, spec §8.1). retention_seconds == 0 disables
+     * retention. Chunks are time-ordered, so the expired chunks form a
+     * prefix of the index and the scan stops at the first live chunk. A
+     * clock-underflow guard (now before the retention span has elapsed)
+     * clamps the cutoff to 0, expiring nothing. */
+    static std::vector<size_t> expired_chunks(
+        const ql::time_chunk_index_t &chunk_index,
+        uint64_t now_us, uint64_t retention_seconds);
+
+    /* Indices of sealed (non-newest) chunks with rows whose newest row is
+     * at least min_age_seconds old — compaction candidates (§6.4: "chunk
+     * sealed + 1 hour old"). The active newest chunk is never compacted. */
+    static std::vector<size_t> compactible_chunks(
+        const ql::time_chunk_index_t &chunk_index,
+        uint64_t now_us, uint64_t min_age_seconds);
+
+    /* §7 corruption detection: the index claims rows for a chunk but no
+     * tree root exists to hold them. */
+    static bool chunk_is_corrupt(const ql::time_chunk_bounds_t &chunk);
+
+    /* Erases one chunk's tree (bounded batches) and removes the chunk from
+     * the index. The caller commits the catalog save in the same
+     * transaction, so each chunk's erase + index removal are atomic: the
+     * index is the checkpoint and a crash rolls the in-flight chunk back,
+     * letting the next pass resume from the front. Raises
+     * TIME_SERIES_CHUNK_CORRUPT before modifying anything when the chunk
+     * is corrupt. Returns the number of rows freed; per-row modification
+     * reports are appended for secondary-index maintenance. */
+    static uint64_t expire_chunk(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog, size_t chunk_idx,
+        const deletion_context_t *deletion_context, signal_t *interruptor,
+        std::vector<rdb_modification_report_t> *mod_reports_out);
+
+    /* Compaction rewrite (§6.4): collects a sealed chunk's rows, rebuilds
+     * a fresh packed B-tree, frees the old tree's blocks, and publishes
+     * the new root — all in the caller's transaction. Rows and row_count
+     * are preserved; the returned count is the number of rows rewritten.
+     * Raises TIME_SERIES_CHUNK_CORRUPT on a corrupt chunk. */
+    static uint64_t compact_chunk(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog, size_t chunk_idx,
+        const deletion_context_t *deletion_context, signal_t *interruptor);
 };
 
 RDB_DECLARE_EQUALITY_COMPARABLE(time_series_catalog_t);

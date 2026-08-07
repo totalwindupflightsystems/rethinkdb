@@ -714,12 +714,45 @@ bool convert_table_config_and_name_from_datum(
                 *old_config.config.time_series_config);
         }
         if (ts_datum.has() && ts_datum != old_ts_datum) {
-            error_out->msg = "The `time_series` field is read-only and can't "
-                "be used to set time-series options. Use tableCreate instead.";
-            return false;
+            /* PHASE3-TS-4 (spec §6.1): retention is the one mutable
+             * time-series option. A datum that differs only in `retention`
+             * is accepted; everything else stays immutable. */
+            if (!(old_config.config.time_series_config.has_value()
+                    && ql::time_series_reconfigure_allows_retention_change(
+                        old_ts_datum, ts_datum))) {
+                error_out->msg = "The `time_series` field is read-only and "
+                    "can't be used to set time-series options. Use "
+                    "tableCreate instead.";
+                return false;
+            }
+            ql::datum_t ret_datum = ts_datum.get_field(
+                datum_string_t("retention"), ql::NOTHROW);
+            if (!ret_datum.has()
+                    || ret_datum.get_type() != ql::datum_t::R_NUM) {
+                error_out->msg = "In `time_series.retention`: expected a "
+                    "number of seconds.";
+                return false;
+            }
+            const double ret_seconds = ret_datum.as_num();
+            if (ret_seconds < 0) {
+                error_out->msg = "In `time_series.retention`: must be at "
+                    "least 0.";
+                return false;
+            }
+            config_out->time_series_config =
+                old_config.config.time_series_config;
+            config_out->time_series_config->retention_seconds =
+                static_cast<uint64_t>(ret_seconds);
+            try {
+                config_out->time_series_config->validate_or_throw();
+            } catch (const ql::base_exc_t &e) {
+                error_out->msg = e.what();
+                return false;
+            }
+        } else {
+            config_out->time_series_config =
+                old_config.config.time_series_config;
         }
-        config_out->time_series_config =
-            old_config.config.time_series_config;
     } else {
         if (existed_before) {
             error_out->msg = "Expected a field named `time_series`.";

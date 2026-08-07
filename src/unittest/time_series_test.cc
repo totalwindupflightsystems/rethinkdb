@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "arch/io/disk.hpp"
+#include "btree/depth_first_traversal.hpp"
 #include "btree/operations.hpp"
 #include "buffer_cache/alt.hpp"
 #include "buffer_cache/cache_balancer.hpp"
@@ -41,6 +42,7 @@
 #include "serializer/log/log_serializer.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/unittest_utils.hpp"
+#include "utils.hpp"
 
 namespace unittest {
 
@@ -880,6 +882,456 @@ TPTEST(TimeSeries, LiveVisitorSequenceWithSindexBlock) {
         EXPECT_EQ(1u, reloaded.chunk_index.chunks[0].row_count);
         EXPECT_NE(NULL_BLOCK_ID, reloaded.chunk_index.chunks[0].root_block);
     });
+}
+
+/* ── PHASE3-TS-4: retention + compaction (spec §5.2/§6.4/§7/§8.1) ─────── */
+
+TEST(TimeSeries, RetentionExpiredChunksBoundary) {
+    /* Strict-less-than TTL semantics: a chunk is expired only when its
+     * newest row (max_time_us, exclusive) is strictly older than the
+     * cutoff; exactly-at-TTL chunks are kept (§8.1). */
+    ql::time_chunk_index_t idx;
+    /* Three adjacent chunks: [0,100s), [100s,200s), [200s,300s). */
+    idx.chunks.push_back(ql::time_chunk_bounds_t{0, 100000000ULL, 10});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100000000ULL,
+                                                 200000000ULL, 20});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{200000000ULL,
+                                                 300000000ULL, 30});
+    const uint64_t now_us = 300000000ULL;  // 300s
+
+    /* retention 150s → cutoff 150s: chunk0 (max 100s) expired; chunk1
+     * (max 200s) kept. */
+    EXPECT_EQ(std::vector<size_t>({0}),
+        time_series_ops_t::expired_chunks(idx, now_us, 150));
+
+    /* retention 100s → cutoff 200s: chunk1's max == cutoff exactly →
+     * kept (strict <). Chunk0 still expired. */
+    EXPECT_EQ(std::vector<size_t>({0}),
+        time_series_ops_t::expired_chunks(idx, now_us, 100));
+
+    /* retention 90s → cutoff 210s: chunks 0 and 1 expired. */
+    EXPECT_EQ(std::vector<size_t>({0, 1}),
+        time_series_ops_t::expired_chunks(idx, now_us, 90));
+
+    /* retention 200s → cutoff 100s: chunk0's max == cutoff exactly →
+     * kept; nothing expired. */
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::expired_chunks(idx, now_us, 200));
+
+    /* retention 300s → cutoff 0: nothing expired (all maxes >= cutoff). */
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::expired_chunks(idx, now_us, 300));
+}
+
+TEST(TimeSeries, RetentionDisabledAndClockUnderflow) {
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t{0, 100000000ULL, 10});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100000000ULL,
+                                                 200000000ULL, 20});
+
+    /* retention = 0 disables retention (§5.2): nothing ever expires. */
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::expired_chunks(idx, 1000000000000ULL, 0));
+
+    /* Clock underflow: now (50s) < retention (100s) → cutoff clamps to 0
+     * and nothing can be strictly below it. */
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::expired_chunks(idx, 50000000ULL, 100));
+
+    /* Empty index → empty result. */
+    ql::time_chunk_index_t empty;
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::expired_chunks(empty, 1000000000000ULL, 10));
+}
+
+TEST(TimeSeries, CompactibleChunksSelection) {
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t{0, 100000000ULL, 10});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100000000ULL,
+                                                 200000000ULL, 0});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{200000000ULL,
+                                                 300000000ULL, 5});
+    const uint64_t now_us = 300000000ULL;  // 300s
+
+    /* min age 150s → cutoff 150s: chunk0 (max 100s) compactible; chunk1
+     * has no rows; chunk2 is the newest (active) chunk → never. */
+    EXPECT_EQ(std::vector<size_t>({0}),
+        time_series_ops_t::compactible_chunks(idx, now_us, 150));
+
+    /* min age 100s → cutoff 200s: chunk0 only (chunk1 empty). */
+    EXPECT_EQ(std::vector<size_t>({0}),
+        time_series_ops_t::compactible_chunks(idx, now_us, 100));
+
+    /* min age 0 → cutoff now: every sealed chunk with rows. */
+    EXPECT_EQ(std::vector<size_t>({0}),
+        time_series_ops_t::compactible_chunks(idx, now_us, 0));
+
+    /* min age 300s → cutoff 0 (underflow-safe): nothing. */
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::compactible_chunks(idx, now_us, 300));
+
+    /* A single-chunk index has no sealed chunk at all. */
+    ql::time_chunk_index_t single;
+    single.chunks.push_back(ql::time_chunk_bounds_t{0, 100000000ULL, 10});
+    EXPECT_EQ(std::vector<size_t>({}),
+        time_series_ops_t::compactible_chunks(single, now_us, 0));
+}
+
+namespace {
+
+/* Runs `fn` with a write superblock in its own transaction (the jobs
+ * pattern: one bounded transaction per chunk). If `fn` throws (e.g. a
+ * corrupt-chunk rejection), the empty transaction is committed before
+ * rethrowing — aborting a write txn is process death by design. */
+template <class F>
+void with_write_superblock(cache_conn_t *cache_conn, F &&fn) {
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> superblock;
+    get_btree_superblock_and_txn_for_writing(
+        cache_conn, nullptr, write_access_t::write, 4,
+        write_durability_t::SOFT, &superblock, &txn);
+    try {
+        fn(superblock.get());
+    } catch (...) {
+        /* Error paths reject before any chunk mutation; commit the empty
+         * txn to release the superblock cleanly. */
+        superblock.reset();
+        txn->commit();
+        throw;
+    }
+    superblock.reset();
+    txn->commit();
+}
+
+/* Counts rows in a chunk tree (for verifying erasure / rewrite). */
+class counting_visitor_t : public depth_first_traversal_callback_t {
+public:
+    continue_bool_t handle_pair(
+            UNUSED scoped_key_value_t &&keyvalue,
+            UNUSED signal_t *interruptor) override {
+        ++count;
+        return continue_bool_t::CONTINUE;
+    }
+    size_t count = 0;
+};
+
+size_t count_chunk_rows(cache_conn_t *cache_conn, block_id_t root) {
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> superblock;
+    get_btree_superblock_and_txn_for_reading(
+        cache_conn, CACHE_SNAPSHOTTED_NO, &superblock, &txn);
+    time_chunk_superblock_t read_sb(
+        superblock.get(), root, superblock->get_stat_block_id());
+    counting_visitor_t visitor;
+    cond_t interruptor;
+    btree_depth_first_traversal(
+        &read_sb, key_range_t::universe(), &visitor,
+        access_t::read, direction_t::FORWARD,
+        release_superblock_t::KEEP, &interruptor);
+    return visitor.count;
+}
+
+}  // namespace
+
+TPTEST(TimeSeries, RetentionExpireChunkRemovesFromIndex) {
+    /* expire_chunk erases the chunk's tree, removes the chunk from the
+     * index, and the caller's catalog save makes it durable. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        const uint64_t threshold = 2;
+        for (int i = 0; i < 6; ++i) {
+            const std::string key = strprintf("k%d", i);
+            routed_insert(cache_conn, slice, config, &catalog, threshold,
+                          store_key_t(key.c_str()),
+                          ts_doc(key.c_str(), 1000.0 + i));
+        }
+        ASSERT_EQ(3u, catalog.chunk_index.chunks.size());
+        ASSERT_EQ(6u, time_series_ops_t::total_rows(catalog.chunk_index));
+        const block_id_t remaining_roots[] = {
+            catalog.chunk_index.chunks[1].root_block,
+            catalog.chunk_index.chunks[2].root_block};
+
+        std::vector<rdb_modification_report_t> mod_reports;
+        rdb_live_deletion_context_t deletion_context;
+        cond_t non_interruptor;
+        uint64_t freed = 0;
+        with_write_superblock(cache_conn, [&](real_superblock_t *superblock) {
+            freed = time_series_ops_t::expire_chunk(
+                slice, superblock, &catalog, 0, &deletion_context,
+                &non_interruptor, &mod_reports);
+            time_series_ops_t::save_catalog(superblock, catalog);
+        });
+        EXPECT_EQ(2u, freed);
+        EXPECT_EQ(2u, mod_reports.size());
+        EXPECT_EQ(2u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(4u, time_series_ops_t::total_rows(catalog.chunk_index));
+
+        /* Durability: fresh txn sees the shrunken index. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_EQ(2u, reloaded.chunk_index.chunks.size());
+        EXPECT_EQ(4u, reloaded.chunk_index.chunks[0].row_count
+                      + reloaded.chunk_index.chunks[1].row_count);
+        EXPECT_TRUE(reloaded.chunk_index == catalog.chunk_index);
+
+        /* The surviving chunk trees still hold their rows. */
+        EXPECT_EQ(2u, count_chunk_rows(cache_conn, remaining_roots[0]));
+        EXPECT_EQ(2u, count_chunk_rows(cache_conn, remaining_roots[1]));
+    });
+}
+
+TPTEST(TimeSeries, RetentionResumesFromCheckpoint) {
+    /* Crash-safety: each chunk's erase + index removal commit together,
+     * so the durable chunk index is the checkpoint. Simulate a crash
+     * between chunks by reloading the catalog in a fresh transaction and
+     * re-running the pass: the expired chunk already committed is gone,
+     * and the next pass resumes from the front of the index. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        const uint64_t threshold = 2;
+        for (int i = 0; i < 5; ++i) {
+            const std::string key = strprintf("k%d", i);
+            routed_insert(cache_conn, slice, config, &catalog, threshold,
+                          store_key_t(key.c_str()),
+                          ts_doc(key.c_str(), 1000.0 + i));
+        }
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("k5"), ts_doc("k5", 2900.0));
+        ASSERT_EQ(3u, catalog.chunk_index.chunks.size());
+        ASSERT_EQ(6u, time_series_ops_t::total_rows(catalog.chunk_index));
+
+        const uint64_t now_us = 3000000000ULL;  // 3000s
+        const uint64_t retention = 150;          // cutoff 2850s
+        EXPECT_EQ(std::vector<size_t>({0, 1}),
+            time_series_ops_t::expired_chunks(catalog.chunk_index,
+                                              now_us, retention));
+
+        /* Pass 1: expire chunk 0, commit (the "tick" completes). */
+        rdb_live_deletion_context_t deletion_context;
+        cond_t non_interruptor;
+        with_write_superblock(cache_conn, [&](real_superblock_t *superblock) {
+            std::vector<rdb_modification_report_t> mod_reports;
+            time_series_ops_t::expire_chunk(
+                slice, superblock, &catalog, 0, &deletion_context,
+                &non_interruptor, &mod_reports);
+            time_series_ops_t::save_catalog(superblock, catalog);
+        });
+
+        /* "Crash": the durable index is the checkpoint. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_EQ(2u, reloaded.chunk_index.chunks.size());
+        EXPECT_EQ(4u, time_series_ops_t::total_rows(reloaded.chunk_index));
+        EXPECT_EQ(1002000000ULL, reloaded.chunk_index.chunks[0].min_time_us)
+            << "committed expiry must not reappear after the reload";
+
+        /* Resume: the next tick finds the remaining expired chunk at the
+         * front of the (consistent) index. */
+        EXPECT_EQ(std::vector<size_t>({0}),
+            time_series_ops_t::expired_chunks(reloaded.chunk_index,
+                                              now_us, retention));
+
+        /* Pass 2: expire it; the live chunk (max 2901s) survives. */
+        with_write_superblock(cache_conn, [&](real_superblock_t *superblock) {
+            std::vector<rdb_modification_report_t> mod_reports;
+            time_series_ops_t::expire_chunk(
+                slice, superblock, &reloaded, 0, &deletion_context,
+                &non_interruptor, &mod_reports);
+            time_series_ops_t::save_catalog(superblock, reloaded);
+        });
+        time_series_catalog_t final_catalog = load_ts_catalog(cache_conn);
+        EXPECT_EQ(1u, final_catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2u, time_series_ops_t::total_rows(final_catalog.chunk_index));
+        /* The surviving chunk was created at 1004s and extended by the
+         * 2900s row: its min is the chunk's creation time, not the row's. */
+        EXPECT_EQ(1004000000ULL,
+                  final_catalog.chunk_index.chunks[0].min_time_us);
+        EXPECT_EQ(std::vector<size_t>({}),
+            time_series_ops_t::expired_chunks(final_catalog.chunk_index,
+                                              now_us, retention));
+    });
+}
+
+TPTEST(TimeSeries, RetentionCorruptChunkAborts) {
+    /* §7: a chunk index entry that claims rows but has no tree root is
+     * corrupt; expire_chunk raises TIME_SERIES_CHUNK_CORRUPT BEFORE any
+     * modification — no erase, no index change, no reports. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("a"), ts_doc("a", 1000.0));
+        routed_insert(cache_conn, slice, config, &catalog,
+                      TIME_SERIES_CHUNK_TARGET_ROWS,
+                      store_key_t("b"), ts_doc("b", 2000.0));
+        ASSERT_EQ(1u, catalog.chunk_index.chunks.size());
+        const block_id_t real_root =
+            catalog.chunk_index.chunks[0].root_block;
+        EXPECT_FALSE(time_series_ops_t::chunk_is_corrupt(
+            catalog.chunk_index.chunks[0]));
+
+        /* Corrupt the index: claim the rows but drop the root. */
+        catalog.chunk_index.chunks[0].root_block = NULL_BLOCK_ID;
+        EXPECT_TRUE(time_series_ops_t::chunk_is_corrupt(
+            catalog.chunk_index.chunks[0]));
+
+        std::vector<rdb_modification_report_t> mod_reports;
+        rdb_live_deletion_context_t deletion_context;
+        cond_t non_interruptor;
+        expect_reql_error("TIME_SERIES_CHUNK_CORRUPT", [&] {
+            with_write_superblock(cache_conn, [&](real_superblock_t *superblock) {
+                time_series_ops_t::expire_chunk(
+                    slice, superblock, &catalog, 0, &deletion_context,
+                    &non_interruptor, &mod_reports);
+            });
+        });
+
+        /* Nothing was modified: chunk still in the index, no reports. */
+        EXPECT_EQ(1u, catalog.chunk_index.chunks.size());
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_TRUE(mod_reports.empty());
+
+        /* The underlying data is untouched (the raise happened before the
+         * erase). */
+        EXPECT_EQ(2u, count_chunk_rows(cache_conn, real_root));
+    });
+}
+
+TPTEST(TimeSeries, CompactionRewritesSealedChunk) {
+    /* compact_chunk rebuilds a sealed chunk's tree in one transaction:
+     * every row survives, the root block is replaced, and the rewrite is
+     * durable. */
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        ql::time_series_config_t config = make_write_config();
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        const uint64_t threshold = 2;
+        for (int i = 0; i < 4; ++i) {
+            const std::string key = strprintf("k%d", i);
+            routed_insert(cache_conn, slice, config, &catalog, threshold,
+                          store_key_t(key.c_str()),
+                          ts_doc(key.c_str(), 1000.0 + i));
+        }
+        routed_insert(cache_conn, slice, config, &catalog, threshold,
+                      store_key_t("k4"), ts_doc("k4", 3000.0));
+        ASSERT_EQ(3u, catalog.chunk_index.chunks.size());
+        ASSERT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+        const block_id_t old_root =
+            catalog.chunk_index.chunks[0].root_block;
+
+        rdb_live_deletion_context_t deletion_context;
+        cond_t non_interruptor;
+        uint64_t rows = 0;
+        with_write_superblock(cache_conn, [&](real_superblock_t *superblock) {
+            rows = time_series_ops_t::compact_chunk(
+                slice, superblock, &catalog, 0, &deletion_context,
+                &non_interruptor);
+            time_series_ops_t::save_catalog(superblock, catalog);
+        });
+        EXPECT_EQ(2u, rows);
+        EXPECT_NE(old_root, catalog.chunk_index.chunks[0].root_block)
+            << "compaction must publish a fresh root block";
+        EXPECT_EQ(2u, catalog.chunk_index.chunks[0].row_count);
+        EXPECT_EQ(5u, time_series_ops_t::total_rows(catalog.chunk_index));
+
+        /* Durability + row preservation: fresh txn sees the new root, and
+         * the rewritten tree holds all rows. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        EXPECT_EQ(3u, reloaded.chunk_index.chunks.size());
+        EXPECT_EQ(catalog.chunk_index.chunks[0].root_block,
+                  reloaded.chunk_index.chunks[0].root_block);
+        EXPECT_EQ(2u, count_chunk_rows(
+            cache_conn, reloaded.chunk_index.chunks[0].root_block));
+    });
+}
+
+TEST(TimeSeries, RetentionOnlyReconfigureAllowed) {
+    /* Spec §6.1: retention is the one mutable time-series option. The
+     * helper accepts identical datums and retention-only changes, and
+     * rejects every other mutation. */
+    ql::time_series_config_t cfg = make_ts_config();
+    cfg.downsample_steps.clear();
+    const ql::datum_t base = ql::format_time_series_config_datum(cfg);
+
+    /* Identical datum → allowed. */
+    EXPECT_TRUE(ql::time_series_reconfigure_allows_retention_change(
+        base, base));
+
+    /* Retention-only change → allowed. */
+    ql::datum_object_builder_t new_ret;
+    new_ret.overwrite("field",
+        base.get_field(datum_string_t("field"), ql::NOTHROW));
+    new_ret.overwrite("chunk_interval",
+        base.get_field(datum_string_t("chunk_interval"), ql::NOTHROW));
+    new_ret.overwrite("retention", ql::datum_t(3600.0));
+    new_ret.overwrite("downsample",
+        base.get_field(datum_string_t("downsample"), ql::NOTHROW));
+    const ql::datum_t retention_only = std::move(new_ret).to_datum();
+    EXPECT_TRUE(ql::time_series_reconfigure_allows_retention_change(
+        base, retention_only));
+
+    /* Any other field change → rejected. */
+    ql::datum_object_builder_t bad_field;
+    bad_field.overwrite("field", ql::datum_t(datum_string_t("other")));
+    bad_field.overwrite("chunk_interval",
+        base.get_field(datum_string_t("chunk_interval"), ql::NOTHROW));
+    bad_field.overwrite("retention",
+        base.get_field(datum_string_t("retention"), ql::NOTHROW));
+    bad_field.overwrite("downsample",
+        base.get_field(datum_string_t("downsample"), ql::NOTHROW));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, std::move(bad_field).to_datum()));
+
+    ql::datum_object_builder_t bad_chunk;
+    bad_chunk.overwrite("field",
+        base.get_field(datum_string_t("field"), ql::NOTHROW));
+    bad_chunk.overwrite("chunk_interval", ql::datum_t(60.0));
+    bad_chunk.overwrite("retention",
+        base.get_field(datum_string_t("retention"), ql::NOTHROW));
+    bad_chunk.overwrite("downsample",
+        base.get_field(datum_string_t("downsample"), ql::NOTHROW));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, std::move(bad_chunk).to_datum()));
+
+    ql::datum_object_builder_t bad_downsample;
+    bad_downsample.overwrite("field",
+        base.get_field(datum_string_t("field"), ql::NOTHROW));
+    bad_downsample.overwrite("chunk_interval",
+        base.get_field(datum_string_t("chunk_interval"), ql::NOTHROW));
+    bad_downsample.overwrite("retention",
+        base.get_field(datum_string_t("retention"), ql::NOTHROW));
+    ql::datum_object_builder_t agg;
+    agg.overwrite("avg", ql::datum_t(datum_string_t("x")));
+    ql::datum_object_builder_t step;
+    step.overwrite("age", ql::datum_t(86400.0));
+    step.overwrite("to", ql::datum_t(60.0));
+    step.overwrite("aggregate", std::move(agg).to_datum());
+    ql::datum_array_builder_t steps(ql::configured_limits_t::unlimited);
+    steps.add(std::move(step).to_datum());
+    bad_downsample.overwrite("downsample", std::move(steps).to_datum());
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, std::move(bad_downsample).to_datum()));
+
+    /* Missing key / non-object / null → rejected. */
+    ql::datum_object_builder_t missing_ret;
+    missing_ret.overwrite("field",
+        base.get_field(datum_string_t("field"), ql::NOTHROW));
+    missing_ret.overwrite("chunk_interval",
+        base.get_field(datum_string_t("chunk_interval"), ql::NOTHROW));
+    missing_ret.overwrite("downsample",
+        base.get_field(datum_string_t("downsample"), ql::NOTHROW));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, std::move(missing_ret).to_datum()));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, ql::datum_t::null()));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        ql::datum_t::null(), base));
+    EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
+        base, ql::datum_t(42.0)));
 }
 
 }  // namespace unittest

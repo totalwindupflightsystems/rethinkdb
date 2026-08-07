@@ -40,6 +40,16 @@ datum_t format_time_series_config_datum(const time_series_config_t &config);
 datum_t format_time_series_chunk_info_datum(
         const time_chunk_index_t &chunk_index, bool has_catalog);
 
+/* PHASE3-TS-4: tableReconfigure support (spec §6.1). Returns true when
+ * `new_datum` is a formatted time-series config datum that differs from
+ * `old_datum` at most in `retention` — the one mutable time-series
+ * option. `field`, `chunk_interval` and `downsample` stay immutable;
+ * identical datums are trivially allowed, and anything that is not an
+ * object with the same key set (including null / missing configs) is
+ * rejected. */
+bool time_series_reconfigure_allows_retention_change(
+        const datum_t &old_datum, const datum_t &new_datum);
+
 }  // namespace ql
 
 #endif  // RDB_PROTOCOL_TERMS_TIME_SERIES_HPP_

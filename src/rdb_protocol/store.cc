@@ -1560,6 +1560,15 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         ql::datum_t stats = ql::datum_t::empty_object();
         std::set<std::string> conditions;
 
+        if (store->time_series_corrupt()) {
+            /* §7: a corrupt chunk was detected by the background jobs;
+             * the whole table is read-only for time-series writes. */
+            time_series_error::raise_op_failed(
+                time_series_error::TIME_SERIES_CHUNK_CORRUPT,
+                "table is read-only for time-series writes: a corrupt "
+                "chunk was detected by the retention/compaction job.");
+        }
+
         /* The chunked write cycle is serialized per store by
          * time_series_mutex, acquired in store_t::write() across the whole
          * write + commit — see there for why. */
@@ -1638,6 +1647,14 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         rdb_live_deletion_context_t deletion_context;
         rdb_modification_report_t mod_report(w.key);
         if (time_series_active()) {
+            if (store->time_series_corrupt()) {
+                /* §7: a corrupt chunk was detected by the background
+                 * jobs; the table is read-only for time-series writes. */
+                time_series_error::raise_op_failed(
+                    time_series_error::TIME_SERIES_CHUNK_CORRUPT,
+                    "table is read-only for time-series writes: a corrupt "
+                    "chunk was detected by the retention/compaction job.");
+            }
             /* PHASE3-TS-2: route into the chunk B-tree selected by the
             document's time field. Serialized per store in store_t::write()
             (see time_series_mutex there). */
