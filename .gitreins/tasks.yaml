@@ -358,3 +358,13 @@ tasks:
   status: complete
   created_at: '2026-08-07T15:06:41.813878+00:00'
   completed_at: '2026-08-07T15:06:46.562578+00:00'
+- id: RT-GAP-002
+  title: Python driver installable via documented path (packaging metadata + deps)
+  criteria:
+  - pip install ./driver/python3 succeeds in a clean venv
+  - python3 -c "import rethinkdb; print(rethinkdb.version)" works in a clean venv
+  - Driver imports cleanly on Python 3.12+ (ssl.match_hostname backport vendored as
+    rethinkdb.backports.ssl_match_hostname)
+  status: complete
+  created_at: '2026-08-07T17:26:51.108224+00:00'
+  completed_at: '2026-08-07T17:26:53.996052+00:00'
