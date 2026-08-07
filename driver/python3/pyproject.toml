@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rethinkdb"
+version = "2.4.10.post1+source"
+description = "Python driver for RethinkDB (fork: v3 protocol, upgraded ReQL term set)"
+dependencies = [
+    "six>=1.10.0",
+    "protobuf>=3.8.0",
+    "looseversion>=0.2",
+]
+
+[project.optional-dependencies]
+vector = ["numpy"]
+
+[tool.setuptools]
+packages = ["rethinkdb"]
