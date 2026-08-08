@@ -393,5 +393,6 @@ tasks:
     \ key-range exactness, selection fallback, candidates (all present in time_series_test.cc)\
     \ AND an integration test inserting rows, waiting for the downsample tick, verifying\
     \ aggregate output"
-  status: pending
+  status: complete
   created_at: '2026-08-08T03:56:20.521895+00:00'
+  completed_at: '2026-08-08T04:14:57.932547+00:00'
