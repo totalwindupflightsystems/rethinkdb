@@ -5699,3 +5699,20 @@ Continuation worker for the remaining TS-5 integration wiring (prompt /tmp/rethi
 **Cooldown:** 7200s — header-carry (no PUT per policy)
 
 VERDICT: **PRODUCTIVE (stewardship + fold-in)** — prior session's unrecorded work folded into board: core commit independently re-verified (268/268), pushed (was ahead 1), dispatch recorded (event id=19, PID 2224582), header corrected (ticks_total=108). Wiring worker in flight on subsections A/B/C; next tick: poll, verify, judge, close.
+
+### Tick #108 addendum — PHASE3-TS-5 COMPLETE (23:21 UTC)
+
+Wiring worker PID 2224582 (dispatched 22:58) **died at ~12 min without committing** (worker-timeout-no-commit pattern) — but left all 6 files modified (339+/83-). Foreman verified the partial independently and committed:
+
+| Check | Result |
+|-------|--------|
+| §4.3 read-path wiring | store.cc:263-300 — select_downsample_root → rdb_ts_rget_slice on ds_root->root_block with downsample_key_range; changefeed (stamp) + nullptr → raw chunk path ✅ |
+| §6.1 drop cascade | btree_store.cc:393-411 — reset_data: time_series_mutex → release_storage + release_catalog ✅ |
+| Merge refactor | run_downsample_pass body extracted to merge_chunk_into_downsample_steps (ops.cc:653-763) — semantics preserved (corrupt-chunk guard, roots growth, compile-once funcs, per-bucket rows, merged watermark) ✅ |
+| §8.2 integration test | DownsampleMergeWritesAggregateRows — 6 rows/2s buckets, avg/cnt verified, durability reload ✅ |
+| Build | `make UNIT_TESTS=1 -j8` exit 0, binary 23:09 fresh, stale-check empty ✅ |
+| TimeSeries | **32/32 PASS** (incl new test, 76ms) ✅ |
+| Regression | **269/269 PASS** (42s, 26 test cases — was 268, +1 new) ✅ |
+| GitReins judge | `906b4820` — **tier2 PASS COMPLETE 5/5** (all criteria with file:line evidence); tier1 machine-FAIL environmental only (gitleaks binary missing, cpplint DeprecationWarning) — known repo disposition, foreman evidence stands ✅ |
+
+Commits this tick: `1fd7461620` (core, prior session, pushed) + `29a2f474e1` (wiring, this tick, pushed) + `a45edbe9b5` (board fold-in). **PHASE3-TS-5 DONE.** Next queue: PHASE3-TS-6 (cluster) → FDW → ASYNC → WASM.
