@@ -5578,3 +5578,62 @@ VERDICT: **PRODUCTIVE (premise verification + docs close)** — RT-GAP-003 close
 **Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (dispatch)** — PHASE3-TS-5 dispatched per execution order with a fully pre-loaded worker prompt (verified facts + design guidance from foreman analysis of the existing config/storage/jobs layers). Task row + dispatch event on JSONL board. Next tick: poll worker, verify independently, judge, close.
+## Productive Tick #107 — 2026-08-07 20:20 UTC (PHASE3-TS-5 worker STEWARDSHIP + RESUME)
+
+**Mission:** Steward the tick #106 TS-5 worker's partial work (verify → commit foundation), then re-dispatch the remaining downsample-pipeline scope per the worker-resume-handoff pattern.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | 5b6919e80f (board header correction, tick #106) |
+| Last board entry | Tick #106 (PHASE3-TS-5 dispatched, worker PID 1441654) |
+| Worker PID 1441654 | **DEAD** — tick #106 worker gone, left `time_chunk.{cc,hpp}` modified, NO commits |
+| Working tree | 2 modified (time_chunk.{cc,hpp} — worker partial) + 2 untracked (dagger.db, egg-info — known artifacts) |
+| Board storage | JSONL canonical (events.jsonl id=18 max; board.db stale-schema cache, JSONL authoritative) |
+| Scheduler | rethinkdb Enabled, CooldownS=7200 (GET-verified, no PUT per policy) |
+
+### Worker partial assessment (foreman, independent)
+
+| Piece | State |
+|-------|-------|
+| `merged` flag on `time_chunk_bounds_t` (time_chunk.{hpp,cc}) | Coherent, well-documented per-chunk watermark scaffold (spec §6.4 idempotency). Serialization + equality bumped to 5 fields, both ctors init false, design rationale comment. **Correct foundation.** |
+| Downsample storage §5.3 (per-step B-trees in catalog) | **MISSING** |
+| Merge job §6.4 (wire run_downsample_pass) | **MISSING** (flag is the watermark it will use) |
+| Planner auto-selection §4.3 (store.cc read path) | **MISSING** |
+| tableDrop cascade §6.1 | **MISSING** |
+| Tests §8.2 | **MISSING** |
+
+### Verification ladder (foreman, independent — not worker claims)
+
+1. ✅ Fresh build: `make UNIT_TESTS=1 -j8` → 479/479, BUILD_EXIT=0, unittest binary 20:16 (advanced)
+2. ✅ Stale-binary check: `find src -name '*.cc' -newer build/release/rethinkdb-unittest` → EMPTY (fresh)
+3. ✅ Regression + TS filter: `--gtest_filter='*Cdc*:*cdc*:*Conflict*:*Vector*:*Fts*:*Brin*:*Sindex*:*GeneratedColumn*:*Term*:*Btree*:*Reql*:*TimeSeries*'` → **263/263 PASS** (39.4s)
+4. ✅ Foundation committed: `9023d84b70` (2 files, +22/−7), co-author trailer verified
+
+### Actions this tick
+
+1. ✅ Self-heal: no rethinkdb workers in flight at tick start (verified via ps); git state assessed
+2. ✅ Board tail read (tick #106) + JSONL board confirmed canonical (events id=18 max)
+3. ✅ DuckBrain recall: embedding service DOWN (LM Studio model load failure) → list_keys fallback (50+ keys incl patterns/ts2-chunked-read-path, event/ts4-worker-stalled) + HTTP prefix reads; worker-resume-handoff + TS-4-stall patterns applied
+4. ✅ Hilo: skipped warm (C++ sparse per ops ref; graph unchanged by 2-file scaffold — assess at completion)
+5. ✅ Partial verified independently (build + 263/263) and committed as foundation 9023d84b70
+6. ✅ Continuation prompt compiled (16.7KB: remaining scope verbatim, verified facts ×9, design guidance + merged-flag integration, ACs ×7, incremental-commit discipline — the #106 failure mode) — /tmp/rethinkdb_t107_ts5_resume_prompt.md
+7. ✅ Worker re-dispatched: deepseek-v4-flash @ deepseek-foreman, PID 3651755, session proc_81b4c635b87d (background, notify_on_complete); task_dispatched event id=17, attempts=1
+8. ✅ Audit event id=18 + board.jsonl header (ticks_total=107, last_commit=9023d84b70)
+9. ⏳ Next tick: poll worker → verify ladder independently (fresh build, 263 regression + *TimeSeries*, full suite) → gitreins task + judge → close
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..4, RT-BUG-001/002, RT-GAP-001/002/003, JSONL-NORM-001 | all prior | ✅ Complete |
+| **PHASE3-TS-5 (downsample pipeline)** | foundation 263/263 | 🔄 **In flight (resume worker PID 3651755)** |
+| PHASE3-TS-6 (cluster), FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → **PHASE3-TS-5 🔄 (resumed tick #107)** → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (stewardship + resume)** — tick #106 worker's partial salvaged: independently verified (479/479 build, 263/263 regression), committed as foundation 9023d84b70, remaining TS-5 scope re-dispatched with incremental-commit discipline to avoid another lost-work stall. Next tick: poll, verify, judge, close.
