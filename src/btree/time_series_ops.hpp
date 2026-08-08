@@ -61,12 +61,41 @@ static constexpr uint64_t TIME_SERIES_CHUNK_TARGET_ROWS = 1000000;
  * bounded passes of at most this many rows. */
 static constexpr uint64_t TIME_SERIES_RETENTION_ERASE_BATCH = 1000;
 
+/* PHASE3-TS-5 (§5.3): one downsample tree per downsample step. `root_block`
+ * is the root of the step's parallel B-tree (NULL_BLOCK_ID until the first
+ * merge writes into it); the step is identified by its
+ * `target_interval_seconds` so the entry is self-describing in the catalog
+ * blob and debuggable without the config. Rows are keyed by the 20-digit
+ * zero-padded decimal string of the bucket start (microseconds), so
+ * lexicographic key order equals chronological order. */
+struct downsample_root_t {
+    uint64_t target_interval_seconds;
+    block_id_t root_block;
+
+    downsample_root_t()
+        : target_interval_seconds(0), root_block(NULL_BLOCK_ID) { }
+
+    downsample_root_t(uint64_t target_interval, block_id_t root = NULL_BLOCK_ID)
+        : target_interval_seconds(target_interval), root_block(root) { }
+
+    RDB_DECLARE_ME_SERIALIZABLE(downsample_root_t);
+};
+
 /* Durable time-series catalog blob. Serialized at LATEST_DISK like the
- * partition catalog (Phase-3 data never existed in an older format). */
+ * partition catalog (Phase-3 data never existed in an older format).
+ *
+ * PHASE3-TS-5 (§5.3): `downsample_roots` is parallel to
+ * `config.downsample_steps` (index i holds the root of step i's downsample
+ * tree). The step list is immutable after table creation (only retention is
+ * reconfigurable), so the index alignment is stable for the table's life;
+ * the merge job appends entries in step order to keep the vectors aligned.
+ * Appended AFTER `chunk_index` so the pre-existing fields stay
+ * position-stable in the serialized blob. */
 struct time_series_catalog_t {
     uint32_t format_version;
     ql::time_series_config_t config;
     ql::time_chunk_index_t chunk_index;
+    std::vector<downsample_root_t> downsample_roots;
 
     time_series_catalog_t()
         : format_version(TIME_SERIES_CATALOG_FORMAT_VERSION) { }
@@ -212,8 +241,72 @@ public:
         btree_slice_t *slice, real_superblock_t *sb,
         time_series_catalog_t *catalog, size_t chunk_idx,
         const deletion_context_t *deletion_context, signal_t *interruptor);
+
+    /* ── downsampling (PHASE3-TS-5, spec §4.3/§5.3/§6.1/§6.4) ─────────── */
+
+    /* Indices of sealed chunks that still need a downsample merge: every
+     * non-newest chunk with rows whose `merged` watermark is false. The
+     * active newest chunk is never merged (same rule as compaction). */
+    static std::vector<size_t> downsample_candidates(
+        const ql::time_chunk_index_t &chunk_index);
+
+    /* Collects every (key, datum) pair of one chunk's tree. Memory is
+     * bounded by one chunk's data (§9.3). Raises TIME_SERIES_CHUNK_CORRUPT
+     * on a corrupt chunk (validated before any traversal). */
+    static std::vector<std::pair<store_key_t, ql::datum_t>> collect_chunk_rows(
+        btree_slice_t *slice, real_superblock_t *sb,
+        const time_series_catalog_t *catalog, size_t chunk_idx,
+        signal_t *interruptor);
+
+    /* Writes downsample rows into a step's tree (rdb_set in ascending key
+     * order for append locality, same as the compaction rebuild). `root_in_out`
+     * is the tree's root block id; NULL_BLOCK_ID creates the tree. */
+    static void write_downsample_rows(
+        btree_slice_t *slice, real_superblock_t *sb,
+        const std::vector<std::pair<store_key_t, ql::datum_t>> &rows,
+        block_id_t *root_in_out, const deletion_context_t *deletion_context);
+
+    /* Bucket key for a bucket start: the 20-digit zero-padded decimal string
+     * of the microseconds value, so lexicographic key order equals
+     * chronological order (a fixed width is what makes the key-range bound
+     * in `downsample_key_range` exact). */
+    static store_key_t downsample_bucket_key(uint64_t bucket_start_us);
+
+    /* Key range covering exactly the downsample buckets overlapping the
+     * half-open window [start_us, end_us) for a step of `interval_seconds`.
+     * Buckets are keyed by bucket start b = floor(ts / interval) * interval;
+     * such a bucket overlaps the window iff b < end_us and b + interval >
+     * start_us, and every bucket with
+     * floor(start_us / interval) * interval <= b < end_us satisfies both —
+     * so the lexicographic range [key(b_first), key(end_us)) is exact.
+     * Empty windows (start_us >= end_us) yield an empty range. */
+    static key_range_t downsample_key_range(uint64_t start_us, uint64_t end_us,
+                                            uint64_t interval_seconds);
+
+    /* §4.3 planner auto-selection: the downsample root to scan for the
+     * window [start_us, end_us), or nullptr to fall back to the raw
+     * chunk-root path. Applies select_downsample() to the window's range in
+     * seconds (strictly-less-than age semantics, verbatim); a selected step
+     * is only honored when its tree actually has data (a freshly created
+     * root with no rows yet must fall back to raw). */
+    static const downsample_root_t *select_downsample_root(
+        const time_series_catalog_t &catalog, uint64_t start_us, uint64_t end_us);
+
+    /* §6.1 tableDrop cascade: erases every chunk tree and every downsample
+     * tree in bounded batches (O(TIME_SERIES_RETENTION_ERASE_BATCH) per
+     * pass, §9.3). The roots are NOT cleared from `catalog` (the caller
+     * releases the whole catalog blob afterwards via release_catalog). Row
+     * modification reports are appended to `mod_reports_out` so the caller
+     * can keep secondary indexes consistent during the erase, mirroring the
+     * retention pass. */
+    static void release_storage(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog,
+        const deletion_context_t *deletion_context, signal_t *interruptor,
+        std::vector<rdb_modification_report_t> *mod_reports_out);
 };
 
 RDB_DECLARE_EQUALITY_COMPARABLE(time_series_catalog_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(downsample_root_t);
 
 #endif  // BTREE_TIME_SERIES_OPS_HPP_

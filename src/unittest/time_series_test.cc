@@ -373,6 +373,215 @@ TEST(TimeSeries, DownsampleSelection) {
     EXPECT_EQ(nullptr, bare.select_downsample(1ULL << 40));
 }
 
+/* ── PHASE3-TS-5: downsample storage (spec §5.3) ───────────────────────── */
+
+TEST(TimeSeries, DownsampleRootsRoundTrip) {
+    /* The catalog blob carries the per-step downsample roots alongside the
+     * chunk index; both must round-trip together (they commit atomically —
+     * catalog + data in one blob). */
+    time_series_catalog_t catalog;
+    catalog.config = make_ts_config();
+    catalog.chunk_index.chunks.push_back(
+        ql::time_chunk_bounds_t{0, 3600000000ULL, 100, 77});
+    catalog.downsample_roots.push_back(
+        downsample_root_t(60, 101));
+    catalog.downsample_roots.push_back(
+        downsample_root_t(3600, 202));
+    catalog.downsample_roots.push_back(
+        downsample_root_t(86400, 303));
+
+    time_series_catalog_t out = round_trip(catalog);
+    EXPECT_TRUE(catalog == out);
+    ASSERT_EQ(3u, out.downsample_roots.size());
+    EXPECT_EQ(3600u, out.downsample_roots[1].target_interval_seconds);
+    EXPECT_EQ(202, out.downsample_roots[1].root_block);
+
+    /* Default catalog (no downsample section) round-trips with an empty
+     * vector. */
+    time_series_catalog_t plain;
+    EXPECT_TRUE(plain == round_trip(plain));
+    EXPECT_TRUE(round_trip(plain).downsample_roots.empty());
+}
+
+TEST(TimeSeries, DownsampleBucketKeyOrdering) {
+    /* Keys are 20-digit zero-padded decimal strings of the bucket start, so
+     * lexicographic order == chronological order. */
+    const store_key_t k0 =
+        time_series_ops_t::downsample_bucket_key(0);
+    const store_key_t k1 =
+        time_series_ops_t::downsample_bucket_key(60000000ULL);
+    const store_key_t k9 =
+        time_series_ops_t::downsample_bucket_key(90000000ULL);
+    const store_key_t k10 =
+        time_series_ops_t::downsample_bucket_key(100000000ULL);
+    const store_key_t kmax =
+        time_series_ops_t::downsample_bucket_key(
+            std::numeric_limits<uint64_t>::max());
+
+    EXPECT_EQ(20u, k1.size());
+    EXPECT_EQ(std::string("00000000000000000000"),
+              std::string(k0.contents(), k0.contents() + k0.size()));
+    EXPECT_EQ(std::string("00000000000060000000"),
+              std::string(k1.contents(), k1.contents() + k1.size()));
+    EXPECT_EQ(std::string("00000000000090000000"),
+              std::string(k9.contents(), k9.contents() + k9.size()));
+    EXPECT_EQ(std::string("00000000000100000000"),
+              std::string(k10.contents(), k10.contents() + k10.size()));
+    /* Numeric order must equal string order (the 20-digit width is what
+     * guarantees this — "00000000000100000000" > "00000000000090000000"
+     * lexicographically AND numerically). */
+    EXPECT_TRUE(k0 < k1);
+    EXPECT_TRUE(k9 < k10);
+    EXPECT_TRUE(k10 < kmax);
+}
+
+TEST(TimeSeries, DownsampleKeyRangeExact) {
+    /* The bucket-key range for a window covers exactly the buckets that
+     * overlap it. Use a 60s interval (= 60M micros). */
+    const uint64_t interval = 60;
+    const uint64_t us = 1000000ULL;  // micros per second
+
+    /* Window [0, 120s) covers buckets 0 (0-60s) and 60 (60-120s). */
+    key_range_t r = time_series_ops_t::downsample_key_range(
+        0, 120 * us, interval);
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(0)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(60 * us)));
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(120 * us)));
+
+    /* Window [30s, 150s) straddles buckets 0, 60, 120. */
+    r = time_series_ops_t::downsample_key_range(
+        30 * us, 150 * us, interval);
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(0)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(60 * us)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(120 * us)));
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(180 * us)));
+
+    /* Window exactly one bucket [60s, 120s) → only bucket 60. */
+    r = time_series_ops_t::downsample_key_range(
+        60 * us, 120 * us, interval);
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(0)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(60 * us)));
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(120 * us)));
+
+    /* Window inside one bucket [61s, 119s) → bucket 60 only. */
+    r = time_series_ops_t::downsample_key_range(
+        61 * us, 119 * us, interval);
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(60 * us)));
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(0)));
+    EXPECT_FALSE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(120 * us)));
+
+    /* Empty / inverted windows → empty range. */
+    EXPECT_TRUE(time_series_ops_t::downsample_key_range(
+        100 * us, 100 * us, interval).is_empty());
+    EXPECT_TRUE(time_series_ops_t::downsample_key_range(
+        200 * us, 100 * us, interval).is_empty());
+
+    /* Unbounded right edge → every bucket at/after the first. */
+    r = time_series_ops_t::downsample_key_range(
+        90 * us, std::numeric_limits<uint64_t>::max(), interval);
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(60 * us)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(120 * us)));
+    EXPECT_TRUE(r.contains_key(
+        time_series_ops_t::downsample_bucket_key(1000000 * us)));
+}
+
+TEST(TimeSeries, DownsampleSelectionRoot) {
+    /* §4.3 planner auto-selection: a window whose range exceeds a step's
+     * age selects that step's tree; otherwise (or when the tree has no data
+     * yet) the raw chunk-root path is kept. */
+    time_series_catalog_t catalog;
+    catalog.config = make_ts_config();  // ages 86400 / 604800 / 2592000
+    /* Parallel roots: step 0 (1m) has data; step 1 (1h) has data; step 2
+     * (1d) has a NULL root (step configured, nothing merged yet). */
+    catalog.downsample_roots.push_back(downsample_root_t(60, 111));
+    catalog.downsample_roots.push_back(downsample_root_t(3600, 222));
+    catalog.downsample_roots.push_back(downsample_root_t(86400));
+
+    /* Window shorter than the finest step's age → no downsample. */
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        catalog, 0, 1000 * 1000000ULL));
+
+    /* Just past the 24h age → the 1m step's tree. */
+    const downsample_root_t *root =
+        time_series_ops_t::select_downsample_root(
+            catalog, 0, 86401 * 1000000ULL);
+    ASSERT_TRUE(root != nullptr);
+    EXPECT_EQ(60u, root->target_interval_seconds);
+    EXPECT_EQ(111, root->root_block);
+
+    /* Past the 7d age → the 1h step's tree. */
+    root = time_series_ops_t::select_downsample_root(
+        catalog, 0, 604801 * 1000000ULL);
+    ASSERT_TRUE(root != nullptr);
+    EXPECT_EQ(3600u, root->target_interval_seconds);
+
+    /* Past the 30d age the selected step is step 2, whose tree has no rows
+     * yet → fall back to raw (never return empty for existing raw data). */
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        catalog, 0, 2592001 * 1000000ULL));
+
+    /* A catalog whose roots vector is shorter than the step list (merge
+     * never ran) → fall back to raw. */
+    time_series_catalog_t no_roots;
+    no_roots.config = make_ts_config();
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        no_roots, 0, 86401 * 1000000ULL));
+
+    /* Empty window → no selection. */
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        catalog, 5000 * 1000000ULL, 5000 * 1000000ULL));
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        catalog, 5000 * 1000000ULL, 1000 * 1000000ULL));
+
+    /* Non-time-series config (disabled) → no selection. */
+    time_series_catalog_t plain;
+    EXPECT_EQ(nullptr, time_series_ops_t::select_downsample_root(
+        plain, 0, 9999999 * 1000000ULL));
+}
+
+TEST(TimeSeries, DownsampleCandidates) {
+    /* Sealed, non-empty, unmerged chunks are merge candidates; the active
+     * newest chunk, merged chunks, and empty chunks are not. Chunk 0 (10
+     * rows) and chunk 2 (30 rows) are both sealed and unmerged, so both are
+     * candidates; chunk 1 is merged, chunk 3 is empty, chunk 4 is newest. */
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t{0, 100, 10});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100, 200, 20});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{200, 300, 30});
+    idx.chunks[1].merged = true;                 // already folded
+    idx.chunks.push_back(ql::time_chunk_bounds_t{300, 400, 0});  // empty
+    idx.chunks.push_back(ql::time_chunk_bounds_t{400, 500, 40});  // newest
+
+    EXPECT_EQ(std::vector<size_t>({0, 2}),
+              time_series_ops_t::downsample_candidates(idx));
+
+    /* A single chunk (no sealed chunks) → nothing. */
+    ql::time_chunk_index_t single;
+    single.chunks.push_back(ql::time_chunk_bounds_t{0, 100, 10});
+    EXPECT_EQ(std::vector<size_t>({}),
+              time_series_ops_t::downsample_candidates(single));
+
+    /* Empty index → nothing. */
+    EXPECT_EQ(std::vector<size_t>({}),
+              time_series_ops_t::downsample_candidates(
+                  ql::time_chunk_index_t()));
+}
+
 TEST(TimeSeries, RetentionBoundary) {
     /* Unit-test configs carry no wire funcs, so drop the steps: the
     retention checks are independent of the downsample pipeline. */

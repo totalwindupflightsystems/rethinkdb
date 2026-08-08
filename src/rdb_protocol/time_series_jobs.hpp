@@ -21,9 +21,11 @@ class store_t;
  *     (still consistent) chunk index — the index itself is the checkpoint.
  *   - Compaction: at most hourly, rewrites sealed chunks whose data is at
  *     least 1 hour old into fresh, packed B-trees for read efficiency.
- *   - Downsampling: wired as a due-check + no-op tick. The merge pipeline is
- *     PHASE3-TS-5; the trigger exists so the table lifecycle owns the full
- *     job set.
+ *   - Downsampling: merges sealed raw chunks into the per-step downsample
+ *     trees at the finest `target_interval` cadence (§6.4, PHASE3-TS-5).
+ *     One transaction per chunk: the fold into every step plus the chunk's
+ *     `merged` watermark commit atomically, so a crash rolls the in-flight
+ *     chunk back and the next pass resumes from the watermark.
  *
  * Resource limits (§9.3): the loop runs at CORO_PRIORITY_TIME_SERIES_JOBS
  * (behind live queries), wakes at most once per second, holds the
@@ -69,19 +71,28 @@ private:
     bool run_compaction_pass(auto_drainer_t::lock_t keepalive,
                              uint64_t now_us);
 
-    /* Downsampling trigger (TS-5 wires the merge pipeline). No-op. */
-    void run_downsample_pass(UNUSED auto_drainer_t::lock_t keepalive,
-                             UNUSED uint64_t now_us) THROWS_NOTHING;
+    /* One downsample pass (PHASE3-TS-5, §6.4): merges the raw rows of every
+     * sealed, unmerged chunk into the per-step downsample trees, one
+     * transaction per chunk (fold into ALL steps, then set the chunk's
+     * `merged` watermark and save the catalog — a crash rolls the in-flight
+     * chunk back and the next pass resumes from the watermark). Returns true
+     * when at least one chunk was merged. */
+    bool run_downsample_pass(auto_drainer_t::lock_t keepalive,
+                             uint64_t now_us);
 
     void handle_corrupt_chunk(const std::string &what);
 
     store_t *store_;
 
     /* Last run timestamps (microseconds since epoch) and the chunk interval
-     * of the last config seen, which drives the retention cadence. */
+     * of the last config seen, which drives the retention cadence. The
+     * downsample cadence is the finest target interval seen (spec §6.4:
+     * "every `target_interval` seconds"). */
     uint64_t last_retention_us_;
     uint64_t last_compaction_us_;
     uint64_t last_chunk_interval_seconds_;
+    uint64_t last_downsample_us_;
+    uint64_t last_downsample_interval_seconds_;
 
     /* ── perfmon (under the store's perfmon_collection) ── */
     perfmon_counter_t pm_retention_runs;
@@ -89,6 +100,9 @@ private:
     perfmon_counter_t pm_retention_rows_freed;
     perfmon_counter_t pm_compaction_runs;
     perfmon_counter_t pm_compaction_chunks_rewritten;
+    perfmon_counter_t pm_downsample_runs;
+    perfmon_counter_t pm_downsample_chunks_merged;
+    perfmon_counter_t pm_downsample_rows_written;
     perfmon_counter_t pm_corrupt_events;
     perfmon_multi_membership_t pm_memberships;
 

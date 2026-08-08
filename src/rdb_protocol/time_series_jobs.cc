@@ -14,7 +14,11 @@
 #include "errors.hpp"
 #include "logger.hpp"
 #include "rdb_protocol/btree.hpp"
+#include "rdb_protocol/configured_limits.hpp"
+#include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/env.hpp"
 #include "rdb_protocol/erase_range.hpp"
+#include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/store.hpp"
 #include "rdb_protocol/time_series_errors.hpp"
@@ -45,11 +49,16 @@ time_series_jobs_t::time_series_jobs_t(store_t *store)
        * freshly-created retention table's config is discovered quickly.
        * The first pass itself runs immediately (last_retention_us_ == 0). */
       last_chunk_interval_seconds_(TIME_SERIES_JOBS_DEFAULT_WAKE_MS / 1000),
+      last_downsample_us_(0),
+      last_downsample_interval_seconds_(TIME_SERIES_JOBS_DEFAULT_WAKE_MS / 1000),
       pm_retention_runs(get_num_threads()),
       pm_retention_chunks_expired(get_num_threads()),
       pm_retention_rows_freed(get_num_threads()),
       pm_compaction_runs(get_num_threads()),
       pm_compaction_chunks_rewritten(get_num_threads()),
+      pm_downsample_runs(get_num_threads()),
+      pm_downsample_chunks_merged(get_num_threads()),
+      pm_downsample_rows_written(get_num_threads()),
       pm_corrupt_events(get_num_threads()),
       pm_memberships(
           &store_->perfmon_collection,
@@ -59,6 +68,9 @@ time_series_jobs_t::time_series_jobs_t(store_t *store)
           &pm_compaction_runs, "time_series_compaction_runs",
           &pm_compaction_chunks_rewritten,
           "time_series_compaction_chunks_rewritten",
+          &pm_downsample_runs, "time_series_downsample_runs",
+          &pm_downsample_chunks_merged, "time_series_downsample_chunks_merged",
+          &pm_downsample_rows_written, "time_series_downsample_rows_written",
           &pm_corrupt_events, "time_series_corrupt_events") {
 }
 
@@ -96,7 +108,12 @@ void time_series_jobs_t::run(auto_drainer_t::lock_t keepalive) THROWS_NOTHING {
                 run_compaction_pass(keepalive, now_us);
                 last_compaction_us_ = current_microtime();
             }
-            run_downsample_pass(keepalive, now_us);
+            if (last_downsample_us_ == 0
+                    || now_us - last_downsample_us_
+                        >= last_downsample_interval_seconds_ * 1000000ULL) {
+                run_downsample_pass(keepalive, now_us);
+                last_downsample_us_ = current_microtime();
+            }
 
             const uint64_t wake_s = std::min<uint64_t>(
                 std::max<uint64_t>(last_chunk_interval_seconds_,
@@ -299,12 +316,196 @@ bool time_series_jobs_t::run_compaction_pass(
     }
 }
 
-void time_series_jobs_t::run_downsample_pass(
-        UNUSED auto_drainer_t::lock_t keepalive,
-        UNUSED uint64_t now_us) THROWS_NOTHING {
-    /* PHASE3-TS-5 wires the merge pipeline (raw → downsample tables, spec
-     * §5.3). The trigger exists here so the table lifecycle owns the full
-     * job set; until then this is a deliberate no-op. */
+bool time_series_jobs_t::run_downsample_pass(
+        auto_drainer_t::lock_t keepalive, uint64_t now_us) {
+    rdb_live_deletion_context_t deletion_context;
+    bool merged_any = false;
+
+    for (;;) {
+        /* Serialize against chunked writes (same mutex as retention: the
+         * write path holds time_series_mutex across its catalog load →
+         * route → save cycle, and the merge must not interleave a catalog
+         * load/save with it). Re-acquired per chunk so a long pass never
+         * starves live writes. */
+        scoped_ptr_t<new_mutex_in_line_t> ts_acq;
+        ts_acq.init(new new_mutex_in_line_t(&store_->time_series_mutex));
+        ts_acq->acq_signal()->wait_lazily_unordered();
+
+        write_token_t token;
+        store_->new_write_token(&token);
+        scoped_ptr_t<txn_t> txn;
+        scoped_ptr_t<real_superblock_t> superblock;
+        store_->acquire_superblock_for_write(
+            4 + static_cast<int>(TIME_SERIES_RETENTION_ERASE_BATCH),
+            write_durability_t::SOFT, &token, &txn, &superblock,
+            keepalive.get_drain_signal());
+
+        time_series_catalog_t catalog =
+            time_series_ops_t::load_catalog(superblock.get());
+        if (catalog.config.enabled) {
+            last_chunk_interval_seconds_ = catalog.config.chunk_interval_seconds;
+            if (!catalog.config.downsample_steps.empty()) {
+                /* The downsample cadence is the finest target interval
+                 * (spec §6.4: downsampling triggers "every `target_interval`
+                 * seconds"). */
+                uint64_t finest =
+                    catalog.config.downsample_steps[0].target_interval_seconds;
+                for (const ql::downsample_step_t &step :
+                        catalog.config.downsample_steps) {
+                    finest = std::min(finest, step.target_interval_seconds);
+                }
+                last_downsample_interval_seconds_ = std::max<uint64_t>(finest, 1);
+            }
+        }
+        if (!catalog.config.enabled
+                || catalog.config.downsample_steps.empty()) {
+            superblock.reset();
+            txn->commit();
+            return merged_any;
+        }
+
+        /* Keep `downsample_roots` parallel to the (immutable) step list:
+         * index i holds step i's tree root. A catalog that predates the
+         * first merge gets a NULL root per step; the first fold creates the
+         * tree. */
+        while (catalog.downsample_roots.size()
+                < catalog.config.downsample_steps.size()) {
+            catalog.downsample_roots.push_back(downsample_root_t(
+                catalog.config.downsample_steps[
+                    catalog.downsample_roots.size()].target_interval_seconds));
+        }
+
+        std::vector<size_t> candidates =
+            time_series_ops_t::downsample_candidates(catalog.chunk_index);
+        if (candidates.empty()) {
+            superblock.reset();
+            txn->commit();
+            return merged_any;
+        }
+
+        const size_t chunk_idx = candidates[0];
+        if (time_series_ops_t::chunk_is_corrupt(
+                catalog.chunk_index.chunks[chunk_idx])) {
+            handle_corrupt_chunk("downsample");
+            superblock.reset();
+            txn->commit();
+            return merged_any;
+        }
+
+        /* One bounded unit per transaction: one chunk's rows in memory
+         * (§9.3). The fold into ALL steps plus the watermark commit as one
+         * transaction, so a crash rolls the in-flight chunk back entirely
+         * (its step writes were never committed) and the next pass resumes
+         * from the flag — no duplicate buckets, no double counting. */
+        cond_t non_interruptor;
+
+        uint64_t rows_written = 0;
+        try {
+            std::vector<std::pair<store_key_t, ql::datum_t>> rows =
+                time_series_ops_t::collect_chunk_rows(
+                    store_->btree.get(), superblock.get(), &catalog,
+                    chunk_idx, &non_interruptor);
+
+            /* Aggregate evaluation env (same construction as the BRIN read
+             * path). Aggregate funcs were validated deterministic at table
+             * creation. */
+            ql::env_t agg_env(&non_interruptor,
+                              ql::return_empty_normal_batches_t::NO,
+                              reql_version_t::LATEST);
+
+            for (size_t step_idx = 0;
+                 step_idx < catalog.config.downsample_steps.size();
+                 ++step_idx) {
+                const ql::downsample_step_t &step =
+                    catalog.config.downsample_steps[step_idx];
+                const uint64_t interval_us =
+                    step.target_interval_seconds * 1000000ULL;
+
+                /* Compile the step's aggregate funcs ONCE (per step, not per
+                 * bucket — the generated-columns compile-once precedent).
+                 * Each func is a 1-arg function over the row batch (the
+                 * batch is bound to r.row; e.g.
+                 * `r.avg(r.row("temperature"))`). */
+                std::map<name_string_t, counted_t<const ql::func_t>> funcs;
+                for (const auto &kv : step.aggregates) {
+                    funcs[kv.first] = kv.second.compile_wire_func();
+                }
+
+                /* Bucket the chunk's rows: bucket = floor(ts / interval). */
+                std::map<uint64_t, std::vector<ql::datum_t>> buckets;
+                for (const auto &row : rows) {
+                    const uint64_t ts_us = time_series_ops_t::extract_time_us(
+                        row.second, catalog.config.time_field.str());
+                    buckets[(ts_us / interval_us) * interval_us].push_back(
+                        row.second);
+                }
+
+                /* ONE downsample row per bucket per step, keyed by the
+                 * bucket start: the aggregate columns computed over the
+                 * bucket's rows. The bucket-start key (20-digit zero-padded
+                 * micros string) doubles as the bucket's start time, so the
+                 * planner's key-range bound is exact and chronological. */
+                std::vector<std::pair<store_key_t, ql::datum_t>> out_rows;
+                for (const auto &bucket : buckets) {
+                    ql::datum_t batch = ql::datum_t(
+                        std::vector<ql::datum_t>(bucket.second),
+                        ql::configured_limits_t::unlimited);
+                    ql::datum_object_builder_t agg_row;
+                    for (const auto &f : funcs) {
+                        ql::datum_t val = f.second->call(
+                            &agg_env, std::vector<ql::datum_t>{batch})
+                                ->as_datum();
+                        agg_row.overwrite(f.first.str().c_str(), val);
+                    }
+                    out_rows.emplace_back(
+                        time_series_ops_t::downsample_bucket_key(bucket.first),
+                        std::move(agg_row).to_datum());
+                }
+                rows_written += out_rows.size();
+
+                time_series_ops_t::write_downsample_rows(
+                    store_->btree.get(), superblock.get(), out_rows,
+                    &catalog.downsample_roots[step_idx].root_block,
+                    &deletion_context);
+            }
+
+            /* The chunk is folded into EVERY step: set the durable merge
+             * watermark. The catalog save commits atomically with the step
+             * writes in this same transaction. */
+            catalog.chunk_index.chunks[chunk_idx].merged = true;
+        } catch (const ql::base_exc_t &e) {
+            /* Either a corrupt chunk index (validated BEFORE any
+             * modification, so this transaction is untouched) or an
+             * aggregate evaluation error (a config/data mismatch). Either
+             * way the chunk stays unmerged and the pass stops; the next
+             * tick retries. */
+            if (time_series_ops_t::chunk_is_corrupt(
+                    catalog.chunk_index.chunks[chunk_idx])) {
+                handle_corrupt_chunk(strprintf(
+                    "downsample: %s", e.what()));
+            } else {
+                logWRN("Time-series downsample merge failed for table %s "
+                        "(chunk %zu, %zu rows): %s",
+                        uuid_to_str(store_->get_table_id()).c_str(),
+                        chunk_idx, catalog.chunk_index.chunks[chunk_idx].row_count,
+                        e.what());
+            }
+            superblock.reset();
+            txn->commit();
+            return merged_any;
+        }
+
+        time_series_ops_t::save_catalog(superblock.get(), catalog);
+        superblock.reset();
+        txn->commit();
+
+        ++pm_downsample_runs;
+        ++pm_downsample_chunks_merged;
+        pm_downsample_rows_written += static_cast<int64_t>(rows_written);
+        merged_any = true;
+        /* Yield between chunks so live queries interleave freely. */
+        coro_t::yield();
+    }
 }
 
 void time_series_jobs_t::handle_corrupt_chunk(const std::string &what) {

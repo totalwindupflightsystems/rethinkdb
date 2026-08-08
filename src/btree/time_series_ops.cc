@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,14 +23,23 @@
 #include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/time_series_errors.hpp"
+#include "utils.hpp"
 
 /* time_series_catalog_t serialization (LATEST_DISK, like partition_catalog_t
- * in reql_specific.cc: the struct lives in the global namespace). */
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_4(time_series_catalog_t,
-    format_version, config, chunk_index);
+ * in reql_specific.cc: the struct lives in the global namespace). The
+ * downsample roots are appended AFTER chunk_index (PHASE3-TS-5 §5.3) so the
+ * pre-existing fields stay position-stable. */
+RDB_IMPL_SERIALIZABLE_4_SINCE_v2_4(time_series_catalog_t,
+    format_version, config, chunk_index, downsample_roots);
 
-RDB_IMPL_EQUALITY_COMPARABLE_3(time_series_catalog_t,
-    format_version, config, chunk_index);
+RDB_IMPL_SERIALIZABLE_2_SINCE_v2_4(downsample_root_t,
+    target_interval_seconds, root_block);
+
+RDB_IMPL_EQUALITY_COMPARABLE_4(time_series_catalog_t,
+    format_version, config, chunk_index, downsample_roots);
+
+RDB_IMPL_EQUALITY_COMPARABLE_2(downsample_root_t,
+    target_interval_seconds, root_block);
 
 namespace {
 
@@ -552,4 +562,174 @@ uint64_t time_series_ops_t::compact_chunk(
     catalog->chunk_index.chunks[chunk_idx].root_block =
         new_sb.get_root_block_id();
     return collector.rows.size();
+}
+
+/* ── downsampling (PHASE3-TS-5, spec §4.3/§5.3/§6.1/§6.4) ──────────────── */
+
+std::vector<size_t> time_series_ops_t::downsample_candidates(
+        const ql::time_chunk_index_t &chunk_index) {
+    std::vector<size_t> candidates;
+    /* The newest chunk is the active write target and is never merged
+     * (same rule as compaction, §6.4). Sealed chunks that already carry the
+     * merged watermark are skipped — the watermark IS the idempotency
+     * checkpoint (foundation commit). */
+    for (size_t i = 0; i + 1 < chunk_index.chunks.size(); ++i) {
+        const ql::time_chunk_bounds_t &chunk = chunk_index.chunks[i];
+        if (chunk.row_count > 0 && !chunk.merged) {
+            candidates.push_back(i);
+        }
+    }
+    return candidates;
+}
+
+std::vector<std::pair<store_key_t, ql::datum_t>>
+time_series_ops_t::collect_chunk_rows(
+        btree_slice_t *slice, real_superblock_t *sb,
+        const time_series_catalog_t *catalog, size_t chunk_idx,
+        signal_t *interruptor) {
+    guarantee(slice != nullptr);
+    guarantee(sb != nullptr);
+    guarantee(catalog != nullptr);
+    guarantee(interruptor != nullptr);
+    guarantee(chunk_idx < catalog->chunk_index.chunks.size());
+
+    const ql::time_chunk_bounds_t &chunk =
+        catalog->chunk_index.chunks[chunk_idx];
+    if (chunk_is_corrupt(chunk)) {
+        /* §7: never read around a corrupt chunk; raises BEFORE any
+         * traversal, so the caller's transaction is untouched. */
+        time_series_error::raise_op_failed(
+            time_series_error::TIME_SERIES_CHUNK_CORRUPT,
+            "cannot downsample chunk %zu: the chunk index claims %" PRIu64
+            " rows but no tree root exists.",
+            chunk_idx, chunk.row_count);
+    }
+
+    chunk_collect_visitor_t collector;
+    if (chunk.root_block != NULL_BLOCK_ID) {
+        time_chunk_superblock_t read_sb(
+            sb, chunk.root_block, sb->get_stat_block_id());
+        btree_depth_first_traversal(
+            &read_sb, key_range_t::universe(), &collector,
+            access_t::read, direction_t::FORWARD,
+            release_superblock_t::KEEP, interruptor);
+    }
+    return std::move(collector.rows);
+}
+
+void time_series_ops_t::write_downsample_rows(
+        btree_slice_t *slice, real_superblock_t *sb,
+        const std::vector<std::pair<store_key_t, ql::datum_t>> &rows,
+        block_id_t *root_in_out, const deletion_context_t *deletion_context) {
+    guarantee(slice != nullptr);
+    guarantee(sb != nullptr);
+    guarantee(root_in_out != nullptr);
+    guarantee(deletion_context != nullptr);
+    if (rows.empty()) {
+        return;
+    }
+
+    /* Ascending key order gives append locality in the rightmost leaf (the
+     * same trick as the compaction rebuild). */
+    std::vector<std::pair<store_key_t, ql::datum_t>> sorted = rows;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const std::pair<store_key_t, ql::datum_t> &a,
+                 const std::pair<store_key_t, ql::datum_t> &b) {
+                  return a.first < b.first;
+              });
+
+    time_chunk_superblock_t ds_sb(
+        sb, *root_in_out, sb->get_stat_block_id());
+    for (const std::pair<store_key_t, ql::datum_t> &row : sorted) {
+        point_write_response_t pw_res;
+        rdb_modification_info_t mod_info;
+        rdb_set(row.first, row.second, true /* overwrite */, slice,
+                repli_timestamp_t::distant_past, &ds_sb,
+                deletion_context, &pw_res, &mod_info, nullptr);
+    }
+    *root_in_out = ds_sb.get_root_block_id();
+}
+
+store_key_t time_series_ops_t::downsample_bucket_key(uint64_t bucket_start_us) {
+    /* 20 digits = the width of UINT64_MAX ("18446744073709551615"): the
+     * zero padding is what makes string order equal numeric order, which
+     * the range bound in `downsample_key_range` relies on. */
+    return store_key_t(strprintf("%020" PRIu64, bucket_start_us));
+}
+
+key_range_t time_series_ops_t::downsample_key_range(
+        uint64_t start_us, uint64_t end_us, uint64_t interval_seconds) {
+    if (start_us >= end_us) {
+        return key_range_t::empty();
+    }
+    const uint64_t interval_us = interval_seconds * 1000000ULL;
+    const uint64_t first_bucket_us = (start_us / interval_us) * interval_us;
+    const store_key_t left = downsample_bucket_key(first_bucket_us);
+    if (end_us == std::numeric_limits<uint64_t>::max()) {
+        /* Unbounded right edge (open-ended between): every bucket at or
+         * after `first_bucket_us`. */
+        return key_range_t(key_range_t::closed, left,
+                           key_range_t::none, store_key_t());
+    }
+    return key_range_t(key_range_t::closed, left,
+                       key_range_t::open, downsample_bucket_key(end_us));
+}
+
+const downsample_root_t *time_series_ops_t::select_downsample_root(
+        const time_series_catalog_t &catalog,
+        uint64_t start_us, uint64_t end_us) {
+    if (start_us >= end_us) {
+        return nullptr;
+    }
+    /* Spec §4.3: range_seconds = window / 1e6; select_downsample applies
+     * the strictly-less-than age semantics (reused verbatim). */
+    const uint64_t range_seconds = (end_us - start_us) / 1000000ULL;
+    const ql::downsample_step_t *step =
+        catalog.config.select_downsample(range_seconds);
+    if (step == nullptr) {
+        return nullptr;
+    }
+    /* downsample_roots is parallel to config.downsample_steps; the step
+     * pointer selects its index directly. */
+    const size_t step_idx = step - catalog.config.downsample_steps.data();
+    if (step_idx >= catalog.downsample_roots.size()) {
+        return nullptr;
+    }
+    const downsample_root_t *root = &catalog.downsample_roots[step_idx];
+    if (root->root_block == NULL_BLOCK_ID) {
+        /* The step exists but no merge has written into its tree yet: fall
+         * back to the raw chunk-root path (reads must not return empty for
+         * a table whose raw data exists). */
+        return nullptr;
+    }
+    return root;
+}
+
+void time_series_ops_t::release_storage(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog,
+        const deletion_context_t *deletion_context, signal_t *interruptor,
+        std::vector<rdb_modification_report_t> *mod_reports_out) {
+    guarantee(slice != nullptr);
+    guarantee(sb != nullptr);
+    guarantee(catalog != nullptr);
+    guarantee(deletion_context != nullptr);
+    guarantee(interruptor != nullptr);
+    guarantee(mod_reports_out != nullptr);
+
+    /* Erase every chunk tree (bounded batches — expire_chunk's model) and
+     * every downsample tree. The caller releases the catalog blob in the
+     * same transaction afterwards, so a crash rolls the whole drop back. */
+    for (const ql::time_chunk_bounds_t &chunk : catalog->chunk_index.chunks) {
+        if (chunk.root_block != NULL_BLOCK_ID) {
+            erase_chunk_tree(slice, sb, chunk.root_block, deletion_context,
+                             interruptor, mod_reports_out);
+        }
+    }
+    for (const downsample_root_t &root : catalog->downsample_roots) {
+        if (root.root_block != NULL_BLOCK_ID) {
+            erase_chunk_tree(slice, sb, root.root_block, deletion_context,
+                             interruptor, mod_reports_out);
+        }
+    }
 }
