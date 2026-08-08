@@ -36,6 +36,8 @@
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/lazy_btree_val.hpp"
+#include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/time_series_errors.hpp"
@@ -1240,6 +1242,40 @@ size_t count_chunk_rows(cache_conn_t *cache_conn, block_id_t root) {
     return visitor.count;
 }
 
+/* Collects every (key, datum) pair of a sub-tree (for verifying the
+ * downsample tree's bucket rows). */
+class tree_collect_visitor_t : public depth_first_traversal_callback_t {
+public:
+    continue_bool_t handle_pair(
+            scoped_key_value_t &&keyvalue,
+            UNUSED signal_t *interruptor) override {
+        const store_key_t key(keyvalue.key());
+        const rdb_value_t *value =
+            static_cast<const rdb_value_t *>(keyvalue.value());
+        rows.emplace_back(key, get_data(value, keyvalue.expose_buf()));
+        return continue_bool_t::CONTINUE;
+    }
+
+    std::vector<std::pair<store_key_t, ql::datum_t>> rows;
+};
+
+std::vector<std::pair<store_key_t, ql::datum_t>> collect_tree_rows(
+        cache_conn_t *cache_conn, block_id_t root) {
+    scoped_ptr_t<txn_t> txn;
+    scoped_ptr_t<real_superblock_t> superblock;
+    get_btree_superblock_and_txn_for_reading(
+        cache_conn, CACHE_SNAPSHOTTED_NO, &superblock, &txn);
+    time_chunk_superblock_t read_sb(
+        superblock.get(), root, superblock->get_stat_block_id());
+    tree_collect_visitor_t visitor;
+    cond_t interruptor;
+    btree_depth_first_traversal(
+        &read_sb, key_range_t::universe(), &visitor,
+        access_t::read, direction_t::FORWARD,
+        release_superblock_t::KEEP, &interruptor);
+    return std::move(visitor.rows);
+}
+
 }  // namespace
 
 TPTEST(TimeSeries, RetentionExpireChunkRemovesFromIndex) {
@@ -1541,6 +1577,112 @@ TEST(TimeSeries, RetentionOnlyReconfigureAllowed) {
         ql::datum_t::null(), base));
     EXPECT_FALSE(ql::time_series_reconfigure_allows_retention_change(
         base, ql::datum_t(42.0)));
+}
+
+/* PHASE3-TS-5 §8.2: end-to-end downsample integration — insert rows
+ * spanning multiple buckets, fold the sealed chunk through the merge
+ * job's per-chunk transaction (the same helper run_downsample_pass
+ * calls), and verify the downsample tree holds the expected aggregate
+ * rows: bucket keys plus computed aggregate values. */
+TPTEST(TimeSeries, DownsampleMergeWritesAggregateRows) {
+    with_ts_store([&](cache_conn_t *cache_conn, btree_slice_t *slice) {
+        /* One downsample step: 2s target interval, 10s age. Aggregates
+         * are real compiled ReQL funcs (minidriver), the same shape the
+         * config validator accepts at table creation. */
+        ql::time_series_config_t config = make_write_config();
+        ql::downsample_step_t step;
+        step.age_seconds = 10;
+        step.target_interval_seconds = 2;
+        ql::minidriver_t r(ql::backtrace_id_t::empty());
+        ql::sym_t batch(0);
+        step.aggregates[name_string_t::guarantee_valid("avg_temp")] =
+            ql::wire_func_t(
+                r.var(batch).call(Term::AVG, "temperature").root_term(),
+                std::vector<ql::sym_t>{batch});
+        step.aggregates[name_string_t::guarantee_valid("cnt")] =
+            ql::wire_func_t(
+                r.var(batch).count().root_term(),
+                std::vector<ql::sym_t>{batch});
+        config.downsample_steps.push_back(step);
+
+        time_series_catalog_t catalog;
+        catalog.config = config;
+        const uint64_t threshold = 4;
+        for (int i = 0; i < 6; ++i) {
+            ql::datum_object_builder_t doc;
+            doc.overwrite("id", ql::datum_t(datum_string_t(
+                strprintf("k%d", i).c_str())));
+            doc.overwrite("ts",
+                ql::pseudo::make_time(1000.0 + i, "+00:00"));
+            doc.overwrite("temperature", ql::datum_t(10.0 * i));
+            routed_insert(cache_conn, slice, config, &catalog, threshold,
+                          store_key_t(strprintf("k%d", i).c_str()),
+                          std::move(doc).to_datum());
+        }
+        /* k0..k3 → chunk 0 (sealed by k4); k4,k5 → newest chunk 1. */
+        ASSERT_EQ(2u, catalog.chunk_index.chunks.size());
+        ASSERT_EQ(4u, catalog.chunk_index.chunks[0].row_count);
+        ASSERT_EQ(2u, catalog.chunk_index.chunks[1].row_count);
+        EXPECT_FALSE(catalog.chunk_index.chunks[0].merged);
+        /* The job's candidate selection sees exactly the sealed chunk. */
+        EXPECT_EQ(std::vector<size_t>({0}),
+                  time_series_ops_t::downsample_candidates(
+                      catalog.chunk_index));
+
+        /* The merge pass: fold chunk 0 into the step inside one write
+         * transaction, exactly as run_downsample_pass does. */
+        rdb_live_deletion_context_t deletion_context;
+        cond_t non_interruptor;
+        uint64_t written = 0;
+        with_write_superblock(cache_conn, [&](real_superblock_t *sb) {
+            written = time_series_ops_t::merge_chunk_into_downsample_steps(
+                slice, sb, &catalog, 0, &deletion_context,
+                &non_interruptor);
+            time_series_ops_t::save_catalog(sb, catalog);
+        });
+
+        /* 4 rows at ts 1000..1003s → two 2s buckets: [1000s,1002s) and
+         * [1002s,1004s). The step's tree is created and holds one
+         * aggregate row per bucket. */
+        EXPECT_EQ(2u, written);
+        EXPECT_TRUE(catalog.chunk_index.chunks[0].merged);
+        EXPECT_FALSE(catalog.chunk_index.chunks[1].merged)
+            << "the active newest chunk is never merged";
+        EXPECT_TRUE(time_series_ops_t::downsample_candidates(
+            catalog.chunk_index).empty());
+        ASSERT_EQ(1u, catalog.downsample_roots.size());
+        ASSERT_NE(NULL_BLOCK_ID, catalog.downsample_roots[0].root_block);
+
+        std::vector<std::pair<store_key_t, ql::datum_t>> agg_rows =
+            collect_tree_rows(cache_conn,
+                              catalog.downsample_roots[0].root_block);
+        ASSERT_EQ(2u, agg_rows.size());
+        /* Bucket keys are the zero-padded bucket starts, in order. */
+        EXPECT_EQ(time_series_ops_t::downsample_bucket_key(1000000000ULL),
+                  agg_rows[0].first);
+        EXPECT_EQ(time_series_ops_t::downsample_bucket_key(1002000000ULL),
+                  agg_rows[1].first);
+        /* Bucket [1000s,1002s): temps 0 and 10 → avg 5, count 2. */
+        EXPECT_DOUBLE_EQ(5.0, agg_rows[0].second.get_field(
+            datum_string_t("avg_temp")).as_num());
+        EXPECT_DOUBLE_EQ(2.0, agg_rows[0].second.get_field(
+            datum_string_t("cnt")).as_num());
+        /* Bucket [1002s,1004s): temps 20 and 30 → avg 25, count 2. */
+        EXPECT_DOUBLE_EQ(25.0, agg_rows[1].second.get_field(
+            datum_string_t("avg_temp")).as_num());
+        EXPECT_DOUBLE_EQ(2.0, agg_rows[1].second.get_field(
+            datum_string_t("cnt")).as_num());
+
+        /* Durability: a fresh catalog read sees the step root and the
+         * merged watermark. */
+        time_series_catalog_t reloaded = load_ts_catalog(cache_conn);
+        ASSERT_EQ(1u, reloaded.downsample_roots.size());
+        EXPECT_EQ(catalog.downsample_roots[0].root_block,
+                  reloaded.downsample_roots[0].root_block);
+        EXPECT_TRUE(reloaded.chunk_index.chunks[0].merged);
+        EXPECT_EQ(2u, count_chunk_rows(
+            cache_conn, reloaded.downsample_roots[0].root_block));
+    });
 }
 
 }  // namespace unittest

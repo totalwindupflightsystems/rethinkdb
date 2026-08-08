@@ -260,6 +260,47 @@ void do_read(ql::env_t *env,
                 uint64_t start_us = 0;
                 uint64_t end_us = std::numeric_limits<uint64_t>::max();
                 normalize_ts_range(*rget.ts_range, &start_us, &end_us);
+
+                /* PHASE3-TS-5 §4.3: planner auto-selection. When the query
+                 * window exceeds a downsample step's age and that step's
+                 * tree has data, read the precomputed aggregate rows
+                 * instead of the raw chunk roots. The bucket-key range
+                 * [first bucket, end_us) is exact (downsample_key_range),
+                 * so no per-row time filter is needed — aggregate rows
+                 * don't carry the time field, the bucket key is the
+                 * timestamp. Changefeed reads (stamp set) stay on the raw
+                 * path: their initial state must match the raw rows the
+                 * feed will stream. A nullptr root (no step selected, or
+                 * the step's tree not yet merged) falls through to the
+                 * raw chunk-root scan below. */
+                if (!rget.stamp.has_value()) {
+                    const downsample_root_t *ds_root =
+                        time_series_ops_t::select_downsample_root(
+                            catalog, start_us, end_us);
+                    if (ds_root != nullptr) {
+                        key_range_t ds_range =
+                            time_series_ops_t::downsample_key_range(
+                                start_us, end_us,
+                                ds_root->target_interval_seconds);
+                        rdb_ts_rget_slice(
+                            btree,
+                            *rget.current_shard,
+                            rget.region.inner.intersection(ds_range),
+                            std::vector<block_id_t>{ds_root->root_block},
+                            rget.primary_keys,
+                            superblock,
+                            env,
+                            rget.batchspec,
+                            rget.transforms,
+                            rget.terminal,
+                            rget.sorting,
+                            res,
+                            release_superblock,
+                            r_nullopt);
+                        return;
+                    }
+                }
+
                 std::vector<block_id_t> pruned_roots;
                 for (size_t chunk_idx :
                         catalog.chunk_index.overlapping_chunks(

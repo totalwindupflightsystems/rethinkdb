@@ -650,6 +650,118 @@ void time_series_ops_t::write_downsample_rows(
     *root_in_out = ds_sb.get_root_block_id();
 }
 
+uint64_t time_series_ops_t::merge_chunk_into_downsample_steps(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog, size_t chunk_idx,
+        const deletion_context_t *deletion_context, signal_t *interruptor) {
+    guarantee(slice != nullptr);
+    guarantee(sb != nullptr);
+    guarantee(catalog != nullptr);
+    guarantee(deletion_context != nullptr);
+    guarantee(interruptor != nullptr);
+    guarantee(chunk_idx < catalog->chunk_index.chunks.size());
+
+    const ql::time_chunk_bounds_t &chunk =
+        catalog->chunk_index.chunks[chunk_idx];
+    if (chunk_is_corrupt(chunk)) {
+        /* §7: never merge around a corrupt chunk; raises BEFORE any
+         * modification, so the caller's transaction is untouched. */
+        time_series_error::raise_op_failed(
+            time_series_error::TIME_SERIES_CHUNK_CORRUPT,
+            "cannot downsample chunk %zu: the chunk index claims %" PRIu64
+            " rows but no tree root exists.",
+            chunk_idx, chunk.row_count);
+    }
+
+    /* Keep `downsample_roots` parallel to the (immutable) step list:
+     * index i holds step i's tree root. A catalog that predates the
+     * first merge gets a NULL root per step; the first fold creates the
+     * tree. */
+    while (catalog->downsample_roots.size()
+            < catalog->config.downsample_steps.size()) {
+        catalog->downsample_roots.push_back(downsample_root_t(
+            catalog->config.downsample_steps[
+                catalog->downsample_roots.size()].target_interval_seconds));
+    }
+
+    /* One bounded unit per transaction: one chunk's rows in memory (§9.3).
+     * The fold into ALL steps plus the watermark commit as one transaction
+     * in the caller, so a crash rolls the in-flight chunk back entirely
+     * (its step writes were never committed) and the next pass resumes
+     * from the flag — no duplicate buckets, no double counting. */
+    uint64_t rows_written = 0;
+
+    std::vector<std::pair<store_key_t, ql::datum_t>> rows =
+        collect_chunk_rows(slice, sb, catalog, chunk_idx, interruptor);
+
+    /* Aggregate evaluation env (same construction as the BRIN read path).
+     * Aggregate funcs were validated deterministic at table creation. */
+    ql::env_t agg_env(interruptor,
+                      ql::return_empty_normal_batches_t::NO,
+                      reql_version_t::LATEST);
+
+    for (size_t step_idx = 0;
+         step_idx < catalog->config.downsample_steps.size();
+         ++step_idx) {
+        const ql::downsample_step_t &step =
+            catalog->config.downsample_steps[step_idx];
+        const uint64_t interval_us =
+            step.target_interval_seconds * 1000000ULL;
+
+        /* Compile the step's aggregate funcs ONCE (per step, not per
+         * bucket — the generated-columns compile-once precedent). Each
+         * func is a 1-arg function over the row batch (the batch is bound
+         * to r.row; e.g. `r.avg(r.row("temperature"))`). */
+        std::map<name_string_t, counted_t<const ql::func_t>> funcs;
+        for (const auto &kv : step.aggregates) {
+            funcs[kv.first] = kv.second.compile_wire_func();
+        }
+
+        /* Bucket the chunk's rows: bucket = floor(ts / interval). */
+        std::map<uint64_t, std::vector<ql::datum_t>> buckets;
+        for (const auto &row : rows) {
+            const uint64_t ts_us = extract_time_us(
+                row.second, catalog->config.time_field.str());
+            buckets[(ts_us / interval_us) * interval_us].push_back(
+                row.second);
+        }
+
+        /* ONE downsample row per bucket per step, keyed by the bucket
+         * start: the aggregate columns computed over the bucket's rows.
+         * The bucket-start key (20-digit zero-padded micros string)
+         * doubles as the bucket's start time, so the planner's key-range
+         * bound is exact and chronological. */
+        std::vector<std::pair<store_key_t, ql::datum_t>> out_rows;
+        for (const auto &bucket : buckets) {
+            ql::datum_t batch = ql::datum_t(
+                std::vector<ql::datum_t>(bucket.second),
+                ql::configured_limits_t::unlimited);
+            ql::datum_object_builder_t agg_row;
+            for (const auto &f : funcs) {
+                ql::datum_t val = f.second->call(
+                    &agg_env, std::vector<ql::datum_t>{batch})
+                        ->as_datum();
+                agg_row.overwrite(f.first.str().c_str(), val);
+            }
+            out_rows.emplace_back(
+                downsample_bucket_key(bucket.first),
+                std::move(agg_row).to_datum());
+        }
+        rows_written += out_rows.size();
+
+        write_downsample_rows(
+            slice, sb, out_rows,
+            &catalog->downsample_roots[step_idx].root_block,
+            deletion_context);
+    }
+
+    /* The chunk is folded into EVERY step: set the durable merge
+     * watermark. The caller's catalog save commits atomically with the
+     * step writes in this same transaction. */
+    catalog->chunk_index.chunks[chunk_idx].merged = true;
+    return rows_written;
+}
+
 store_key_t time_series_ops_t::downsample_bucket_key(uint64_t bucket_start_us) {
     /* 20 digits = the width of UINT64_MAX ("18446744073709551615"): the
      * zero padding is what makes string order equal numeric order, which

@@ -266,6 +266,23 @@ public:
         const std::vector<std::pair<store_key_t, ql::datum_t>> &rows,
         block_id_t *root_in_out, const deletion_context_t *deletion_context);
 
+    /* §6.4: folds one chunk into every downsample step — buckets the
+     * chunk's rows per step (bucket = floor(ts / interval) * interval),
+     * computes one aggregate row per bucket (the step's aggregate funcs
+     * compiled once, per step, not per bucket), writes them into the
+     * step's tree via write_downsample_rows, then sets the chunk's
+     * `merged` watermark. This is the merge job's per-chunk transaction
+     * body: the caller holds the write superblock and saves the catalog in
+     * the same transaction, so a crash rolls the in-flight chunk back and
+     * the next pass resumes from the watermark. Raises
+     * TIME_SERIES_CHUNK_CORRUPT before modifying anything on a corrupt
+     * chunk, and lets aggregate-evaluation errors propagate (the chunk
+     * stays unmerged). Returns the number of downsample rows written. */
+    static uint64_t merge_chunk_into_downsample_steps(
+        btree_slice_t *slice, real_superblock_t *sb,
+        time_series_catalog_t *catalog, size_t chunk_idx,
+        const deletion_context_t *deletion_context, signal_t *interruptor);
+
     /* Bucket key for a bucket start: the 20-digit zero-padded decimal string
      * of the microseconds value, so lexicographic key order equals
      * chronological order (a fixed width is what makes the key-range bound

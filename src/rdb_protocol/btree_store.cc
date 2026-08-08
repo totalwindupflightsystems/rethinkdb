@@ -10,9 +10,11 @@
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/secondary_operations.hpp"
+#include "btree/time_series_ops.hpp"
 #include "buffer_cache/alt.hpp"
 #include "buffer_cache/cache_balancer.hpp"
 #include "clustering/administration/issues/outdated_index.hpp"
+#include "concurrency/new_mutex.hpp"
 #include "concurrency/wait_any.hpp"
 #include "containers/archive/buffer_stream.hpp"
 #include "containers/archive/vector_stream.hpp"
@@ -387,6 +389,26 @@ void store_t::reset_data(
         region_t deleted_region(subregion.beg, subregion.end, deleted_range);
         metainfo->update(superblock.get(),
                          region_map_t<binary_blob_t>(deleted_region, zero_metainfo));
+
+        /* PHASE3-TS-5 §6.1: tableDrop cascade — a dropped time-series
+         * table's chunk trees AND downsample trees are erased here too
+         * (release_storage handles both in bounded batches), and the
+         * catalog blob is freed in the same transaction as the primary
+         * erase. Serialized by time_series_mutex like every other catalog
+         * mutation, acquired before the superblock (the jobs' order) so
+         * this never deadlocks against a concurrent write/merge. */
+        if (superblock->get_time_series_catalog_block_id() != NULL_BLOCK_ID) {
+            scoped_ptr_t<new_mutex_in_line_t> ts_acq;
+            ts_acq.init(new new_mutex_in_line_t(&time_series_mutex));
+            ts_acq->acq_signal()->wait_lazily_unordered();
+
+            time_series_catalog_t catalog =
+                time_series_ops_t::load_catalog(superblock.get());
+            time_series_ops_t::release_storage(
+                btree.get(), superblock.get(), &catalog,
+                &deletion_context, &non_interruptor, &mod_reports);
+            time_series_ops_t::release_catalog(superblock.get());
+        }
 
         superblock.reset();
         if (!mod_reports.empty()) {
