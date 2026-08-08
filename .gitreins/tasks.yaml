@@ -368,3 +368,30 @@ tasks:
   status: complete
   created_at: '2026-08-07T17:26:51.108224+00:00'
   completed_at: '2026-08-07T17:26:53.996052+00:00'
+- id: PHASE3-TS-5
+  title: "Downsample pipeline: parallel downsample storage + background merge + planner\
+    \ auto-selection (spec \xA74.3/\xA75.3/\xA76.4/\xA76.1)"
+  criteria:
+  - "\xA75.3 downsample storage: per-step downsample_root_t entries in time_series_catalog_t\
+    \ (parallel to config.downsample_steps), serialized/equality-compared, appended\
+    \ after chunk_index; write_downsample_rows creates/writes each step tree via rdb_set\
+    \ in ascending key order"
+  - "\xA76.4 merge job: run_downsample_pass folds every sealed unmerged non-empty\
+    \ chunk into ALL downsample steps in one transaction per chunk (bounded by TIME_SERIES_RETENTION_ERASE_BATCH),\
+    \ compiles aggregate funcs once per step, buckets rows by floor(ts/interval)*interval,\
+    \ writes one aggregate row per bucket keyed by 20-digit zero-padded bucket-start\
+    \ micros string, sets the chunk's merged watermark, saves catalog atomically,\
+    \ yields between chunks"
+  - "\xA74.3 planner auto-selection WIRED: the rget/between read path calls select_downsample_root(catalog,\
+    \ start_us, end_us) and scans the selected downsample tree via downsample_key_range\
+    \ instead of raw chunk roots when a step matches (range_seconds strictly-greater-than\
+    \ step age semantics, NULL-root fallback to raw)"
+  - "\xA76.1 tableDrop cascade WIRED: dropping a time-series table calls release_storage\
+    \ which erases every chunk tree and every downsample tree in bounded batches with\
+    \ mod_reports_out for secondary-index consistency"
+  - "\xA78.2 tests: unit tests for serialization round-trip, bucket-key ordering,\
+    \ key-range exactness, selection fallback, candidates (all present in time_series_test.cc)\
+    \ AND an integration test inserting rows, waiting for the downsample tick, verifying\
+    \ aggregate output"
+  status: pending
+  created_at: '2026-08-08T03:56:20.521895+00:00'

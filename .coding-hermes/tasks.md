@@ -5637,3 +5637,65 @@ VERDICT: **PRODUCTIVE (dispatch)** — PHASE3-TS-5 dispatched per execution orde
 **Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
 
 VERDICT: **PRODUCTIVE (stewardship + resume)** — tick #106 worker's partial salvaged: independently verified (479/479 build, 263/263 regression), committed as foundation 9023d84b70, remaining TS-5 scope re-dispatched with incremental-commit discipline to avoid another lost-work stall. Next tick: poll, verify, judge, close.
+## Productive Tick #108 — 2026-08-08 04:03 UTC (PHASE3-TS-5 STEWARDSHIP + WIRING WORKER IN FLIGHT)
+
+**Mission:** Fold the unrecorded prior foreman session (03:56-03:58 UTC) into the board — it stewarded tick #107's worker 3651755, committed the TS-5 core, and dispatched a continuation wiring worker — then independently verify the committed core, push the orphaned commit, and steward the wiring worker to completion.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | 1fd7461620 (TS-5 core, committed by prior session 03:56 UTC, UNPUSHED, ahead 1) |
+| Last board entry | Tick #107 (PHASE3-TS-5 resume dispatched PID 3651755) |
+| Worker PID 3651755 | **DEAD** — work completed by prior session; verified + committed + fixed (ql::ns, logWRN, candidate expectation) |
+| Prior session | Ran 03:56-03:58 UTC, committed core, dispatched wiring worker PID 2224582 (22:58 local), **exited WITHOUT board update** — events.jsonl max id=18, header stale (ticks_total=107, last_commit=9023d84b70) |
+| Working tree | M .gitreins/tasks.yaml (TS-5 gitreins task record, pending) + 2 untracked artifacts (dagger.db, egg-info — known) |
+| Board storage | JSONL canonical (events.jsonl id=20 max after this tick) |
+| Scheduler | rethinkdb Enabled, CooldownS=7200 (header-carry, no PUT) |
+
+### Prior-session fold-in (rapid refire — duplicate tick +2 min after prior session ended)
+
+The prior session did the real stewardship work but left zero board record. This tick folds it in:
+
+1. ✅ Core commit `1fd7461620` verified INDEPENDENTLY: stale-binary check empty (binary 22:54 fresh), regression+TS filter **268/268 PASS** (86.8s, 26 test cases) — matches prior session claim
+2. ✅ Core scope confirmed in commit: `downsample_root_t` per-step storage §5.3, `run_downsample_pass` merge job §6.4 (logWRN), `downsample_key_range`/`select_downsample_root`/`release_storage` primitives, 5 unit tests §8.2 (DownsampleRootsRoundTrip, BucketKeyOrdering, KeyRangeExact, SelectionRoot, Candidates)
+3. ✅ GitReins task PHASE3-TS-5 record created by prior session (status pending, criteria §5.3/§6.4/§4.3/§6.1/§8.2) — left uncommitted in .gitreins/tasks.yaml
+4. ✅ Wiring worker dispatch recorded: event id=19 (task_dispatched, PID 2224582, deepseek-v4-flash @ deepseek-foreman), tasks.jsonl attempts=2
+5. ✅ Fold-in audit event id=20 + header corrected (ticks_total=108, last_commit=1fd7461620)
+
+### Wiring worker scope (PID 2224582, dispatched 22:58 local, in flight)
+
+Continuation worker for the remaining TS-5 integration wiring (prompt /tmp/rethinkdb_t108_ts5_wiring_prompt.md):
+
+| Subsection | Scope | AC |
+|-----------|-------|-----|
+| A §4.3 | Read-path planner wiring: ts_readgen → select_downsample_root(catalog, start_us, end_us), downsample-key-range read against root->root_block, nullptr → raw chunk path | select_downsample_root has ≥1 non-test caller in src/rdb_protocol/ |
+| B §6.1 | tableDrop cascade: wire release_storage into drop path (erases chunk + downsample trees, time_series_mutex held) | release_storage has ≥1 non-test caller in drop path |
+| C §8.2 | Integration test: insert → downsample pass → verify aggregate rows (bucket keys + values), not skipped | test asserts real values |
+
+**Worker progress observed:** at 04:02 UTC worker had already modified src/rdb_protocol/store.cc (+41, select_downsample_root + downsample_key_range at store.cc:278-282 — subsection A in progress) and btree_store.cc (+2). Alive, CPU-active.
+
+### Actions this tick
+
+1. ✅ Self-heal: prior-session worker 3651755 dead (work committed); wiring worker 2224582 = the dispatched worker, NOT a rogue — no duplicate spawn (rapid-refire protocol)
+2. ✅ Board tail read (tick #107) + JSONL canonical confirmed (events id=18 max at start, header stale)
+3. ✅ DuckBrain recall: status key (TS-4 complete, TS-5 next), tick #103 verdict, TS-2 read-path pattern keys — prior-session context confirmed consistent
+4. ✅ Core commit independently re-verified: 268/268 regression + TS filter (86.8s), binary freshness confirmed
+5. ✅ Orphaned core commit pushed: `1fd7461620` → origin/main (was ahead 1, unrecorded by prior session)
+6. ✅ Board fold-in: dispatch event id=19, audit id=20, header ticks_total=108/last_commit=1fd7461620
+7. ⏳ **Wiring worker PID 2224582 in flight** — next tick: poll → verify each subsection commit → full ladder (build, 268+ regression, TimeSeries) → gitreins judge PHASE3-TS-5 → close
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..4, RT-BUG-001/002, RT-GAP-001/002/003, JSONL-NORM-001 | all prior | ✅ Complete |
+| **PHASE3-TS-5 (downsample pipeline)** | core 268/268 ✅ | 🔄 **Wiring worker in flight (PID 2224582)** |
+| PHASE3-TS-6 (cluster), FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → **PHASE3-TS-5 🔄 (wiring worker PID 2224582)** → TS-6 → PHASE3-FDW → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — header-carry (no PUT per policy)
+
+VERDICT: **PRODUCTIVE (stewardship + fold-in)** — prior session's unrecorded work folded into board: core commit independently re-verified (268/268), pushed (was ahead 1), dispatch recorded (event id=19, PID 2224582), header corrected (ticks_total=108). Wiring worker in flight on subsections A/B/C; next tick: poll, verify, judge, close.
