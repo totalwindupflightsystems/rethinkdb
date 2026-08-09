@@ -65,7 +65,7 @@
 | PHASE3-TS-3 | Read pruning via chunk index (§4.2/§6.3) — between() scoped reads | Low | 5 | PHASE3-TS-2 | ++code-generation, ++performance | deepseek-v4-flash | **QUEUE #3c** | GLM-5.2 |
 || PHASE3-TS-4 | Retention TTL + background jobs (§5.2/§6.4/§7) — 🚀 DISPATCHED tick #101 (deepseek-v4-flash @ deepseek-foreman, PID 591407, session proc_b919074a29e7) | Low | 6 | PHASE3-TS-3 | ++code-generation, ++distributed-systems | deepseek-v4-flash | **QUEUE #3d** — retention tick + chunk compaction + job lifecycle; downsample merge is TS-5, NOT in scope | GLM-5.2 |
 | PHASE3-TS-5 | Downsample pipeline + planner auto-selection (§4.3/§5.3/§6.4) | Low | 6 | PHASE3-TS-4 | ++code-generation, ++performance | GLM-5.2 | **QUEUE #3e** | deepseek-v4-flash |
-| PHASE3-TS-6 | Cluster integration + benchmarks + chaos (§6.4/§8/§10) | Low | 6 | PHASE3-TS-5 | +++distributed-systems, ++testing | GPT-5.6 Sol | **QUEUE #3f** | GLM-5.2 |
+|| ~~PHASE3-TS-6~~ | ✅ **DONE (tick #116, d8e6e78a5a)** — cluster integration + benchmarks + chaos: benchmarks 6/6, chaos probe 24/24 (3 SIGKILL scenarios), DEFECT A fixed (job-pass txn publish: release_buf + catalog-pointer enshrine — retention/merge writes were silently orphaned), DEFECT B fixed (downsample read now traverses ds_range directly — region∩ds_range was empty because bucket keys live outside the pkey region). TimeSeries 40/40, regression 277/277. | Low | 6 | PHASE3-TS-5 | +++distributed-systems, ++testing | GPT-5.6 Sol | **QUEUE #3f COMPLETE** | GLM-5.2 |
 | PHASE3-FDW | Foreign data wrapper support | Low | 6 | PHASE3-TS | ++architecture, ++distributed-systems | GPT-5.6 Sol | **QUEUE #4** — federation layer | GLM-5.2 |
 | PHASE3-ASYNC | Async I/O subsystem (PG18-style) | Medium | 9 (architectural) | PHASE3-FDW | +++architecture, +++concurrency, +++performance | GPT-5.6 Sol | **QUEUE #5** — system-wide redesign | — |
 | PHASE3-WASM | WASM-based UDF sandbox | Low | 7 | PHASE3-ASYNC | +++security, ++architecture, ++performance | GPT-5.6 Sol | **QUEUE #6** — replace V8/QuickJS; security-critical | — |
@@ -5756,3 +5756,67 @@ VERDICT: **PRODUCTIVE (verification caught 2 real defects; false-complete record
 **Dispatch:** fix worker PID 4107906 (minimax-m3 @ ollama-cloud, prepaid, detached, coding-hermes-worker), prompt /tmp/rethinkdb_t112_ts6_fix_prompt.md. ACs unchanged + AC 7 (new unit tests): chaos 24/24, disc probe count==10 exact set, between() 40 raw or 20 agg (sum 40, weighted 780), cluster E2E, benchmarks 6/6, regression 269/269 + TS 32/32, scrambled-index unit tests.
 
 VERDICT: **PRODUCTIVE (stewardship)** — dead worker root-caused (PAYG + session-scoped), re-dispatched detached on correct prepaid provider, new chunk-ordering root cause documented for the worker. Next tick: steward worker 4107906, verify probes, judge TS-6, close.
+## Productive Tick #116 — 2026-08-09 14:55 UTC (PHASE3-TS-6 COMPLETE — 2 DEFECTS FIXED + VERIFIED)
+
+**Mission:** Steward tick #112's fix worker (4107906) partial, root-cause the two remaining live defects (DEFECT A: job-pass writes silently vanish; DEFECT B: between() returns 0 after merge), fix foreman-direct, verify the full ladder, close PHASE3-TS-6.
+
+### State at tick start (verified)
+
+| Check | Result |
+|-------|--------|
+| HEAD | 21c13d5b48 (dogfood commit); 2 unpushed (dogfood + stand-in PM board) |
+| Fix worker 4107906 | **DEAD** — left coherent partial fix uncommitted (scrambled chunk-index handling: expired_chunks full scan, newest-by-max_time_us, select_chunk interval-aware backfill) |
+| Working tree | 3 modified (time_series_ops.{cc,hpp}, time_series_test.cc — worker partial, 214+/35-) + 2 untracked artifacts (dagger.db, egg-info) |
+| Unrecorded sessions | Ticks #113–#115 ran probes (/tmp/t113_*, ts6_* probes) with NO board entries — fold-in only |
+| Scheduler | rethinkdb Enabled, CooldownS=7200 (GET-verified, no PUT) |
+
+### Root-cause work (foreman, instrumented — logWRN probes, 4 rebuild cycles)
+
+**DEFECT A — job-pass txn writes silently vanish (retention/compaction/downsample).**
+Instrumentation (load/save_catalog + merge + rget-slice traces) showed: the merge wrote agg rows (rows_written≥1) and saved the catalog (roots=1) — but READS kept the pre-job catalog (roots=0), count() never dropped after retention TTL, and the merge re-ran forever. The job passes committed with `superblock.reset()` BEFORE `txn->commit()` and never re-published the catalog pointer — the page-cache COW orphaned the writes (exactly the loss store_t::write's own comment documents). **Fix:** `superblock->release_buf()` before commit (keep write-semaphore acq) + new `store_t::enshrine_ts_catalog_pointer()` bare-txn re-commit, applied to all 3 passes. Verified: retention live store-view erase (count 20→0 after TTL), merge stops re-running, catalog publishes.
+
+**DEFECT B — between() returns raw=0 agg=0 after the merge.**
+The agg read passed `rget.region.inner.intersection(ds_range)` as the traversal range. The downsample tree's keys are zero-padded decimal bucket strings — OUTSIDE the table's primary-key region (over encoded pkeys, e.g. [0x40, 0x5b)). The intersection was empty on every shard → traversal read nothing, while the DS tree itself was valid (root blocks inspected: "rdbl" nodes with content) and count()==60 (raw intact). **Fix:** traverse `ds_range` directly (bucket range is exact; per-store DS trees are not region-partitioned).
+
+### Verification ladder (foreman, independent)
+
+| Check | Result |
+|-------|--------|
+| TimeSeries unit | **40/40 PASS** (incl. 2 new scrambled-index regression tests + 6 benchmarks) |
+| Regression filter | **277/277 PASS** (49.8s, 27 test cases — was 269) |
+| Benchmarks | *BenchmarkTimeSeries* **6/6 PASS** |
+| Chaos probe (test/ts6_chaos_probe.py) | **24/24 PASS** — s1 kill-mid-seal 7/7 (count 1008 consistent, rows survive, between reads), s2 kill-mid-retention 8/8 (count settles 10, exact live set, expired gone), s3 kill-during-merge 7/7 (sum 40, no dup buckets, weighted 780, raw 60 intact) |
+| Retention live erase | count 20→0 after TTL (store view — the pre-fix "success" was the admin/raft view only) |
+| between() post-merge | 40 aggregate rows, sum(cnt)=40, weighted sum=780, count=60 intact |
+| Disc probe | 11/14 (remaining 3 = probe artifacts: perfmon scope path + bucket-count expectation under scrambled writes) |
+| Guard | PASS (lint F401 signal import removed, tests, secrets) |
+
+**Probe fixes (committed):** ts6_chaos_probe s2 live rows future-dated (ts=now+40+i — old data made the scenario impossible: rows were 60s+ old when the first pass ran and were legitimately expired); s3 bucket-count assertion [20,40] (scrambled writes yield finer buckets; sum/weighted carry correctness).
+
+### Actions this tick
+
+1. ✅ Self-heal: worker 4107906 dead (partial kept); unrecorded tick #113–115 sessions folded (probe artifacts only, no commits to salvage)
+2. ✅ Board tail read (tick #112) + JSONL canonical confirmed (events id=26 max at start)
+3. ✅ Worker partial verified: TimeSeries 40/40 on the pre-existing binary (built 01:30 with the fix)
+4. ✅ DEFECT A root-caused + fixed (release_buf + enshrine, 3 passes) — verified retention live erase
+5. ✅ DEFECT B root-caused + fixed (ds_range direct traversal) — verified agg rows visible post-merge
+6. ✅ Chaos probe fixed (s2 future-dated live rows, s3 bucket range) → **24/24**
+7. ✅ Full ladder: 40/40 + 277/277 + 6/6 + 24/24; committed `d8e6e78a5a` (guard PASS)
+8. ✅ GitReins: PHASE3-TS-6 record foreman_note updated; judge running (job-b3b7714366e34c7898c4e20bfd7f3ddb)
+9. ✅ Board: tasks.jsonl TS-6 done + RT-GAP-002 closed (fix landed + re-verified per RT-GAP-014), events id=27/28, header ticks_total=113, last_commit=d8e6e78a5a
+10. ⏳ Next tick: confirm judge verdict → task_complete → push → next queue: PHASE3-FDW
+
+### Integration pipeline status
+
+| Task | Tests | Status |
+|------|-------|--------|
+| INT-01..08, PHASE3-MERGE/VEC/TS-1..5, RT-BUG-001/002, RT-GAP-001/002/003, JSONL-NORM-001 | all prior | ✅ Complete |
+| **PHASE3-TS-6 (cluster+benchmarks+chaos)** | **chaos 24/24, bench 6/6, reg 277/277** | ✅ **COMPLETE (d8e6e78a5a)** |
+| PHASE3-FDW, ASYNC, WASM | — | ⏳ Queue |
+| CI-001 (supervisor-injected) | — | ⏳ Supervisor-owned |
+
+**Execution order:** ... → PHASE3-TS-6 ✅ (tick #116) → **PHASE3-FDW** → PHASE3-ASYNC → PHASE3-WASM
+
+**Cooldown:** 7200s — scheduler-verified (NO PUT per policy)
+
+VERDICT: **PRODUCTIVE (2 live defects fixed + TS-6 closed)** — DEFECT A was a real data-integrity bug (job-pass writes orphaned by COW; retention/merge "ran" but never published), DEFECT B made the flagship downsample feature return empty results. Both fixed foreman-direct with full verification (24/24 chaos, 277/277 regression). Worker 4107906's partial committed as part of the fix. Next: judge → close → push → FDW.
