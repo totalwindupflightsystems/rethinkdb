@@ -584,6 +584,55 @@ TEST(TimeSeries, DownsampleCandidates) {
                   ql::time_chunk_index_t()));
 }
 
+/* PHASE3-TS-6: the chunk index is not guaranteed to be ordered by
+ * min_time_us — concurrent per-row writes are serialized by
+ * time_series_mutex in arrival order, but select_chunk's prepend (a row
+ * older than every existing chunk inserts at index 0) and backfill /
+ * out-of-order paths scramble the array. The "newest chunk is at the
+ * end" assumption was invalid; find the true newest by max_time_us.
+ * Regression test: an old sealed chunk at the END of the array must be
+ * skipped (it is the wrong "newest"), and the true newest chunk (mid-
+ * array, with the highest max_time_us) must NOT appear in the candidate
+ * list — exactly the sealed unmerged chunks must. */
+TEST(TimeSeries, DownsampleCandidatesScrambledIndex) {
+    ql::time_chunk_index_t idx;
+    /* Build the scramble that tick #112 evidence exposed: an old sealed
+     * chunk at the end (max=200), a live newest chunk mid-array
+     * (max=900), two sealed unmerged chunks (max=300, max=700), one
+     * merged chunk (max=500). Expected candidates: {0 (max=300), 2
+     * (max=700), 4 (max=200)} — chunk 3 is the true newest (max=900)
+     * and is skipped, chunk 1 is merged. Chunk 4 is the "old sealed at
+     * the end" the pre-fix code accidentally skipped (it stopped at the
+     * last array index thinking it was the newest); the fix includes
+     * it because it IS a valid sealed unmerged chunk. */
+    idx.chunks.push_back(ql::time_chunk_bounds_t{0, 300, 10});       // 0
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100, 500, 20});     // 1 merged
+    idx.chunks[1].merged = true;
+    idx.chunks.push_back(ql::time_chunk_bounds_t{400, 700, 30});     // 2
+    idx.chunks.push_back(ql::time_chunk_bounds_t{600, 900, 40});     // 3 TRUE newest
+    idx.chunks.push_back(ql::time_chunk_bounds_t{50, 200, 15});      // 4 OLD sealed
+
+    EXPECT_EQ((std::vector<size_t>{0, 2, 4}),
+              time_series_ops_t::downsample_candidates(idx));
+
+    /* Also verify compactible_chunks uses the same definition of "newest"
+     * for consistency: an old sealed chunk at the end (max=200) must be
+     * picked up by compaction, the true newest (max=900) must be skipped. */
+    /* now_us = 1_000_000us with min_age=0 → cutoff = 1_000_000us: every
+     * chunk except the true newest has max <= 900us <= 1_000_000us. */
+    EXPECT_EQ((std::vector<size_t>{0, 1, 2, 4}),
+              time_series_ops_t::compactible_chunks(idx, 1000000ULL, 0));
+
+    /* Edge case: a single-chunk index → nothing (the only chunk is the
+     * newest). */
+    ql::time_chunk_index_t single;
+    single.chunks.push_back(ql::time_chunk_bounds_t{0, 100, 10});
+    EXPECT_EQ(std::vector<size_t>({}),
+              time_series_ops_t::downsample_candidates(single));
+    EXPECT_EQ(std::vector<size_t>({}),
+              time_series_ops_t::compactible_chunks(single, 1000000ULL, 0));
+}
+
 TEST(TimeSeries, RetentionBoundary) {
     /* Unit-test configs carry no wire funcs, so drop the steps: the
     retention checks are independent of the downsample pipeline. */
@@ -1153,6 +1202,67 @@ TEST(TimeSeries, RetentionDisabledAndClockUnderflow) {
     ql::time_chunk_index_t empty;
     EXPECT_EQ(std::vector<size_t>({}),
         time_series_ops_t::expired_chunks(empty, 1000000000000ULL, 10));
+}
+
+/* PHASE3-TS-6: the chunk index is NOT guaranteed to be ordered by
+ * min_time_us. Concurrent per-row writes are serialized by
+ * time_series_mutex in arrival order, but select_chunk's prepend path
+ * (a row older than every existing chunk inserts at index 0) and
+ * backfill / out-of-order rows scramble the array. The earlier "prefix
+ * scan, break at first live chunk" optimization silently skipped any
+ * expired chunk that sat BEHIND a live chunk in the array, leaving
+ * stale data forever. Regression test: a scrambled array with expired
+ * chunks at indices 0 AND 2, a live chunk in between, must return BOTH
+ * expired chunks. */
+TEST(TimeSeries, RetentionExpiredChunksScrambledIndex) {
+    /* Build the scramble: live chunk in the middle, expired chunks on
+     * both sides. Index:
+     *   [0]: min=400s, max=500s, rows=5   — EXPIRED
+     *   [1]: min=600s, max=700s, rows=10  — LIVE
+     *   [2]: min=100s, max=200s, rows=3   — EXPIRED (oldest)
+     *   [3]: min=300s, max=400s, rows=8   — EXPIRED
+     * Note chunks 0, 3 are non-adjacent to chunk 2 — the scramble the
+     * prefix-scan-with-break approach mis-handled. */
+    ql::time_chunk_index_t idx;
+    idx.chunks.push_back(ql::time_chunk_bounds_t{400000000ULL,
+                                                 500000000ULL, 5});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{600000000ULL,
+                                                 700000000ULL, 10});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{100000000ULL,
+                                                 200000000ULL, 3});
+    idx.chunks.push_back(ql::time_chunk_bounds_t{300000000ULL,
+                                                 400000000ULL, 8});
+
+    /* now=900s, retention=300s → cutoff=600s: chunks 0 (max=500s),
+     * 2 (max=200s), 3 (max=400s) all expired. Chunk 1 (max=700s) live.
+     * The pre-fix code would have scanned chunk 0 (expired, push), then
+     * chunk 1 (max=700s >= cutoff 600s, BREAK), returning only {0} —
+     * chunks 2 and 3 leaked as forever-stale data. */
+    EXPECT_EQ((std::vector<size_t>{0, 2, 3}),
+        time_series_ops_t::expired_chunks(idx, 900000000ULL, 300));
+
+    /* Verify the ORDERED case still works: an in-order array with all
+     * three chunks expired returns all three. */
+    ql::time_chunk_index_t ordered;
+    ordered.chunks.push_back(ql::time_chunk_bounds_t{100000000ULL,
+                                                     200000000ULL, 3});
+    ordered.chunks.push_back(ql::time_chunk_bounds_t{300000000ULL,
+                                                     400000000ULL, 8});
+    ordered.chunks.push_back(ql::time_chunk_bounds_t{400000000ULL,
+                                                     500000000ULL, 5});
+    EXPECT_EQ((std::vector<size_t>{0, 1, 2}),
+        time_series_ops_t::expired_chunks(ordered, 900000000ULL, 300));
+
+    /* Edge case: scrambled array where ONLY the last chunk is expired
+     * (the only-chunk-expired path the original prefix scan got right
+     * by accident). Must still find it. */
+    ql::time_chunk_index_t tail_only;
+    tail_only.chunks.push_back(ql::time_chunk_bounds_t{600000000ULL,
+                                                       700000000ULL, 10});
+    tail_only.chunks.push_back(ql::time_chunk_bounds_t{400000000ULL,
+                                                       500000000ULL, 5});
+    EXPECT_EQ((std::vector<size_t>{1}),
+        time_series_ops_t::expired_chunks(tail_only, 900000000ULL, 300));
 }
 
 TEST(TimeSeries, CompactibleChunksSelection) {

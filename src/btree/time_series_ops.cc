@@ -66,7 +66,6 @@ time_series_catalog_t time_series_ops_t::load_catalog(real_superblock_t *sb) {
     if (block_id == NULL_BLOCK_ID) {
         return catalog;
     }
-
     buf_lock_t catalog_block(sb->expose_buf(), block_id, access_t::read);
 
     /* Copy the blob ref out of the first btree_maxreflen bytes. blob_t may
@@ -226,25 +225,36 @@ size_t time_series_ops_t::select_chunk(
     }
 
     ql::time_chunk_bounds_t &newest = chunks.back();
+    const uint64_t interval_us =
+        config.chunk_interval_seconds * 1000000ULL;
 
     if (ts_us >= newest.max_time_us) {
         /* Append path (§4.1 step 2). Seal when the current chunk is full
          * (row-count threshold, §4.1 step 4) or when the row falls outside
          * the chunk's time interval. */
-        const uint64_t interval_us =
-            config.chunk_interval_seconds * 1000000ULL;
         const bool over_rows =
             newest.row_count >= chunk_target_rows;
         const bool over_interval =
             ts_us >= newest.min_time_us + interval_us;
         if (over_rows || over_interval) {
-            /* Seal the current chunk. On an interval seal, extend its max
-             * to the new chunk's start so the chunks tile the time axis
-             * contiguously (spec §5.1) — otherwise rows between the last
-             * row and the boundary fall into a gap. */
-            if (over_interval) {
-                newest.max_time_us = ts_us;
-            }
+            /* Seal the current chunk.
+             *
+             * PHASE3-TS-6: do NOT extend the sealed chunk's max_time_us to
+             * the new row's ts. Under scrambled per-row write arrival the
+             * "newest" chunk being sealed may contain only a single old
+             * row (e.g. row 'o290' from a 300-old-row batch); extending
+             * its max to now+9 (the first live row's ts) makes retention
+             * think the chunk is current (max >= cutoff) and the chunk
+             * survives forever — the bug tick #112 exposed.
+             *
+             * The chunks tile contiguously only for in-order arrival;
+             * under concurrent per-row writes the backfill + prepend
+             * paths below already handle the gaps. The "containing
+             * chunk" check below uses `min_time_us + interval_us` (the
+             * chunk's declared interval) instead of `max_time_us`, so a
+             * row at ts=4599 with chunk 0 = [1000, 1001) but interval
+             * 3600s correctly lands in chunk 0.
+             */
             ql::time_chunk_bounds_t c;
             c.min_time_us = ts_us;
             c.max_time_us = ts_us + 1;
@@ -259,11 +269,18 @@ size_t time_series_ops_t::select_chunk(
     }
 
     /* Backfill / out-of-order (§4.1 step 3): find the containing chunk.
-     * The index is ordered, but chunk counts are small and linear scan
-     * keeps the logic obviously correct; a binary search is a later-phase
-     * optimization. */
+     * PHASE3-TS-6: match against the chunk's declared interval
+     * [min_time_us, min_time_us + interval_us), not its possibly-truncated
+     * max_time_us. max_time_us tracks the actual last row's ts + 1 and
+     * is NOT extended on seal (see comment above), so under in-order
+     * arrival the chunk's [min, max) is narrower than its interval and
+     * a late-arriving row inside the interval but past max needs the
+     * interval-aware check. The chunk index can be in arbitrary order
+     * (prepend / backfill scramble it), so a linear scan keeps the
+     * logic obviously correct. */
     for (size_t i = 0; i < chunks.size(); ++i) {
-        if (chunks[i].min_time_us <= ts_us && ts_us < chunks[i].max_time_us) {
+        const uint64_t chunk_max = chunks[i].min_time_us + interval_us;
+        if (chunks[i].min_time_us <= ts_us && ts_us < chunk_max) {
             return i;
         }
     }
@@ -345,14 +362,20 @@ std::vector<size_t> time_series_ops_t::expired_chunks(
      * be strictly below it. */
     const uint64_t cutoff_us =
         (now_us >= retention_us) ? now_us - retention_us : 0;
-    /* Chunks tile the time axis in order, so expired chunks form a prefix
-     * of the index; stop at the first chunk whose newest row is at or
-     * after the cutoff (exactly-at-TTL kept, §8.1). */
+    /* PHASE3-TS-6 fix: the chunk index is NOT guaranteed to be ordered by
+     * min_time_us. Concurrent per-row writes are serialized by
+     * time_series_mutex in the order they arrived at the chunk router, but
+     * select_chunk's prepend path (a row older than every existing chunk
+     * inserts at index 0) and backfill / out-of-order rows scramble the
+     * array. The earlier "prefix scan, break at first live chunk"
+     * optimization silently skipped any expired chunk that sat behind a
+     * live chunk in the array, leaving stale data forever. Scan the entire
+     * index — chunk counts are small and a linear scan is cheap (the
+     * ordering invariant was always a soft expectation, not enforced by a
+     * sort on load or save). Exactly-at-TTL chunks are kept (§8.1). */
     for (size_t i = 0; i < chunk_index.chunks.size(); ++i) {
         if (chunk_index.chunks[i].max_time_us < cutoff_us) {
             expired.push_back(i);
-        } else {
-            break;
         }
     }
     return expired;
@@ -365,9 +388,28 @@ std::vector<size_t> time_series_ops_t::compactible_chunks(
     const uint64_t min_age_us = min_age_seconds * 1000000ULL;
     const uint64_t cutoff_us =
         (now_us >= min_age_us) ? now_us - min_age_us : 0;
-    /* The newest chunk is the active write target and is never compacted
-     * (§6.4: "chunk sealed + 1 hour old"). */
-    for (size_t i = 0; i + 1 < chunk_index.chunks.size(); ++i) {
+    /* PHASE3-TS-6: the chunk index is not guaranteed to be ordered by
+     * min_time_us (select_chunk's prepend + backfill paths scramble it
+     * under concurrent per-row writes), so "the last chunk is the newest"
+     * is no longer true. Find the true newest by max_time_us and skip
+     * exactly that chunk; the rest are sealed candidates. Empty chunks
+     * (row_count == 0) are skipped too — defensively, the caller filters
+     * them anyway. */
+    if (chunk_index.chunks.empty()) {
+        return compactible;
+    }
+    size_t newest_idx = 0;
+    uint64_t newest_max = chunk_index.chunks[0].max_time_us;
+    for (size_t i = 1; i < chunk_index.chunks.size(); ++i) {
+        if (chunk_index.chunks[i].max_time_us > newest_max) {
+            newest_max = chunk_index.chunks[i].max_time_us;
+            newest_idx = i;
+        }
+    }
+    for (size_t i = 0; i < chunk_index.chunks.size(); ++i) {
+        if (i == newest_idx) {
+            continue;
+        }
         const ql::time_chunk_bounds_t &chunk = chunk_index.chunks[i];
         if (chunk.row_count > 0 && chunk.max_time_us <= cutoff_us) {
             compactible.push_back(i);
@@ -569,11 +611,29 @@ uint64_t time_series_ops_t::compact_chunk(
 std::vector<size_t> time_series_ops_t::downsample_candidates(
         const ql::time_chunk_index_t &chunk_index) {
     std::vector<size_t> candidates;
-    /* The newest chunk is the active write target and is never merged
-     * (same rule as compaction, §6.4). Sealed chunks that already carry the
-     * merged watermark are skipped — the watermark IS the idempotency
-     * checkpoint (foundation commit). */
-    for (size_t i = 0; i + 1 < chunk_index.chunks.size(); ++i) {
+    /* PHASE3-TS-6: the chunk index is not guaranteed to be ordered by
+     * min_time_us (select_chunk's prepend + backfill paths scramble it
+     * under concurrent per-row writes), so "the last chunk is the newest"
+     * is no longer true. Find the true newest by max_time_us and skip
+     * exactly that chunk; the rest are sealed candidates with rows that
+     * still need folding. The merged watermark remains the idempotency
+     * checkpoint — a sealed chunk that has already been folded into every
+     * downsample step is skipped regardless of position. */
+    if (chunk_index.chunks.empty()) {
+        return candidates;
+    }
+    size_t newest_idx = 0;
+    uint64_t newest_max = chunk_index.chunks[0].max_time_us;
+    for (size_t i = 1; i < chunk_index.chunks.size(); ++i) {
+        if (chunk_index.chunks[i].max_time_us > newest_max) {
+            newest_max = chunk_index.chunks[i].max_time_us;
+            newest_idx = i;
+        }
+    }
+    for (size_t i = 0; i < chunk_index.chunks.size(); ++i) {
+        if (i == newest_idx) {
+            continue;
+        }
         const ql::time_chunk_bounds_t &chunk = chunk_index.chunks[i];
         if (chunk.row_count > 0 && !chunk.merged) {
             candidates.push_back(i);

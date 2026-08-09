@@ -199,17 +199,22 @@ public:
     /* Indices of chunks whose newest row is strictly older than the
      * retention cutoff (chunk.max_time_us < now_us - retention; exactly-
      * at-TTL chunks are kept, spec §8.1). retention_seconds == 0 disables
-     * retention. Chunks are time-ordered, so the expired chunks form a
-     * prefix of the index and the scan stops at the first live chunk. A
-     * clock-underflow guard (now before the retention span has elapsed)
-     * clamps the cutoff to 0, expiring nothing. */
+     * retention. PHASE3-TS-6: the chunk index is not guaranteed to be
+     * ordered by min_time_us (the prepend + backfill paths of select_chunk
+     * scramble the array under concurrent per-row writes), so the function
+     * scans the entire index — chunk counts are small and a linear scan is
+     * cheap. A clock-underflow guard (now before the retention span has
+     * elapsed) clamps the cutoff to 0, expiring nothing. */
     static std::vector<size_t> expired_chunks(
         const ql::time_chunk_index_t &chunk_index,
         uint64_t now_us, uint64_t retention_seconds);
 
-    /* Indices of sealed (non-newest) chunks with rows whose newest row is
-     * at least min_age_seconds old — compaction candidates (§6.4: "chunk
-     * sealed + 1 hour old"). The active newest chunk is never compacted. */
+    /* Indices of sealed chunks whose newest row is at least
+     * min_age_seconds old — compaction candidates (§6.4: "chunk sealed +
+     * 1 hour old"). PHASE3-TS-6: identifies the active newest chunk by
+     * max_time_us, not by position, because the chunk index can be
+     * scrambled by select_chunk's prepend / backfill paths under
+     * concurrent per-row writes. The newest chunk is never compacted. */
     static std::vector<size_t> compactible_chunks(
         const ql::time_chunk_index_t &chunk_index,
         uint64_t now_us, uint64_t min_age_seconds);
@@ -245,8 +250,11 @@ public:
     /* ── downsampling (PHASE3-TS-5, spec §4.3/§5.3/§6.1/§6.4) ─────────── */
 
     /* Indices of sealed chunks that still need a downsample merge: every
-     * non-newest chunk with rows whose `merged` watermark is false. The
-     * active newest chunk is never merged (same rule as compaction). */
+     * non-newest chunk with rows whose `merged` watermark is false.
+     * PHASE3-TS-6: identifies the active newest chunk by max_time_us, not
+     * by position, because the chunk index can be scrambled by
+     * select_chunk's prepend / backfill paths under concurrent per-row
+     * writes. The merged watermark remains the idempotency checkpoint. */
     static std::vector<size_t> downsample_candidates(
         const ql::time_chunk_index_t &chunk_index);
 

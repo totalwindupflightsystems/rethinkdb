@@ -285,7 +285,17 @@ void do_read(ql::env_t *env,
                         rdb_ts_rget_slice(
                             btree,
                             *rget.current_shard,
-                            rget.region.inner.intersection(ds_range),
+                            /* PHASE3-TS-6: the downsample tree is keyed by
+                             * zero-padded bucket-start strings, which live
+                             * OUTSIDE the table's primary-key region (the
+                             * region is over encoded pkeys). Intersecting
+                             * ds_range with region.inner produces an empty
+                             * range on every shard and the aggregate read
+                             * silently returns 0 rows (verified live:
+                             * between() returned raw=0 agg=0 after the
+                             * merge job ran). The bucket-key range is
+                             * exact; traverse it directly. */
+                            ds_range,
                             std::vector<block_id_t>{ds_root->root_block},
                             rget.primary_keys,
                             superblock,

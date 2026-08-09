@@ -226,8 +226,20 @@ bool time_series_jobs_t::run_retention_pass(
             store_->update_sindexes(txn.get(), &sindex_block, mod_reports,
                                     true /* release_sindex_block */);
         }
-        superblock.reset();
+        /* PHASE3-TS-6: release the page lock but keep the write-semaphore
+         * acquisition alive across commit (a concurrent writer must not
+         * copy-on-write the superblock page between our last in-txn write
+         * and the flush — the store_t::write discipline), then enshrine
+         * the catalog pointer in a bare superblock txn. Without this the
+         * job's catalog writes silently vanish from the live store view
+         * (verified empirically: retention/merge "ran" but reads kept the
+         * pre-job catalog; the pointer was orphaned by COW). */
+        const block_id_t ts_cat =
+            superblock->get_time_series_catalog_block_id();
+        superblock->release_buf();
         txn->commit();
+        superblock.reset();
+        store_->enshrine_ts_catalog_pointer(ts_cat, write_durability_t::SOFT);
 
         ++pm_retention_runs;
         ++pm_retention_chunks_expired;
@@ -306,8 +318,14 @@ bool time_series_jobs_t::run_compaction_pass(
         }
 
         time_series_ops_t::save_catalog(superblock.get(), catalog);
-        superblock.reset();
+        /* PHASE3-TS-6: same commit discipline as the retention pass (see
+         * there): release_buf before commit + catalog-pointer enshrine. */
+        const block_id_t ts_cat =
+            superblock->get_time_series_catalog_block_id();
+        superblock->release_buf();
         txn->commit();
+        superblock.reset();
+        store_->enshrine_ts_catalog_pointer(ts_cat, write_durability_t::SOFT);
 
         ++pm_compaction_runs;
         ++pm_compaction_chunks_rewritten;
@@ -418,8 +436,14 @@ bool time_series_jobs_t::run_downsample_pass(
         }
 
         time_series_ops_t::save_catalog(superblock.get(), catalog);
-        superblock.reset();
+        /* PHASE3-TS-6: same commit discipline as the retention pass (see
+         * there): release_buf before commit + catalog-pointer enshrine. */
+        const block_id_t ts_cat =
+            superblock->get_time_series_catalog_block_id();
+        superblock->release_buf();
         txn->commit();
+        superblock.reset();
+        store_->enshrine_ts_catalog_pointer(ts_cat, write_durability_t::SOFT);
 
         ++pm_downsample_runs;
         ++pm_downsample_chunks_merged;

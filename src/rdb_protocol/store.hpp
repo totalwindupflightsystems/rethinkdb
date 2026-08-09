@@ -150,6 +150,16 @@ public:
             signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t);
 
+    /* PHASE3-TS-6: re-commits the time-series catalog block pointer in a
+     * bare, semaphore-serialized superblock write txn (the same enshrine
+     * pattern store_t::write uses). The background jobs (retention /
+     * compaction / downsample) write the catalog inside their main txn;
+     * the pointer must be re-published like this or a concurrent reader's
+     * copy-on-write of the superblock page can orphan it (verified: job
+     * writes silently vanished from the live store view). */
+    void enshrine_ts_catalog_pointer(block_id_t ts_catalog_block,
+                                     write_durability_t durability);
+
     continue_bool_t send_backfill_pre(
             const region_map_t<state_timestamp_t> &start_point,
             backfill_pre_item_consumer_t *pre_item_consumer,

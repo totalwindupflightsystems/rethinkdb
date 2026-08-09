@@ -331,6 +331,26 @@ void store_t::write(
     }
 }
 
+void store_t::enshrine_ts_catalog_pointer(block_id_t ts_catalog_block,
+                                          write_durability_t durability) {
+    if (ts_catalog_block == NULL_BLOCK_ID) {
+        return;
+    }
+    /* PHASE3-TS-6: mirrors the write-path enshrine (see the comment in
+     * store_t::write): re-commit the pointer in a bare superblock write
+     * txn so the background jobs' catalog pointer reliably reaches disk
+     * and the live cache view. */
+    scoped_ptr_t<txn_t> wtxn;
+    scoped_ptr_t<real_superblock_t> wsb;
+    get_btree_superblock_and_txn_for_writing(
+        general_cache_conn.get(), &write_superblock_acq_semaphore,
+        write_access_t::write, 2, durability, &wsb, &wtxn);
+    wsb->set_time_series_catalog_block_id(ts_catalog_block);
+    wsb->release_buf();
+    wtxn->commit();
+    wsb.reset();
+}
+
 void store_t::set_cdc_notification_callback(
         std::function<void(const std::vector<ql::change_record_t> &)> cb) {
     assert_thread();
