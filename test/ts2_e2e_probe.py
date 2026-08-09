@@ -8,6 +8,7 @@ Follows tick #91 E2E pitfalls:
 - table_config is keyed by UUID — filter by name
 - config()/update() returns result stats, never throws for field errors
 """
+import os
 import shutil
 import signal
 import subprocess
@@ -15,7 +16,7 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, '/home/kara/rethinkdb/driver/python3')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 from rethinkdb import r  # noqa: E402
 
 BIN = '/home/kara/rethinkdb/build/release/rethinkdb'

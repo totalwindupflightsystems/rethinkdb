@@ -17,6 +17,52 @@ RethinkDB is an open-source, distributed NoSQL database designed for building re
   - Unit tests: `-H unit`
   - Integration tests: `-H all '!unit' '!cpplint' '!long' '!disabled'`
 
+### Python driver integration tests (E2E probes in `test/`)
+
+The python E2E probes (`test/merge_e2e_test.py`, `test/cluster_e2e_test.py`,
+`test/ts2_e2e_probe.py`, `test/ts3_e2e_probe.py`, `test/ts4_e2e_probe.py`,
+`test/ts6_chaos_probe.py`, `test/ts6_cluster_e2e_probe.py`) import the
+vendored driver from `driver/python3/` rather than a pip-installed package.
+The vendored path is wired in two places, both **repo-relative** (no
+hardcoded `/home/kara/...` paths):
+
+1. `conftest.py` (repo root) — `python3 -m pytest test/<file>.py -q`
+   auto-adds `driver/python3` to `sys.path`. No `PYTHONPATH` needed.
+2. The probes themselves — `python3 test/<file>.py` script-mode also
+   works from any checkout via `os.path.dirname(__file__)`.
+
+One-command setup (creates a venv and runs a collection check; live E2E
+runs still require a built `build/release/rethinkdb` server):
+
+```
+python3 -m venv .venv \
+  && .venv/bin/pip install -r test-requirements.txt \
+  && .venv/bin/python -m pytest test/merge_e2e_test.py -q --collect-only
+```
+
+If you prefer the system interpreter, this also works (driver is
+imported via `conftest.py`, not pip):
+
+```
+python3 -m pytest test/merge_e2e_test.py -q --collect-only
+```
+
+For the legacy `PYTHONPATH` form (e.g. running outside the repo root
+or in CI without `conftest.py` on `PYTHONPATH`):
+
+```
+PYTHONPATH=driver/python3 python3 -m pytest test/merge_e2e_test.py -q
+```
+
+Running a probe in script mode (no pytest, no venv):
+
+```
+python3 test/merge_e2e_test.py    # uses the repo-relative sys.path line
+```
+
+Note: the probes spawn `build/release/rethinkdb` as a child process, so
+running them end-to-end still requires `./configure && make -j4` first.
+
 ## Code Style Guidelines
 
 - Use braces for all control structures: `if (...) {`, `while (...) {`, etc.

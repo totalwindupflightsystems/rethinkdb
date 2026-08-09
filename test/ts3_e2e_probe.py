@@ -15,6 +15,7 @@ table_config().time_series_chunks first and adapts expectations.
 
 Run with the vendored sync driver like ts2_e2e_probe.py.
 """
+import os
 import shutil
 import signal
 import subprocess
@@ -22,7 +23,7 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, '/home/kara/rethinkdb/driver/python3')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 from rethinkdb import r  # noqa: E402
 
 BIN = '/home/kara/rethinkdb/build/release/rethinkdb'

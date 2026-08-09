@@ -34,15 +34,15 @@ last window chunk; the active newest chunk is never merged).
 
 Run with the vendored sync driver like ts2/ts3/ts4_e2e_probe.py.
 """
+import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
 
-sys.path.insert(0, '/home/kara/rethinkdb/driver/python3')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 from rethinkdb import r  # noqa: E402
 
 BIN = '/home/kara/rethinkdb/build/release/rethinkdb'

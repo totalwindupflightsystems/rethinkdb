@@ -1,0 +1,10 @@
+# Python test requirements for the RethinkDB fork's python E2E probes.
+#
+# The vendored driver (driver/python3/) is imported in-tree via conftest.py —
+# no pip-install needed. These are only the third-party test-only deps.
+#
+# Install:
+#   python3 -m venv .venv && .venv/bin/pip install -r test-requirements.txt
+
+pytest>=7.0
+looseversion
