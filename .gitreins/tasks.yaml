@@ -396,3 +396,16 @@ tasks:
   status: complete
   created_at: '2026-08-08T03:56:20.521895+00:00'
   completed_at: '2026-08-08T04:14:57.932547+00:00'
+- id: PHASE3-TS-6
+  title: "Time-series cluster integration + benchmarks + chaos (spec \xA76.4/\xA7\
+    8/\xA710)"
+  criteria:
+  - "\xA78.4 benchmarks: src/unittest/benchmark_ts.cc defines BenchmarkTimeSeries\
+    \ with 6 tests; gtest filter *BenchmarkTimeSeries* reports 6/6 PASS on fresh binary\
+    \ in ~4.7s"
+  - 'determinism-safe: benchmark tests assert correctness + ratios only (no absolute
+    timing walls)'
+  - "chaos probe test/ts6_chaos_probe.py PASSES all 3 SIGKILL/restart consistency scenarios (s1 kill-mid-chunk-seal: count == total_rows and pre-kill rows survive; s2 kill-mid-retention: count settles at the live count AND the surviving row SET is exactly the live rows; s3 kill-during-downsample-merge: aggregate rows complete with no duplicate buckets and no data loss), 24/24 checks green"
+  status: in_progress
+  created_at: '2026-08-08T21:58:54.226462+00:00'
+  foreman_note: "tick #111: prior 'complete' was literal-criteria false pass (judge read the probe source, never executed it). Live execution 20/24 — two real defects: (A) retention pass leaves stale expired chunks (retention=300 no-kill probe: 8/300 old chunks survive, count 18 vs expected 10) and loses live rows on kill/restart; (B) between() on a downsample-configured table returns 0 rows for wide windows (planner auto-selection mis-routes to empty downsample tree). Fix worker dispatched."

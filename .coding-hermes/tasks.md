@@ -5716,3 +5716,22 @@ Wiring worker PID 2224582 (dispatched 22:58) **died at ~12 min without committin
 | GitReins judge | `906b4820` — **tier2 PASS COMPLETE 5/5** (all criteria with file:line evidence); tier1 machine-FAIL environmental only (gitleaks binary missing, cpplint DeprecationWarning) — known repo disposition, foreman evidence stands ✅ |
 
 Commits this tick: `1fd7461620` (core, prior session, pushed) + `29a2f474e1` (wiring, this tick, pushed) + `a45edbe9b5` (board fold-in). **PHASE3-TS-5 DONE.** Next queue: PHASE3-TS-6 (cluster) → FDW → ASYNC → WASM.
+
+## Productive Tick #111 — 2026-08-08 19:08 UTC (PHASE3-TS-6 VERIFICATION → 2 LIVE DEFECTS → FIX WORKER)
+
+| Check | Result |
+|-------|--------|
+| Benchmarks (§8.4) | `*BenchmarkTimeSeries*` **6/6 PASS** (3.3s, fresh binary 16:30) — write throughput, read pruning, retention scan, bucket-key gen, store chunked-vs-plain, pruned-vs-full ✅ |
+| Chaos probe (ts6_chaos_probe.py) | **20/24** — s1 kill-mid-chunk-seal 8/8 ✅; **s2 kill-mid-retention 4/6 ❌** (count reconciles at 10 but surviving SET wrong: 3 live rows lost, expired rows present); **s3 kill-during-merge 1/4 ❌** (no aggregates 60s pre-kill + 120s post-restart) |
+| Isolation probe (no kill, /tmp/rethinkdb_t111_ts6_disc_probe.py) | **DEFECT A**: retention=300, 300 old + 10 live → count settles **18** (8/300 stale expired chunks survive); **DEFECT B**: between(base, base+40, index='ts') on downsample table returns **raw=0** (count()==60 works) |
+| Cluster E2E probe | Crashed early on **probe bug** (count_rows used default db `test`; table in ts6_<uuid>) — fixed foreman-direct (db-aware helper, 7 call sites); re-run deferred post-fix |
+| gitreins TS-6 record | **False-complete caught**: judge passed criterion 3 ("probe runs 3 scenarios") by reading source, never executed it (literal-criteria trap). Reopened → `in_progress`, criterion reworded to require 24/24 PASS, foreman_note with evidence |
+| Commit hygiene | gitreins tasks.yaml corrected; strays (dagger.db, egg-info/) left untracked |
+
+**Root-cause suspects (worker brief):** DEFECT A — run_retention_pass corrupt-chunk early-return aborts whole pass (time_series_jobs.cc ~130-230); expired_chunks prefix vs chunk-array ordering; expire_chunk erase/commit vs catalog enshrine ordering. DEFECT B — §4.3 planner auto-selection in store.cc do_read mis-routes wide-window between() to empty downsample tree (no raw fallback); or downsample merge job cadence/seal condition never fires; read path must fall back to raw chunks when downsample tree has no rows.
+
+**Dispatch:** fix worker PID 2796041 (deepseek-v4-flash @ deepseek-foreman, coding-hermes-worker), prompt /tmp/rethinkdb_t111_ts6_fix_prompt.md. ACs: disc probe count==10 exact set, between() 40 raw or 20 agg (sum 40, weighted 780), chaos 24/24, cluster E2E pass, benchmarks 6/6, regression 269/269 + TS 32/32.
+
+**Commits this tick:** `TS6 probes + board (pending sha)` — test/ts6_chaos_probe.py + test/ts6_cluster_e2e_probe.py (db-scope fixed) + .gitreins/tasks.yaml (TS-6 reopened) + board JSONL (event id=25, header ticks_total=111) + tasks.md entry + edges.jsonl (post-commit warm growth from benchmark commit).
+
+VERDICT: **PRODUCTIVE (verification caught 2 real defects; false-complete record reopened; fix worker dispatched)**. Next tick: steward fix worker, verify chaos 24/24 + disc + cluster probes, judge TS-6, close.
