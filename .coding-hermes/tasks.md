@@ -5832,3 +5832,19 @@ VERDICT: **PRODUCTIVE (2 live defects fixed + TS-6 closed)** — DEFECT A was a 
 6. ⏳ NEXT: dispatch worker for RT-GAP-009 (Python test setup: conftest.py + test-requirements.txt + AGENTS.md) — then RT-GAP-006/004 (docs), RT-GAP-008 (CI)
 
 VERDICT: **PRODUCTIVE (board ops)** — 2 P1 gap tasks closed (007 removed, 005 synced with verified CI-001 evidence). Board healthy: 13 rows (4 complete-ish + 6 real pending + NEVER-DONE + CI-001 + BOARD-V2).
+
+### Tick #117 continued — RT-GAP-009 COMPLETE
+
+| Task | Result |
+|------|--------|
+| **RT-GAP-009 (python test setup)** | ✅ **COMPLETE (117da580f7)** |
+
+- Worker minimax-m3 @ ollama-cloud (pid 2875632) staged: conftest.py (repo-relative driver path), test-requirements.txt (pytest>=7.0, looseversion), AGENTS.md 1-command setup section, 7 de-hardcoded sys.path inserts
+- Worker killed at 13 min (re-running C++ unittest loop — excessive for task); foreman-commit pattern
+- Foreman added: main() guards on merge/cluster E2E (root cause of SystemExit-on-import — pytest executed the whole E2E at import), removed pre-existing unused `signal` import
+- Verified: `pytest test/merge_e2e_test.py -q` collects clean (0.06s, no SystemExit, exit 5 expected); hardcoded inserts 0; direct import safe
+- Guard: secrets ✓ lint ✓ tests(full) ✓ — **PASS**
+- Judge: tier2 **5/5 criteria PASS** (verdict 825147ef); overall FAIL solely from tier1 repo-wide C++ lint on src/ (0 src files in diff — pre-existing debt); gitreins record complete
+- Events 29/30; header last_commit=117da580f7
+
+**Next queue:** RT-GAP-004 (README fork-extensions table) → RT-GAP-006 (docs/) → RT-GAP-008 (CI workflow vs AGENTS.md claims)
