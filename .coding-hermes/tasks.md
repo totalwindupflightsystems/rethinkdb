@@ -5735,3 +5735,19 @@ Commits this tick: `1fd7461620` (core, prior session, pushed) + `29a2f474e1` (wi
 **Commits this tick:** `TS6 probes + board (pending sha)` — test/ts6_chaos_probe.py + test/ts6_cluster_e2e_probe.py (db-scope fixed) + .gitreins/tasks.yaml (TS-6 reopened) + board JSONL (event id=25, header ticks_total=111) + tasks.md entry + edges.jsonl (post-commit warm growth from benchmark commit).
 
 VERDICT: **PRODUCTIVE (verification caught 2 real defects; false-complete record reopened; fix worker dispatched)**. Next tick: steward fix worker, verify chaos 24/24 + disc + cluster probes, judge TS-6, close.
+
+## Productive Tick #112 — 2026-08-08 23:20 UTC (TS-6 FIX WORKER STEWARDSHIP — DEAD → REDISPATCHED DETACHED, CORRECT PROVIDER)
+
+| Check | Result |
+|-------|--------|
+| Tick #111 fix worker (PID 2796041) | **DEAD, zero output** — no commits, clean tree (only known strays dagger.db + egg-info/). TS-6 still `in_progress` (gitreins record intact). |
+| Dispatch failure root cause | **(a)** Spawned on `deepseek-foreman` — the foreman's own PAYG provider, violating the fleet worker rule (workers = prepaid flat-rate buckets). **(b)** Session-scoped background process → SIGTERM'd when the tick #111 scheduler session ended (proven pattern: long-running-detached-process.md). |
+| Attempt 1 (MiniMax-M3 @ minimax) | ❌ HTTP 404 — request dump shows `Authorization: Bearer None`: the `minimax` provider block (config.yaml:772) has `api_key_env` but hermes resolved the key to None at call time. Direct curl with the .env key works (HTTP 200) — provider config gap, not a key problem. |
+| Attempt 2 (minimax-m3 @ ollama-cloud) | ✅ **WORKER_ALIVE pid=4107906** — ollama-cloud has an inline api_key (config.yaml:48) and carries `minimax-m3` (direct curl verified HTTP 200). Detached via `setsid nohup` so it survives this session. Actively editing `time_series_ops.cc` (log confirms `expired_chunks`/`downsample_candidates` fix in progress). |
+| NEW root-cause evidence (foreman source-read, tick #112) | **Chunk index is NOT time-ordered.** Downsample diag dump: 54 chunks for 60 rows (mostly 1 row each); chunk[6].min=base+0 < chunk[0].min=base+7. Batched inserts are split into per-row writes by the term layer, dispatched concurrently, serialized in SHUFFLED order → `select_chunk`'s prepend path scrambles the array. This breaks (A) `expired_chunks` prefix-scan `break` → stale expired chunks survive forever; (B) `downsample_candidates` "newest is last" (`i+1 < size`) → wrong chunk skipped/merged. Interval-seal `newest.max_time_us = ts_us` also creates wrong bounds (chunk[0]: 9s span, 1 row). |
+| Worker prompt | `/tmp/rethinkdb_t112_ts6_fix_prompt.md` — enriched with ordering evidence + AC 7 (unit tests for scrambled-index expired_chunks + non-last newest). |
+| Board | JSONL event id=26 (audit), header ticks_total=112, last_commit=b54aa00bcf (one-tick lag per convention). |
+
+**Dispatch:** fix worker PID 4107906 (minimax-m3 @ ollama-cloud, prepaid, detached, coding-hermes-worker), prompt /tmp/rethinkdb_t112_ts6_fix_prompt.md. ACs unchanged + AC 7 (new unit tests): chaos 24/24, disc probe count==10 exact set, between() 40 raw or 20 agg (sum 40, weighted 780), cluster E2E, benchmarks 6/6, regression 269/269 + TS 32/32, scrambled-index unit tests.
+
+VERDICT: **PRODUCTIVE (stewardship)** — dead worker root-caused (PAYG + session-scoped), re-dispatched detached on correct prepaid provider, new chunk-ordering root cause documented for the worker. Next tick: steward worker 4107906, verify probes, judge TS-6, close.
