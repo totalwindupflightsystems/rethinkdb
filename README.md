@@ -170,13 +170,15 @@ Docker quickstart
 
 No C++ toolchain needed — run a single-node instance with Docker:
 
-    docker compose up -d            # pulls the prebuilt image from ghcr.io
-    docker compose up -d --build    # ...or build from source locally
+    docker compose up -d --build    # build the image from source (first build ~8-10 min)
+    docker compose up -d            # use the prebuilt image (ghcr.io — anonymous pulls
+                                    # work after the package is set public; until then
+                                    # compose falls back to building from source)
 
 Connect any ReQL driver to `localhost:28015`, open the web UI at
 http://localhost:8080, and data persists in the `rethinkdb-data` Docker
 volume. The prebuilt image is published at
-`ghcr.io/totalwindupflightsystems/rethinkdb:latest`.
+`ghcr.io/totalwindupflightsystems/rethinkdb:latest` (multi-arch amd64).
 
 Donors
 ------
