@@ -140,6 +140,5 @@ RethinkDB has unit tests (in `src/unittest/`) and integration tests. Integration
 
 ## Continuous Integration
 
-- GitHub Actions workflow builds on Ubuntu, runs cpplint, unit tests, integration tests, polyglot tests for Python, JavaScript, Ruby.
-- Nightly tests run full test suite.
+- GitHub Actions workflow builds on Ubuntu, runs cpplint (changed files), unit tests, and Python driver E2E integration tests.
 - Preflight checks style before building.

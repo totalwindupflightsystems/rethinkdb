@@ -33,3 +33,7 @@ driver/python/
 .coding-hermes/board/*.parquet
 .coding-hermes/board/*.duckdb
 
+
+# Local venv + pip artifacts
+.venv/
+*.egg-info/

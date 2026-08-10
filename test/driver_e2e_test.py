@@ -4,6 +4,7 @@
 Python driver against a live server. This proves a real user can call
 r.vector_near(), r.fts_match(), r.publication_create() etc."""
 import atexit
+import os
 import shutil
 import subprocess
 import sys
@@ -11,10 +12,10 @@ import tempfile
 import time
 import uuid
 
-sys.path.insert(0, '/tmp')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 import rethinkdb as r
 
-BIN = '/home/kara/rethinkdb/build/release/rethinkdb'
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'release', 'rethinkdb')
 DATA = tempfile.mkdtemp(prefix='driver_e2e_')
 DP, CP, HP = 28315, 28316, 28317
 proc = None

@@ -14,7 +14,7 @@ import uuid
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))  # vendored upgraded driver
 import rethinkdb as r  # noqa: E402
 
-BIN = '/home/kara/rethinkdb/build/release/rethinkdb'
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'release', 'rethinkdb')
 
 passed = 0
 failed = 0

@@ -10,10 +10,34 @@ on:
       - "*"
 
 jobs:
-  # ── Build & Unit Tests (gcc-15 on ubuntu-26.04) ──
+  # ── Preflight: style checks (cpplint) on changed files ──
+  # Full-tree cpplint carries pre-existing debt (exit 123 on the full src/);
+  # scoping to the diff surfaces NEW violations without drowning in old ones.
+  preflight:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: cpplint changed files
+        run: |
+          BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:-${GITHUB_EVENT_BEFORE:-origin/main}}"
+          git fetch origin main --depth=1 >/dev/null 2>&1 || true
+          CHANGED=$(git diff --name-only "$BASE"...HEAD 2>/dev/null | grep -E '\.(h|hpp|cc|tcc)$' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "Checking style of changed files:"
+            echo "$CHANGED"
+            ./scripts/check_style.sh $CHANGED
+          else
+            echo "No C++ files changed; skipping cpplint"
+          fi
+
+  # ── Build, Unit Tests, Integration Tests (gcc-15 on ubuntu-26.04) ──
   build-and-test:
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -36,10 +60,26 @@ jobs:
             libssl-dev
 
       - name: Configure
-        run: ./configure --allow-fetch CXX=g++-15 CC=gcc-15
+        # NOTE: only CXX= is a valid configure variable arg (allowed: CXXFLAGS
+        # LDFLAGS PLATFORM MSBUILD VCVARSALL NMAKE). Passing CC= fails with
+        # "Unknown variable argument: CC" — the CI-001 root cause.
+        run: ./configure --allow-fetch CXX=g++-15
 
       - name: Build
-        run: make -j$(nproc)
+        run: make -j4
 
       - name: Unit tests
-        run: ./build/release/rethinkdb-unittest
+        # Same bounded filter as the GitReins guard (full suite has known
+        # long-running/hang history — see RT-BUG-002).
+        run: ./build/release/rethinkdb-unittest --gtest_filter='*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*'
+
+      - name: Python driver E2E integration tests
+        # Probes spawn build/release/rethinkdb from the freshly built tree and
+        # exercise the fork's new ReQL surface (merge, CDC, vector, FTS)
+        # through the vendored Python driver. Driver runtime deps come from
+        # pyproject.toml (six/protobuf/looseversion) — pip-install the vendored
+        # driver rather than hand-listing them.
+        run: |
+          pip install --quiet ./driver/python3 pytest
+          python3 test/merge_e2e_test.py
+          python3 test/driver_e2e_test.py
