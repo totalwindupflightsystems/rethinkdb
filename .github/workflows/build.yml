@@ -70,9 +70,12 @@ jobs:
         run: make -j4
 
       - name: Unit tests
-        # Same bounded filter as the GitReins guard (full suite has known
-        # long-running/hang history — see RT-BUG-002).
-        run: ./build/release/rethinkdb-unittest --gtest_filter='*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*'
+        # `make unit` links the unittest binary, then run the same bounded
+        # filter as the GitReins guard (full suite has known long-running/hang
+        # history — see RT-BUG-002).
+        run: |
+          make unit -j4
+          ./build/release/rethinkdb-unittest --gtest_filter='*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*'
 
       - name: Python driver E2E integration tests
         # Probes spawn build/release/rethinkdb from the freshly built tree and
