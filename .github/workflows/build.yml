@@ -67,19 +67,20 @@ jobs:
         run: ./configure --allow-fetch CXX=g++-15
 
       - name: Build
-        run: make -j4
+        # UNIT_TESTS=1 also links the unittest binary (plain `make` links only
+        # the server); this matches the local build convention.
+        run: make UNIT_TESTS=1 -j4
 
       - name: Unit tests
-        # `make unit` links the unittest binary, then run the same bounded
-        # filter as the GitReins guard (full suite has known long-running/hang
-        # history — see RT-BUG-002). Benchmark* microbenchmarks are excluded:
-        # their relative-timing assertions flip under shared-runner load
-        # (proven: BenchmarkTimeSeries.CatalogAppendVsSortedVectorInsert failed
-        # on CI while passing on the quiet local host — host contention, not a
-        # code defect).
-        run: |
-          make unit -j4
-          ./build/release/rethinkdb-unittest --gtest_filter='*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*:-*Benchmark*'
+        # Run the same bounded filter as the GitReins guard (full suite has
+        # known long-running/hang history — see RT-BUG-002). Do NOT use
+        # `make unit` here: its recipe runs the binary with the configure-time
+        # UNIT_TEST_FILTER (default `*` = full suite), which includes
+        # Benchmark* microbenchmarks whose relative-timing assertions flip
+        # under shared-runner load (proven: BenchmarkTimeSeries.
+        # CatalogAppendVsSortedVectorInsert failed on CI while passing on the
+        # quiet local host — host contention, not a code defect).
+        run: ./build/release/rethinkdb-unittest --gtest_filter='*Cdc*:*Vector*:*Fts*:*Brin*:*Sindex*:*Term*:*Btree*:*Reql*:-*Benchmark*'
 
       - name: Python driver E2E integration tests
         # Probes spawn build/release/rethinkdb from the freshly built tree and
