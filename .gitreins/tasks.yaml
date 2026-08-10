@@ -440,3 +440,15 @@ tasks:
   status: complete
   created_at: '2026-08-10T14:25:01.821809+00:00'
   completed_at: '2026-08-10T14:25:05.314845+00:00'
+- id: RT-GAP-010
+  title: 'RT-GAP-010: Docker/containerized path for the fork'
+  criteria:
+  - Dockerfile exists and builds the fork server from source (multi-stage)
+  - docker-compose.yml exists with driver port 28015 and web UI port 8080, volume
+    for /data
+  - README documents the container quickstart (docker compose up) or a prebuilt image
+    path
+  - docker compose up starts rethinkdb serving on 28015/8080 within 2 minutes
+  status: complete
+  created_at: '2026-08-10T19:34:10.198247+00:00'
+  completed_at: '2026-08-10T19:34:13.454480+00:00'
