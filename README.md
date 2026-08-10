@@ -147,12 +147,24 @@ from all over the world. We could use your help too! Check out our
 Fork extensions
 ---------------
 
-This fork adds PHASE3 extensions on top of upstream RethinkDB. Current
-documentation:
+This fork adds PHASE3 extensions on top of upstream RethinkDB. The
+table below summarizes the implemented features and the planned ones
+(design specs only, not yet in `src/`):
 
-* [Time-series extension](docs/time-series.md) — chunked time-ordered
-  storage, `between()` chunk pruning, retention TTL (in progress),
-  downsampling (queued).
+| Feature | Status | Documentation / Links |
+|---------|--------|-----------------------|
+| Time-series | Implemented | [docs/time-series.md](docs/time-series.md) — chunked time-ordered storage, `between()` chunk pruning, retention TTL, downsampling. Tests: `test/ts2_e2e_probe.py`, `test/ts3_e2e_probe.py`, `test/ts4_e2e_probe.py`, `test/ts6_chaos_probe.py` |
+| CDC streaming | Implemented | Publications, subscriptions, Kafka/Webhook/File-S3 sinks. Tests: `test/cdc_e2e_test.py`, `test/cdc_integration_test.py` |
+| Vector / FTS / BRIN indexes | Implemented | Vector similarity search, full-text search, BRIN block-range indexes. Tests: `test/vector_fts_integration_test.py`, `test/vector_fts_brin_integration_test.py` |
+| MERGE / UPSERT | Implemented | Deep merge and upsert terms. Test: `test/merge_e2e_test.py` |
+| Generated / virtual columns | Implemented | `SET_GENERATED_COLUMNS` / `GET_GENERATED_COLUMNS` terms. Source: `src/rdb_protocol/terms/generated_columns.cc` |
+| Partitioning | Implemented | Table partitioning. Test: `test/ts6_cluster_e2e_probe.py` |
+| Parallel query execution | Implemented | Source: `src/rdb_protocol/parallel_executor.hpp` |
+| JSON | Implemented | Source: `src/rdb_protocol/terms/json.cc` |
+| JSONB / JSONPath | Planned (spec) | [.coding-hermes/specs/phase3-jsonb-jsonpath.md](.coding-hermes/specs/phase3-jsonb-jsonpath.md) |
+| Async I/O | Planned (spec) | [.coding-hermes/specs/phase3-async-io.md](.coding-hermes/specs/phase3-async-io.md) |
+| FDW | Planned (spec) | [.coding-hermes/specs/phase3-fdw.md](.coding-hermes/specs/phase3-fdw.md) |
+| WASM UDF | Planned (spec) | [.coding-hermes/specs/phase3-wasm-udf.md](.coding-hermes/specs/phase3-wasm-udf.md) |
 
 Donors
 ------
