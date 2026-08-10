@@ -1,0 +1,23 @@
+# RethinkDB fork — single-node quickstart.
+#
+#   docker compose up -d --build   # build the image from source locally
+#   docker compose up -d           # use the prebuilt image (docker compose pull
+#                                  # fetches the latest published image)
+#
+# The prebuilt image is published at:
+#   ghcr.io/totalwindupflightsystems/rethinkdb:latest
+
+services:
+  rethinkdb:
+    image: ghcr.io/totalwindupflightsystems/rethinkdb:latest
+    build: .
+    container_name: rethinkdb
+    ports:
+      - "28015:28015"   # driver port (ReQL clients)
+      - "8080:8080"     # web UI
+    volumes:
+      - rethinkdb-data:/data
+    restart: unless-stopped
+
+volumes:
+  rethinkdb-data:

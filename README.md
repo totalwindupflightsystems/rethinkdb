@@ -165,6 +165,19 @@ table below summarizes the implemented features and the planned ones
 | FDW | Planned (spec) | [.coding-hermes/specs/phase3-fdw.md](.coding-hermes/specs/phase3-fdw.md) |
 | WASM UDF | Planned (spec) | [.coding-hermes/specs/phase3-wasm-udf.md](.coding-hermes/specs/phase3-wasm-udf.md) |
 
+Docker quickstart
+-----------------
+
+No C++ toolchain needed — run a single-node instance with Docker:
+
+    docker compose up -d            # pulls the prebuilt image from ghcr.io
+    docker compose up -d --build    # ...or build from source locally
+
+Connect any ReQL driver to `localhost:28015`, open the web UI at
+http://localhost:8080, and data persists in the `rethinkdb-data` Docker
+volume. The prebuilt image is published at
+`ghcr.io/totalwindupflightsystems/rethinkdb:latest`.
+
 Donors
 ------
 
