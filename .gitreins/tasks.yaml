@@ -426,3 +426,17 @@ tasks:
   status: complete
   created_at: '2026-08-09T23:21:19.461822+00:00'
   completed_at: '2026-08-09T23:21:22.850681+00:00'
+- id: CI-002
+  title: 'CI-002: Fix flaky BenchmarkTimeSeries.CatalogAppendVsSortedVectorInsert'
+  criteria:
+  - raw mean-vs-mean assertion at src/unittest/benchmark_ts.cc:302 replaced with a
+    load-robust comparison (median/min with tolerance, or warmup, or skip-under-CI)
+  - the test still runs and asserts the append path beats the vector path within a
+    load-tolerant bound (not deleted, not unconditionally skipped)
+  - BenchmarkTimeSeries.CatalogAppendVsSortedVectorInsert passes 3/3 consecutive local
+    runs
+  - full fork-feature unit suite passes (277 tests including all 6 BenchmarkTimeSeries)
+  - gitreins guard tier1 PASS
+  status: complete
+  created_at: '2026-08-10T14:25:01.821809+00:00'
+  completed_at: '2026-08-10T14:25:05.314845+00:00'
