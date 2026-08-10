@@ -54,6 +54,7 @@ jobs:
             libcurl4-openssl-dev \
             libncurses5-dev \
             libjemalloc-dev \
+            libboost-all-dev \
             wget \
             m4 \
             g++-15 \
