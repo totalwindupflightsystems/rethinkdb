@@ -183,8 +183,9 @@ tasks:
   - 34 benchmark tests pass (CDC 4, Vector 12, FTS 7, BRIN 9, Coroutine 1, total 34)
   - "Benchmarks use std::chrono via GTest harness \u2014 no external dependencies"
   - Git committed with Co-authored-by
-  status: pending
+  status: complete
   created_at: '2026-07-27T18:51:46.888720+00:00'
+  completed_at: '2026-08-10T21:44:52.332913+00:00'
 - id: PHASE3-VEC
   title: "PHASE3-VEC: Generated/virtual columns \u2014 SET_GENERATED_COLUMNS (218)\
     \ + GET_GENERATED_COLUMNS (219)"
@@ -410,8 +411,9 @@ tasks:
     s2 kill-mid-retention: count settles at the live count AND the surviving row SET
     is exactly the live rows; s3 kill-during-downsample-merge: aggregate rows complete
     with no duplicate buckets and no data loss), 24/24 checks green'
-  status: in_progress
+  status: complete
   created_at: '2026-08-08T21:58:54.226462+00:00'
+  completed_at: '2026-08-10T21:44:52.260805+00:00'
 - id: rt-gap-009
   title: RT-GAP-009 python test setup
   criteria:
