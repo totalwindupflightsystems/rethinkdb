@@ -26,8 +26,8 @@ driverPaths = {
         'envName':'PYTHON_DRIVER',
         'extension':'py',
         'driverPath':None,
-        'driverRelSourcePath':os.path.join(os.pardir, os.pardir, 'build', 'drivers', 'python', 'rethinkdb'),
-        'sourcePath':os.path.join(project_root_dir, 'drivers', 'python')
+        'driverRelSourcePath':'rethinkdb',
+        'sourcePath':os.path.join(project_root_dir, 'driver', 'python3')
     },
     'Ruby': {
         'envName':'RUBY_DRIVER',
