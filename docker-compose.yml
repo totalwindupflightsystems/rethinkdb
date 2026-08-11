@@ -1,11 +1,11 @@
 # RethinkDB fork — single-node quickstart.
 #
 #   docker compose up -d --build   # build the image from source locally
-#   docker compose up -d           # use the prebuilt image (docker compose pull
-#                                  # fetches the latest published image)
 #
-# The prebuilt image is published at:
-#   ghcr.io/totalwindupflightsystems/rethinkdb:latest
+# The prebuilt image at ghcr.io/totalwindupflightsystems/rethinkdb:latest is
+# currently PRIVATE — anonymous pulls fail and compose does NOT fall back to
+# building from source. Use `--build` unless you have registry auth
+# (maintainers: docker compose pull / up -d without --build).
 
 services:
   rethinkdb:
