@@ -223,7 +223,11 @@ class Cursor(object):
         else:
             raise ReqlDriverError("Invalid wait timeout '%s'" % str(wait))
 
-    def next(self, wait=True):
+    def next(self, wait=True, timeout=None):
+        if timeout is not None:
+            if not (isinstance(timeout, numbers.Real) and timeout >= 0):
+                raise ReqlDriverError("Invalid wait timeout '%s'" % str(timeout))
+            return self._get_next(timeout)
         return self._get_next(Cursor._wait_to_timeout(wait))
 
     def _extend(self, res_buf):

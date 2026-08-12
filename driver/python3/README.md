@@ -37,3 +37,7 @@ PYTHONPATH=driver/python3 python3 your_app.py
   filter={})` is equivalent to passing a config object positionally.
 - The vendored `ast.py`/`query.py` add query-builder methods for all new
   terms; the stock upstream driver does not know them.
+- `Cursor.next()` accepts a bounded-timeout override: `cursor.next(timeout=5)`
+  waits at most 5 seconds for the next element (ignoring `wait`), raising
+  `ReqlTimeoutError` on expiry. A non-negative number is required; anything
+  else raises `ReqlDriverError`. `timeout=0` is equivalent to `wait=False`.
