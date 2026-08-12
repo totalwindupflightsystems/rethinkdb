@@ -61,6 +61,16 @@ real_reql_cluster_interface_t::real_reql_cluster_interface_t(
     guarantee(m_cluster_semilattice_view->home_thread() == home_thread());
     guarantee(m_table_meta_client->home_thread() == home_thread());
     guarantee(m_server_config_client->home_thread() == home_thread());
+
+    /* RT-GAP-015 step 5: start the CDC streaming pump. It self-spawns a
+     * coroutine that polls table metadata for CREATING subscriptions and
+     * streams their changes to the target tables. The pump is destroyed
+     * with this interface, before m_namespace_repo / m_changefeed_client
+     * are torn down. */
+    m_cdc_pump.init(new ql::cdc_pump_t(
+        m_rdb_context, m_table_meta_client, &m_namespace_repo,
+        &m_changefeed_client));
+
     for (int thr = 0; thr < get_num_threads(); ++thr) {
         m_cross_thread_database_watchables[thr].init(
             new cross_thread_watchable_variable_t<databases_semilattice_metadata_t>(

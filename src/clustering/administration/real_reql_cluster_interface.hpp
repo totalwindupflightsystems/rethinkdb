@@ -11,6 +11,7 @@
 #include "clustering/administration/tables/generate_config.hpp"
 #include "concurrency/cross_thread_watchable.hpp"
 #include "concurrency/watchable.hpp"
+#include "rdb_protocol/cdc_pump.hpp"
 #include "rdb_protocol/context.hpp"
 #include "rpc/semilattice/view.hpp"
 
@@ -417,6 +418,11 @@ private:
     namespace_repo_t m_namespace_repo;
     ql::changefeed::client_t m_changefeed_client;
     server_config_client_t *m_server_config_client;
+
+    /* RT-GAP-015 step 5: the CDC streaming pump. Owned by the interface;
+     * self-spawns in the constructor and stops when the interface (and
+     * this member) is destroyed. */
+    scoped_ptr_t<ql::cdc_pump_t> m_cdc_pump;
 
     void wait_for_cluster_metadata_to_propagate(
             const cluster_semilattice_metadata_t &metadata,
