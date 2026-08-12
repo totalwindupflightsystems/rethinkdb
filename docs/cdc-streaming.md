@@ -1,8 +1,22 @@
 # RethinkDB CDC Streaming Extension
 
-**Status: implemented.** Change-data-capture for this fork: publish table
-changes as a logical stream, subscribe to a publication, and route the stream
-to external sinks. Covered by integration tests (see [Evidence](#evidence)).
+**Status: implemented (core path), with known limitations.** Change-data-capture
+for this fork: publish table changes as a logical stream, subscribe to a
+publication, and route the stream to a target table. Covered by integration
+tests (see [Evidence](#evidence)).
+
+**RT-GAP-015 (2026-08-12):** the streaming pump (`cdc_pump_t`) is now wired:
+publications reach state `ready` (Raft-committed), and subscriptions deliver
+source-table changes to the target table through a changefeed-backed pump
+(applier target-writer). Two limitations remain:
+
+- **Snapshot mode is NONE**: only changes that occur AFTER the pump opens the
+  stream are delivered — no initial-snapshot replay. Existing rows in the
+  source table are not copied to the target on subscription start.
+- **Sink drivers are stubs**: `cdcSinkCreate` records sink configuration and
+  reports state, but Kafka/Webhook/S3/file delivery is not implemented — no
+  external destination receives data yet. Subscriptions (target-table delivery)
+  are the supported streaming path.
 
 ## Overview
 
