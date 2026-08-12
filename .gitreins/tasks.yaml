@@ -467,3 +467,17 @@ tasks:
   status: complete
   created_at: '2026-08-12T08:31:49.406471+00:00'
   completed_at: '2026-08-12T08:31:52.501187+00:00'
+- id: RT-GAP-016
+  title: 'RT-GAP-016: Cursor.next() bounded-timeout kwarg'
+  criteria:
+  - 'Cursor.next() accepts a timeout kwarg: next(timeout=5.0) works in a live session
+    without TypeError'
+  - timeout is a bounded wait in seconds passed to _get_next; negative or non-numeric
+    timeout raises ReqlDriverError; timeout=None preserves wait-only behavior
+  - docs.py cursor.next docstring and driver/python3/README.md document the timeout
+    kwarg
+  - live probe test/next_timeout_e2e_test.py passes against the built server (changefeed
+    delivery, no-wait, invalid-timeout cases)
+  status: complete
+  created_at: '2026-08-12T09:28:40.642726+00:00'
+  completed_at: '2026-08-12T09:28:46.578032+00:00'
