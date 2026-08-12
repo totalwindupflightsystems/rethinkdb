@@ -1,13 +1,70 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "unittest/gtest.hpp"
 
+#include <string>
+#include <vector>
+
+#include "btree/keys.hpp"
+#include "clustering/administration/auth/user_context.hpp"
+#include "containers/tribool.hpp"
+#include "protocol_api.hpp"
 #include "rdb_protocol/cdc_types.hpp"
+#include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/datum_string.hpp"
+#include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/publication.hpp"
 #include "rdb_protocol/subscription.hpp"
 #include "rdb_protocol/cdc_sink.hpp"
 #include "rdb_protocol/replication.hpp"
 
 namespace unittest {
+
+/* Stub namespace interface that records point writes/deletes instead of
+ * touching a real store. Used to prove the applier's target-writer seam
+ * performs the write and that dedup skips re-writes. */
+class recording_namespace_interface_t : public namespace_interface_t {
+public:
+    void read(UNUSED auth::user_context_t const &user_context,
+              UNUSED const read_t &read,
+              UNUSED read_response_t *response,
+              UNUSED order_token_t tok,
+              UNUSED signal_t *interruptor)
+        THROWS_ONLY(cannot_perform_query_exc_t,
+                    interrupted_exc_t,
+                    auth::permission_error_t) {
+        throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
+    }
+
+    void write(UNUSED auth::user_context_t const &user_context,
+               const write_t &write,
+               UNUSED write_response_t *response,
+               UNUSED order_token_t tok,
+               UNUSED signal_t *interruptor)
+        THROWS_ONLY(cannot_perform_query_exc_t,
+                    interrupted_exc_t,
+                    auth::permission_error_t) {
+        if (const point_write_t *pw = boost::get<point_write_t>(&write.write)) {
+            writes.push_back("write:" + key_to_unescaped_str(pw->key));
+        } else if (const point_delete_t *pd =
+                       boost::get<point_delete_t>(&write.write)) {
+            writes.push_back("delete:" + key_to_unescaped_str(pd->key));
+        } else {
+            writes.push_back("other");
+        }
+    }
+
+    std::set<region_t> get_sharding_scheme()
+        THROWS_ONLY(cannot_perform_query_exc_t) {
+        throw cannot_perform_query_exc_t("unimplemented", query_state_t::FAILED);
+    }
+
+    bool check_readiness(UNUSED table_readiness_t readiness,
+                         UNUSED signal_t *interruptor) {
+        return true;
+    }
+
+    std::vector<std::string> writes;
+};
 
 // --- LSN ordering ---
 
@@ -252,6 +309,131 @@ TEST(ReplicationTest, ApplierLedgerShardTracking) {
     // Confirmed LSN should have advanced per shard
     EXPECT_EQ(30U, handle.confirmed_lsn_by_shard[shard_a].value);
     EXPECT_EQ(5U, handle.confirmed_lsn_by_shard[shard_b].value);
+}
+
+// --- target-writer seam (RT-GAP-015 step 3) ---
+
+TEST(ReplicationTest, ApplierTargetWriterPerformsWrite) {
+    ql::subscription_handle_t handle;
+    ql::subscription_applier_t applier(&handle);
+    cond_t never_interrupted;
+    uuid_u cluster = generate_uuid();
+    uuid_u table = generate_uuid();
+    uuid_u shard = generate_uuid();
+
+    recording_namespace_interface_t nif;
+    applier.set_target_writer(
+        [&nif](const ql::change_record_t &record, signal_t *interruptor) {
+            if (record.op == ql::change_operation_t::DELETE) {
+                ql::datum_t before =
+                    ql::deserialize_datum_from_vector(record.before_image);
+                if (!before.has()) {
+                    return false;
+                }
+                write_response_t response;
+                write_t write(
+                    point_delete_t(store_key_t(before.print_primary())),
+                    DURABILITY_REQUIREMENT_DEFAULT,
+                    profile_bool_t::DONT_PROFILE,
+                    ql::configured_limits_t());
+                nif.write(
+                    auth::user_context_t(auth::permissions_t(
+                        tribool::True, tribool::True,
+                        tribool::True, tribool::True)),
+                    write, &response, order_token_t::ignore, interruptor);
+                return true;
+            }
+            ql::datum_t after =
+                ql::deserialize_datum_from_vector(record.after_image);
+            if (!after.has()) {
+                return false;
+            }
+            write_response_t response;
+            write_t write(
+                point_write_t(store_key_t(after.print_primary()), after, true),
+                DURABILITY_REQUIREMENT_DEFAULT,
+                profile_bool_t::DONT_PROFILE,
+                ql::configured_limits_t());
+            nif.write(
+                auth::user_context_t(auth::permissions_t(
+                    tribool::True, tribool::True,
+                    tribool::True, tribool::True)),
+                write, &response, order_token_t::ignore, interruptor);
+            return true;
+        });
+
+    /* INSERT record with a serialized after-image. */
+    ql::change_record_t r1;
+    r1.event_id = ql::change_event_id_t{cluster, table, shard, {10}};
+    r1.op = ql::change_operation_t::INSERT;
+    ql::datum_t doc1 = ql::datum_t(datum_string_t("row-1"));
+    r1.after_image = ql::serialize_datum_to_vector(doc1);
+    r1.commit_timestamp = 1000.0;
+
+    /* DELETE record with a serialized before-image. */
+    ql::change_record_t r2;
+    r2.event_id = ql::change_event_id_t{cluster, table, shard, {20}};
+    r2.op = ql::change_operation_t::DELETE;
+    ql::datum_t doc2 = ql::datum_t(datum_string_t("row-2"));
+    r2.before_image = ql::serialize_datum_to_vector(doc2);
+    r2.commit_timestamp = 2000.0;
+
+    applier.apply_batch({r1, r2}, &never_interrupted);
+
+    /* Both records must have reached the target writer. The store_key_t
+     * encoding prefixes string keys with a type tag ('S'), so the recorded
+     * keys are the encoded forms. */
+    ASSERT_EQ(2U, nif.writes.size());
+    EXPECT_EQ("write:Srow-1", nif.writes[0]);
+    EXPECT_EQ("delete:Srow-2", nif.writes[1]);
+
+    /* Re-apply: dedup must skip both, so no additional writes. */
+    applier.apply_batch({r1, r2}, &never_interrupted);
+    EXPECT_EQ(2U, nif.writes.size());
+    EXPECT_EQ(2U, applier.ledger_size());
+}
+
+TEST(ReplicationTest, ApplierTargetWriterRejectsInvalidRecord) {
+    ql::subscription_handle_t handle;
+    ql::subscription_applier_t applier(&handle);
+    cond_t never_interrupted;
+    uuid_u cluster = generate_uuid();
+    uuid_u table = generate_uuid();
+    uuid_u shard = generate_uuid();
+
+    recording_namespace_interface_t nif;
+    applier.set_target_writer(
+        [&nif](const ql::change_record_t &record, signal_t *interruptor) {
+            ql::datum_t after =
+                ql::deserialize_datum_from_vector(record.after_image);
+            if (!after.has()) {
+                return false;
+            }
+            write_response_t response;
+            write_t write(
+                point_write_t(store_key_t(after.print_primary()), after, true),
+                DURABILITY_REQUIREMENT_DEFAULT,
+                profile_bool_t::DONT_PROFILE,
+                ql::configured_limits_t());
+            nif.write(
+                auth::user_context_t(auth::permissions_t(
+                    tribool::True, tribool::True,
+                    tribool::True, tribool::True)),
+                write, &response, order_token_t::ignore, interruptor);
+            return true;
+        });
+
+    /* INSERT with an EMPTY after-image fails the validation gate before
+     * the writer is invoked; the batch must roll back (no ledger entry). */
+    ql::change_record_t bad;
+    bad.event_id = ql::change_event_id_t{cluster, table, shard, {5}};
+    bad.op = ql::change_operation_t::INSERT;
+    bad.commit_timestamp = 500.0;
+
+    applier.apply_batch({bad}, &never_interrupted);
+    EXPECT_EQ(0U, nif.writes.size());
+    EXPECT_EQ(0U, applier.ledger_size());
+    EXPECT_FALSE(applier.already_applied_no_interruptor(bad.event_id));
 }
 
 } // namespace unittest
