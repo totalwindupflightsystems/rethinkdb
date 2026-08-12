@@ -3,6 +3,7 @@
 #define RDB_PROTOCOL_SUBSCRIPTION_HPP_
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -419,6 +420,18 @@ public:
      * being silently merged with replay intent. */
     bool is_resync_required() const;
 
+    /* Target-writer callback (RT-GAP-015 step 3). When set, apply_one_record
+     * invokes it after the validation gate passes, giving the streaming pump
+     * a seam to perform the real target-table write (point write/delete via
+     * namespace_interface_t). The callback receives the fully-validated
+     * record and must return true on success. When unset, apply_one_record
+     * behaves exactly as before (validation-only gate). */
+    typedef std::function<bool(const change_record_t &, signal_t *)>
+        target_writer_t;
+    void set_target_writer(target_writer_t writer) {
+        target_writer_ = std::move(writer);
+    }
+
 private:
     /* Apply one record to the target. Returns true if the record was
      * applied (or skipped as duplicate), false on error. Does NOT touch
@@ -435,6 +448,10 @@ private:
 
     /* Bound handle. Not owned. */
     subscription_handle_t *handle_;
+
+    /* Optional target-writer callback (RT-GAP-015 step 3). Invoked by
+     * apply_one_record after validation when set. */
+    target_writer_t target_writer_;
 
     /* Apply ledger: set of event_ids seen-and-applied for this
      * subscription. Ordered by (shard_id, lsn) for deterministic

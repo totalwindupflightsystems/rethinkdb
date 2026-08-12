@@ -652,6 +652,15 @@ bool subscription_applier_t::apply_one_record(
         }
     }
 
+    /* RT-GAP-015 step 3: if a target-writer callback is installed, invoke
+     * it now that the record has passed validation. The callback performs
+     * the real target-table write (point write/delete through the
+     * namespace interface). A false return means the write failed and the
+     * caller rolls back the batch's ledger inserts. */
+    if (target_writer_) {
+        return target_writer_(record, interruptor);
+    }
+
     return true;
 }
 
