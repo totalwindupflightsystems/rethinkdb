@@ -122,10 +122,28 @@ void cdc_pump_t::stream_subscription_coro(subscription_config_t sub,
         subscription_handle_t handle(sub);
         subscription_applier_t applier(&handle);
 
+        /* Resolve the target table's primary-key field name so the
+         * target-writer can extract the key from change images (RT-GAP-015). */
+        table_config_and_shards_t target_config;
+        std::string target_pk = "id";
+        try {
+            table_meta_client_->get_config(
+                sub.target_table_id, drain_signal, &target_config);
+            target_pk = target_config.config.basic.primary_key;
+        } catch (const no_such_table_exc_t &) {
+            logWRN("cdc_pump: subscription `%s` target table missing; "
+                   "leaving in CREATING", sub.name.c_str());
+            return;
+        } catch (const failed_table_op_exc_t &) {
+            logWRN("cdc_pump: subscription `%s` target table unavailable; "
+                   "leaving in CREATING", sub.name.c_str());
+            return;
+        }
+
         /* Target-writer seam: perform the real target-table write through
          * the namespace interface. */
         applier.set_target_writer(
-            [this, &sub](const change_record_t &record, signal_t *interruptor) {
+            [this, &sub, target_pk](const change_record_t &record, signal_t *interruptor) {
                 namespace_interface_access_t access =
                     namespace_repo_->get_namespace_interface(
                         sub.target_table_id, interruptor);
@@ -141,7 +159,11 @@ void cdc_pump_t::stream_subscription_coro(subscription_config_t sub,
                     if (!before.has()) {
                         return false;
                     }
-                    std::string pkey = before.print_primary();
+                    datum_t pk_val = before.get_field(target_pk.c_str(), NOTHROW);
+                    if (!pk_val.has()) {
+                        return false;
+                    }
+                    std::string pkey = pk_val.print_primary();
                     write_t write(
                         point_delete_t(store_key_t(pkey)),
                         DURABILITY_REQUIREMENT_DEFAULT,
@@ -160,7 +182,11 @@ void cdc_pump_t::stream_subscription_coro(subscription_config_t sub,
                 if (!after.has()) {
                     return false;
                 }
-                std::string pkey = after.print_primary();
+                datum_t pk_val = after.get_field(target_pk.c_str(), NOTHROW);
+                if (!pk_val.has()) {
+                    return false;
+                }
+                std::string pkey = pk_val.print_primary();
                 write_t write(
                     point_write_t(store_key_t(pkey), after, true),
                     DURABILITY_REQUIREMENT_DEFAULT,
