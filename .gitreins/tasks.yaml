@@ -454,3 +454,16 @@ tasks:
   status: complete
   created_at: '2026-08-10T19:34:10.198247+00:00'
   completed_at: '2026-08-10T19:34:13.454480+00:00'
+- id: RT-GAP-015
+  title: 'RT-GAP-015: CDC streaming pipeline wired (publication ready + subscription
+    target delivery)'
+  criteria:
+  - publication_status reports state ready after publication_create
+  - target table receives rows inserted into source table after subscription_create
+    (live e2e test_cdc_subscription_delivery passes)
+  - docs/cdc-streaming.md is truthful (no false implemented claim; snapshot-NONE +
+    sink-stub limitations documented)
+  - test/cdc_e2e_test.py delivery test asserts target-table delivery (not source read-back)
+  status: complete
+  created_at: '2026-08-12T08:31:49.406471+00:00'
+  completed_at: '2026-08-12T08:31:52.501187+00:00'
