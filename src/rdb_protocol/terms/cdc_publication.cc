@@ -405,7 +405,12 @@ private:
         ql::datum_object_builder_t res;
         res.overwrite("created", datum_t(1.0));
         res.overwrite("publication", datum_t(datum_string_t(config.name.str())));
-        res.overwrite("state", datum_t(datum_string_t("creating")));
+        /* RT-GAP-015: publication_create now commits a READY state change
+        through Raft before returning; report the committed state, not the
+        transient CREATING the config carried in. */
+        res.overwrite("state",
+            datum_t(datum_string_t(publication_state_to_cstr(
+                ql::publication_state_t::READY))));
         return new_val(std::move(res).to_datum());
     }
     virtual const char *name() const { return "publication_create"; }

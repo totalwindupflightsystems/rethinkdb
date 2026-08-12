@@ -1622,6 +1622,18 @@ bool real_reql_cluster_interface_t::publication_create(
         m_table_meta_client->set_config(
             table_id, table_config_and_shards_change, &interruptor_on_home);
 
+        /* RT-GAP-015: the publication is now committed in Raft; flip its
+        lifecycle state to READY so publication_status reports 'ready' instead
+        of the hardcoded CREATING that left every publication stuck in
+        'creating' forever. The state change is a second Raft commit so the
+        CREATING state remains observable to any concurrent reader between
+        the two commits. */
+        table_config_and_shards_change_t ready_change(
+            table_config_and_shards_change_t::publication_set_state_t{
+                config.publication_id, ql::publication_state_t::READY});
+        m_table_meta_client->set_config(
+            table_id, ready_change, &interruptor_on_home);
+
         return true;
     } catch (const config_change_exc_t &) {
         *error_out = admin_err_t{
