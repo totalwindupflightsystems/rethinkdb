@@ -17,7 +17,16 @@
 namespace unittest {
 namespace {
 
-using namespace ql;
+using ql::change_operation_t;
+using ql::change_record_t;
+using ql::conflict_log_entry_t;
+using ql::conflict_log_t;
+using ql::conflict_resolution_policy_t;
+using ql::conflict_resolution_result_t;
+using ql::conflict_resolver_t;
+using ql::datum_t;
+using ql::handler_safety_level_t;
+using ql::operator_action_t;
 
 // ── Helpers ──
 

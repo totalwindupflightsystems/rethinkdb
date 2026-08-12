@@ -1,6 +1,8 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/protocol.hpp"
 
+#include <inttypes.h>
+
 #include <algorithm>
 #include <functional>
 
@@ -550,7 +552,7 @@ void build_and_persist_brin_sidecar_for_sindex(
         txn->commit();
         return;
     }
-    logINF("BRIN: Found sindex, opaque_definition size=%lu", static_cast<unsigned long>(sindex.opaque_definition.size()));
+    logINF("BRIN: Found sindex, opaque_definition size=%" PRIu64, static_cast<uint64_t>(sindex.opaque_definition.size()));
 
     /* Inspect the opaque_definition. If this is not a BRIN sindex, there is
     nothing to do. */
@@ -563,7 +565,7 @@ void build_and_persist_brin_sidecar_for_sindex(
         txn->commit();
         return;
     }
-    logINF("BRIN: Confirmed BRIN sindex, brin_range_size=%lu", static_cast<unsigned long>(disk_info.brin_range_size));
+    logINF("BRIN: Confirmed BRIN sindex, brin_range_size=%" PRIu64, static_cast<uint64_t>(disk_info.brin_range_size));
 
     /* Release the sindex block before starting the primary B-tree traversal.
        We no longer need it — all info we need (sindex ID, brin_columns,
@@ -599,7 +601,7 @@ void build_and_persist_brin_sidecar_for_sindex(
             release_superblock_t::RELEASE,
             interruptor);
     }
-    logINF("BRIN: Primary B-tree traversal complete, entries=%lu", static_cast<unsigned long>(cb.entries_.size()));
+    logINF("BRIN: Primary B-tree traversal complete, entries=%" PRIu64, static_cast<uint64_t>(cb.entries_.size()));
 
     /* Re-acquire the sindex superblock for write so we can store the summary
     block_id. The traversal above released any buf_locks; we re-acquire using

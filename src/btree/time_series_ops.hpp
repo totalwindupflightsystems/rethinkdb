@@ -75,7 +75,7 @@ struct downsample_root_t {
     downsample_root_t()
         : target_interval_seconds(0), root_block(NULL_BLOCK_ID) { }
 
-    downsample_root_t(uint64_t target_interval, block_id_t root = NULL_BLOCK_ID)
+    explicit downsample_root_t(uint64_t target_interval, block_id_t root = NULL_BLOCK_ID)
         : target_interval_seconds(target_interval), root_block(root) { }
 
     RDB_DECLARE_ME_SERIALIZABLE(downsample_root_t);

@@ -17,7 +17,26 @@
 namespace unittest {
 namespace {
 
-using namespace ql;
+using ql::backtrace_id_t;
+using ql::change_operation_t;
+using ql::change_record_t;
+using ql::compile_env_t;
+using ql::conflict_log_entry_t;
+using ql::conflict_log_t;
+using ql::conflict_resolution_policy_t;
+using ql::conflict_resolution_result_t;
+using ql::conflict_resolver_t;
+using ql::datum_t;
+using ql::func_term_t;
+using ql::generated_term_t;
+using ql::handler_safety_level_t;
+using ql::NOTHROW;
+using ql::operator_action_t;
+using ql::raw_term_t;
+using ql::sym_t;
+using ql::term_t;
+using ql::term_variant_t;
+using ql::var_visibility_t;
 
 // Helper: build a change_record_t with minimal fields
 change_record_t make_record(change_operation_t op,

@@ -18,7 +18,14 @@
 namespace unittest {
 namespace {
 
-using namespace ql;
+using ql::change_operation_t;
+using ql::change_record_t;
+using ql::conflict_log_entry_t;
+using ql::conflict_log_t;
+using ql::conflict_resolution_policy_t;
+using ql::conflict_resolver_t;
+using ql::datum_t;
+using ql::operator_action_t;
 
 change_record_t make_record(change_operation_t op, microtime_t ts,
                             uuid_u cluster, uuid_u shard, uint64_t lsn_val) {
