@@ -8,7 +8,7 @@ from `src/rdb_protocol/ql2.proto` and includes **all 18 new ReQL terms**
 | # | Term | Python API |
 |---|------|-----------|
 | 198 | `FTS_TOKENIZE` | `r.fts_tokenize(text)` |
-| 199 | `FTS_MATCH` | `table.fts_match(query, index=...)` |
+| 199 | `FTS_MATCH` | `table.fts_match(query, index=...)` (FTS index needs `multi=True` — see below) |
 | 200 | `VECTOR` | `r.vector([...])` |
 | 201 | `VECTOR_NEAR` | `table.vector_near(index, r.vector([...]), k=N)` |
 | 202 | `PARTITION_INFO` | `table.partition_info()` |
@@ -16,6 +16,16 @@ from `src/rdb_protocol/ql2.proto` and includes **all 18 new ReQL terms**
 | 204–207 | CDC publications | `table.publication_create/list/status/drop` |
 | 208–211 | CDC subscriptions | `table.subscription_create/list/status/drop` |
 | 212–215 | CDC sinks | `table.cdc_sink_create/list/status/drop` |
+
+## FTS indexes
+
+Full-text search requires a `multi=True` index. An index created without it
+reports ready, but `fts_match` silently returns `[]` with no error:
+
+```python
+table.index_create("fts_content_idx", r.row["content"], fts=True, multi=True)
+table.fts_match("hello world", index="fts_content_idx")
+```
 
 ## Install
 
