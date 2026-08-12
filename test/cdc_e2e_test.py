@@ -214,7 +214,12 @@ def test_publication_drop(conn, db_name, table_name):
     t.assert_true('test_pub' not in names, "publication 'test_pub' is no longer listed")
 
 def test_cdc_changefeed_delivery(conn, db_name, table_name):
-    """Test changefeed events are delivered after writes to a publication table."""
+    """Source-table insert/read-back sanity.
+
+    NOTE: historically named "delivery" but it only reads back from the
+    SOURCE table — target-table delivery is covered by
+    test_cdc_subscription_delivery (RT-GAP-015).
+    """
     print("\n[TEST] cdc_changefeed_delivery")
     # Write a doc and read it back
     insert = r.r.db(db_name).table(table_name).insert(
@@ -224,6 +229,48 @@ def test_cdc_changefeed_delivery(conn, db_name, table_name):
     # Read back
     doc = r.r.db(db_name).table(table_name).get('cdc_test_1').run(conn)
     t.assert_equal(doc.get('val'), 42, "read back inserted doc")
+
+def test_cdc_subscription_delivery(conn, db_name, table_name):
+    """Test subscription streams source-table changes into the target table.
+
+    RT-GAP-015: the CDC streaming pump drives the subscription to STREAMING
+    and applies changefeed changes to the target table. This test inserts
+    into the SOURCE table and polls the TARGET table for the row.
+    """
+    print("\n[TEST] cdc_subscription_delivery")
+    # The subscription created by test_subscription_create targets
+    # 'events_sub' in the same database.
+    target_table = "events_sub"
+
+    # Wait for the pump's poll cycle (1s) to open the changefeed stream
+    # before inserting — snapshot mode is NONE, so pre-stream changes are
+    # not replayed (RT-GAP-015).
+    time.sleep(3)
+
+    # Insert a row into the source table AFTER the subscription exists.
+    insert = r.r.db(db_name).table(table_name).insert(
+        {'id': 'cdc_stream_1', 'val': 7}
+    ).run(conn)
+    t.assert_equal(insert.get('inserted'), 1, "inserted source doc")
+
+    # Poll the target table for the row (pump poll interval is 1s).
+    deadline = time.time() + 15
+    found = None
+    while time.time() < deadline:
+        try:
+            found = r.r.db(db_name).table(target_table).get('cdc_stream_1').run(conn)
+            if found is not None:
+                break
+        except Exception:
+            pass
+        time.sleep(0.5)
+    t.assert_true(found is not None, "row arrived in target table via subscription")
+    if found is not None:
+        t.assert_equal(found.get('val'), 7, "target row carries the source value")
+
+    # Publication must report 'ready' (RT-GAP-015 step 1+2).
+    status = r.r.db(db_name).table(table_name).publication_status('test_pub').run(conn)
+    t.assert_equal(status.get('state'), 'ready', "publication_status reports 'ready'")
 
 # ── Main ──
 
@@ -270,7 +317,8 @@ if __name__ == '__main__':
             ("cdc_sink_create", test_cdc_sink_create),
             ("cdc_sink_list", test_cdc_sink_list),
             ("cdc_sink_status", test_cdc_sink_status),
-            ("cdc_changefeed_delivery", test_cdc_changefeed_delivery),
+            ("cdc_source_readback", test_cdc_changefeed_delivery),
+            ("cdc_subscription_delivery", test_cdc_subscription_delivery),
             ("publication_drop", test_publication_drop),
         ]
 
