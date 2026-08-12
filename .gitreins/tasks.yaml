@@ -481,3 +481,16 @@ tasks:
   status: complete
   created_at: '2026-08-12T09:28:40.642726+00:00'
   completed_at: '2026-08-12T09:28:46.578032+00:00'
+- id: RT-GAP-018
+  title: 'RT-GAP-018: pre-existing cpplint baseline fixed (check_style exits 0)'
+  criteria:
+  - scripts/check_style.sh exits 0 with no cpplint errors
+  - no namespace using-directives remain in src/unittest/cdc_durability_test.cc, cdc_failure_test.cc,
+    conflict_resolver_test.cc (using-declarations instead)
+  - downsample_root_t(uint64_t, block_id_t root) in src/btree/time_series_ops.hpp
+    is marked explicit
+  - src/rdb_protocol/protocol.cc uses uint64_t casts with PRIu64 format (no C long)
+  - build (make -j4 + make unit) passes with the lint fixes
+  status: complete
+  created_at: '2026-08-12T14:49:15.064745+00:00'
+  completed_at: '2026-08-12T14:49:20.596925+00:00'
