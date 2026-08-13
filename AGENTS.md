@@ -31,30 +31,42 @@ hardcoded `/home/kara/...` paths):
 2. The probes themselves — `python3 test/<file>.py` script-mode also
    works from any checkout via `os.path.dirname(__file__)`.
 
-One-command setup (creates a venv and runs a collection check; live E2E
-runs still require a built `build/release/rethinkdb` server):
+One-command setup (creates a venv, installs test deps, and verifies the
+driver imports + pytest collection; live E2E runs still require a built
+`build/release/rethinkdb` server):
 
 ```
 python3 -m venv .venv \
   && .venv/bin/pip install -r test-requirements.txt \
-  && .venv/bin/python -m pytest test/merge_e2e_test.py -q --collect-only
+  && .venv/bin/python -m pytest test/cdc_integration_test.py -q --collect-only
 ```
 
-If you prefer the system interpreter, this also works (driver is
-imported via `conftest.py`, not pip):
+The collection check uses `test/cdc_integration_test.py` because it has
+real pytest test functions (5 collected) and imports the vendored driver
+at module level — a broken driver setup fails collection. The probe
+files (`test/merge_e2e_test.py`, `test/cluster_e2e_test.py`, etc.) are
+script-mode programs with no pytest test functions, so `--collect-only`
+on them always reports "no tests collected" — run them directly instead
+(see below).
+
+If you prefer the system interpreter, this also works, but the test
+deps must be installed for the system python too (driver is imported
+via `conftest.py`, not pip):
 
 ```
-python3 -m pytest test/merge_e2e_test.py -q --collect-only
+pip install --user -r test-requirements.txt   # system python deps (six, looseversion, pytest)
+python3 -m pytest test/cdc_integration_test.py -q --collect-only
 ```
 
 For the legacy `PYTHONPATH` form (e.g. running outside the repo root
 or in CI without `conftest.py` on `PYTHONPATH`):
 
 ```
-PYTHONPATH=driver/python3 python3 -m pytest test/merge_e2e_test.py -q
+PYTHONPATH=driver/python3 python3 -m pytest test/cdc_integration_test.py -q
 ```
 
-Running a probe in script mode (no pytest, no venv):
+Running a probe in script mode (no pytest, no venv — the real check for
+probe files, which have no pytest test functions):
 
 ```
 python3 test/merge_e2e_test.py    # uses the repo-relative sys.path line
