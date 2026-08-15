@@ -39,6 +39,42 @@ or use directly without installing:
 PYTHONPATH=driver/python3 python3 your_app.py
 ```
 
+## Connecting / Quickstart
+
+Open a connection and run a first query (both import styles work; the
+module-level `connect` is a convenience alias for `r.connect`):
+
+```python
+from rethinkdb import r
+
+conn = r.connect(host='localhost', port=28015)   # default: localhost:28015
+r.db_create('quickstart').run(conn)
+r.db('quickstart').table_create('messages').run(conn)
+r.db('quickstart').table('messages').insert(
+    {'id': 1, 'text': 'hello rethinkdb'}
+).run(conn)
+doc = r.db('quickstart').table('messages').get(1).run(conn)
+print(doc)   # {'id': 1, 'text': 'hello rethinkdb'}
+conn.close()
+```
+
+Equivalent module-level form:
+
+```python
+import rethinkdb
+conn = rethinkdb.connect(host='localhost', port=28015)
+```
+
+Subscribe to a changefeed:
+
+```python
+from rethinkdb import r
+
+conn = r.connect()
+feed = r.db('quickstart').table('messages').changes().run(conn)
+# every insert/update/delete on the table is pushed to the feed
+```
+
 ## Notes
 
 - Vector datums round-trip as numpy arrays (or plain lists if numpy is
