@@ -22,7 +22,7 @@ except ImportError:
     import builtins  # Python 3
 
 
-__all__ = ["RethinkDB"] + errors.__all__
+__all__ = ["RethinkDB", "connect"] + errors.__all__
 __version__ = version.VERSION
 
 
@@ -92,3 +92,6 @@ class RethinkDB(builtins.object):  # noqa: UP004  # stock upstream style
 
 
 r = RethinkDB()
+
+# Module-level convenience export matching upstream: `import rethinkdb; rethinkdb.connect(...)`
+connect = r.connect
