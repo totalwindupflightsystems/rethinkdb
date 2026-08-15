@@ -24,13 +24,21 @@ Usage:
 Exit code 0 = all tests pass. Non-zero = failure with details.
 """
 
-import os, sys, time, signal, subprocess, json, tempfile, shutil, atexit
+import os
+import sys
+import time
+import subprocess
+import tempfile
+import shutil
+import atexit
 
 # Add local rethinkdb driver
 sys.path.insert(0, '/tmp')
 import rethinkdb as r
 
 class TestResult:
+    __test__ = False  # result container, not a pytest test class
+
     def __init__(self):
         self.passed = 0
         self.failed = 0
@@ -69,8 +77,11 @@ server_proc = None
 def cleanup():
     global server_proc
     if server_proc:
-        try: server_proc.terminate(); server_proc.wait(timeout=5)
-        except: server_proc.kill()
+        try:
+            server_proc.terminate()
+            server_proc.wait(timeout=5)
+        except Exception:
+            server_proc.kill()
     shutil.rmtree(DATA_DIR, ignore_errors=True)
 atexit.register(cleanup)
 
@@ -84,8 +95,8 @@ def start_server():
     
     server_proc = subprocess.Popen(
         [bin_path, '--no-update-check', '--bind', '127.0.0.1',
-         f'--http-port', str(HTTP_PORT), f'--driver-port', str(DRIVER_PORT),
-         f'--cluster-port', str(CLUSTER_PORT),
+         '--http-port', str(HTTP_PORT), '--driver-port', str(DRIVER_PORT),
+         '--cluster-port', str(CLUSTER_PORT),
          '-d', DATA_DIR, '--io-threads', '4'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
@@ -97,7 +108,7 @@ def start_server():
             conn = r.r.connect(host='127.0.0.1', port=DRIVER_PORT, timeout=2)
             conn.close()
             return True
-        except:
+        except Exception:
             time.sleep(0.5)
     return False
 
@@ -105,8 +116,10 @@ def stop_server():
     global server_proc
     if server_proc:
         server_proc.terminate()
-        try: server_proc.wait(timeout=5)
-        except: server_proc.kill()
+        try:
+            server_proc.wait(timeout=5)
+        except Exception:
+            server_proc.kill()
         server_proc = None
 
 # ── Connection ──
@@ -193,7 +206,7 @@ def test_changefeed_cdc_path():
             event = feed.next(wait=1)
             if event.get('new_val'):
                 events.append(event['new_val'])
-        except:
+        except Exception:
             break
     feed.close()
     
@@ -217,7 +230,7 @@ def test_changefeed_cdc_path():
             event = feed2.next(wait=1)
             if event.get('new_val'):
                 update_events.append(event)
-    except:
+    except Exception:
         pass
     feed2.close()
     
