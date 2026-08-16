@@ -49,12 +49,17 @@ script-mode programs with no pytest test functions, so `--collect-only`
 on them always reports "no tests collected" — run them directly instead
 (see below).
 
-If you prefer the system interpreter, this also works, but the test
-deps must be installed for the system python too (driver is imported
-via `conftest.py`, not pip):
+**System-interpreter path: unsupported on this dev machine — use the venv path above.**
+On machines where bare `python3`/`pip` resolve to tooling venvs (here: `pip` →
+Hermes board venv python3.14, `python3 -m pip` → a gitreins-poc venv without pip,
+and system `/usr/bin/python3.14` is PEP-668 externally-managed), the install lands
+in the wrong interpreter's site-packages and collection fails with
+`ModuleNotFoundError: No module named 'six'`. On a machine with a normal system
+python (pip present, no PEP-668 restriction), the system path works with
+interpreter-explicit commands:
 
 ```
-pip install --user -r test-requirements.txt   # system python deps (six, looseversion, pytest)
+python3 -m pip install --user -r test-requirements.txt   # system python deps (six, looseversion, pytest)
 python3 -m pytest test/cdc_integration_test.py -q --collect-only
 ```
 
