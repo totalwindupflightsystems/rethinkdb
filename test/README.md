@@ -146,3 +146,30 @@ as a Python script, with the `do_test()` function defined; it traps calls to
 `do_test()` and builds the test list that way. If you create a new scenario,
 workload, or interface test, please add it to the appropriate `.test` file so
 that it gets run every night.
+
+Fork E2E probes
+---------------
+
+The fork's Python E2E probe suite is the actual regression gate for the fork
+features (time-series, CDC, merge/upsert, vector/FTS, partitioning). Unlike the
+upstream harness above, the probes are script-mode programs (no pytest test
+functions): they spawn `build/release/rethinkdb` themselves, so `--collect-only`
+on them always reports "no tests collected" — run them directly instead:
+
+| Probe | Covers | Run |
+|-------|--------|-----|
+| `ts2_e2e_probe.py` | Time-series chunked storage, `between()` pruning | `python3 test/ts2_e2e_probe.py` |
+| `ts3_e2e_probe.py` | Time-series retention TTL / downsampling | `python3 test/ts3_e2e_probe.py` |
+| `ts4_e2e_probe.py` | Time-series chunk iteration | `python3 test/ts4_e2e_probe.py` |
+| `ts6_chaos_probe.py` | Time-series chaos / fault injection | `python3 test/ts6_chaos_probe.py` |
+| `ts6_cluster_e2e_probe.py` | Partitioning on a cluster | `python3 test/ts6_cluster_e2e_probe.py` |
+| `cdc_e2e_test.py` | CDC publications/subscriptions/sinks | `python3 test/cdc_e2e_test.py` |
+| `cdc_integration_test.py` | CDC integration (pytest, 5 tests) | `python3 -m pytest test/cdc_integration_test.py -q` |
+| `merge_e2e_test.py` | MERGE / UPSERT terms | `python3 test/merge_e2e_test.py` |
+| `cluster_e2e_test.py` | Cluster setup + distributed queries | `python3 test/cluster_e2e_test.py` |
+| `vector_fts_integration_test.py` | Vector similarity search + FTS | `python3 -m pytest test/vector_fts_integration_test.py -q` |
+| `vector_fts_brin_integration_test.py` | BRIN block-range indexes | `python3 -m pytest test/vector_fts_brin_integration_test.py -q` |
+
+All probes import the vendored driver from `driver/python3/` (repo-relative via
+`conftest.py` / `os.path.dirname(__file__)`), so they work from any checkout —
+but they require a built server binary (`./configure --allow-fetch && make -j4`).

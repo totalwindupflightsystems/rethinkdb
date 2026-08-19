@@ -4,6 +4,7 @@ This fork extends upstream RethinkDB (v2.4.5 base) with PHASE3 extensions.
 See `docs/` and the README "Fork extensions" table for user-facing docs.
 
 * 2026-08-10 — Time-series cluster integration + chaos (`PHASE3-TS-6`, d8e6e78a5a); user-facing docs for CDC, vector/FTS, partitioning, MERGE/UPSERT, generated columns (50486886fb).
+* 2026-08-19 — Hygiene: one-off diagnostic scripts (`test/backfill_diag.py`, `test/fts_diag.py`, `test/partition_diag.py`) removed; `dagger.db` (make-test leftover) gitignored (RT-GAP-029).
 * 2026-08-07 — Time-series retention TTL + background jobs (`PHASE3-TS-4`, 071405cfa4); time-series downsampling pipeline (`PHASE3-TS-5`, 29a2f474e1); time-series config layer + chunked storage + `between()` pruning (`PHASE3-TS-1..3`).
 * 2026-08-02 — Generated / virtual columns: `SET_GENERATED_COLUMNS` / `GET_GENERATED_COLUMNS` (218/219), Raft metadata + write-path compute (d8f5eaf11d).
 * 2026-08-01 — CDC streaming (publications, subscriptions, Kafka/Webhook/File-S3 sinks); vector / FTS / BRIN indexes; MERGE_DEEP (217) + UPSERT (216) ReQL terms; vendored Python driver with all 18 new ReQL terms (920b1c73f3, 852a055043).

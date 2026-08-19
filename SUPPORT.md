@@ -5,6 +5,7 @@
 ### Documentation
 - Official docs: https://rethinkdb.com/docs
 - API reference: https://rethinkdb.com/api
+- Fork feature docs (this fork): [docs/](docs/) — [time-series](docs/time-series.md), [CDC streaming](docs/cdc-streaming.md), [vector / FTS / BRIN](docs/vector-fts.md), [MERGE / UPSERT](docs/merge-upsert.md), [partitioning](docs/partitioning.md), [generated columns](docs/generated-columns.md)
 
 ### Community
 - Stack Overflow: tag questions with `rethinkdb`

@@ -8,7 +8,8 @@ RethinkDB 2.4.x and later receive security updates. Earlier versions are end-of-
 
 Please report security vulnerabilities privately to the maintainers. Do not open public issues.
 
-- Email: security@rethinkdb.com
+- **This fork (totalwindupflightsystems/rethinkdb):** report via the GitHub Security Advisory flow — <https://github.com/totalwindupflightsystems/rethinkdb/security/advisories/new> — so fork-specific code (time-series, CDC, vector/FTS, partitioning, generated columns) is triaged by the fork maintainers.
+- **Upstream RethinkDB:** email security@rethinkdb.com for issues that affect the upstream project.
 
 We aim to acknowledge reports within 48 hours and provide an initial assessment within 5 business days.
 

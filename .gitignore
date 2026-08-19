@@ -37,3 +37,6 @@ driver/python/
 # Local venv + pip artifacts
 .venv/
 *.egg-info/
+
+# make-test / probe leftover (benign, untracked)
+dagger.db

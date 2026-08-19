@@ -26,6 +26,18 @@
   - Root cause diagnosed: sidecar transaction undoes construction loop ready-state
   - Vector and FTS indexes work correctly
 
+## 2.4.6-fork (2026-08-19) — time-series, MERGE/UPSERT, partitioning, generated columns
+
+### Added (fork extensions on top of 2.4.5-276)
+- **Time-series:** chunked time-ordered storage, `between()` chunk pruning, retention TTL, downsampling (docs: [docs/time-series.md](docs/time-series.md); tests: `test/ts2_e2e_probe.py`, `test/ts3_e2e_probe.py`, `test/ts4_e2e_probe.py`, `test/ts6_chaos_probe.py`)
+- **MERGE / UPSERT:** deep merge and upsert terms (docs: [docs/merge-upsert.md](docs/merge-upsert.md); test: `test/merge_e2e_test.py`)
+- **Partitioning:** table partitioning (docs: [docs/partitioning.md](docs/partitioning.md); test: `test/ts6_cluster_e2e_probe.py`)
+- **Generated / virtual columns:** `SET_GENERATED_COLUMNS` / `GET_GENERATED_COLUMNS` terms (docs: [docs/generated-columns.md](docs/generated-columns.md); source: `src/rdb_protocol/terms/generated_columns.cc`)
+- **Parallel query execution:** source `src/rdb_protocol/parallel_executor.hpp`
+- **JSON:** source `src/rdb_protocol/terms/json.cc`
+
+See the README "Fork extensions" table for the full status matrix, including planned (spec-only) features.
+
 ## 2.4.5 (upstream)
 - TLS encryption for driver, intracluster, and web UI connections
 - User authentication and permissions system
