@@ -93,12 +93,39 @@ def start_server():
         if os.path.exists(alt):
             bin_path = alt
     
+    # Initialize the data directory before serving: upstream requires
+    # `rethinkdb create -d <dir>` before `rethinkdb serve -d <dir>`, and a
+    # fresh mkdtemp() is never initialized. Re-running create on an already
+    # initialized dir is an error, so only run it while the metadata file is
+    # absent (start_server is also called for the restart-durability test).
+    metadata_path = os.path.join(DATA_DIR, 'metadata')
+    if not os.path.exists(metadata_path):
+        init = subprocess.run(
+            [bin_path, '--no-update-check', 'create', '-d', DATA_DIR],
+            capture_output=True, text=True, timeout=60)
+        if init.returncode != 0:
+            # Older fork builds predate the `create` subcommand and
+            # auto-initialize an empty directory on first serve.
+            if 'Unexpected positional parameter' not in init.stderr:
+                raise RuntimeError(
+                    "FATAL: `rethinkdb create -d %s` failed (exit %d)\n"
+                    "stdout: %s\nstderr: %s"
+                    % (DATA_DIR, init.returncode, init.stdout, init.stderr))
+            print("NOTE: binary has no 'create' subcommand; "
+                  "serve will auto-initialize the data dir")
+        else:
+            print("Initialized data dir via 'rethinkdb create'")
+    
+    # Inherit stdout/stderr so harness failures surface instead of vanishing
+    # into DEVNULL. NOTE: do NOT redirect into a file inside DATA_DIR — the
+    # serve command treats a non-empty directory as an existing data dir and
+    # skips first-run initialization, so an empty server.log created before
+    # exec makes it die with 'Inaccessible database file: metadata'.
     server_proc = subprocess.Popen(
         [bin_path, '--no-update-check', '--bind', '127.0.0.1',
          '--http-port', str(HTTP_PORT), '--driver-port', str(DRIVER_PORT),
          '--cluster-port', str(CLUSTER_PORT),
-         '-d', DATA_DIR, '--io-threads', '4'],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+         '-d', DATA_DIR, '--io-threads', '4']
     )
     
     # Wait for server to be ready
@@ -121,6 +148,30 @@ def stop_server():
         except Exception:
             server_proc.kill()
         server_proc = None
+
+# ── pytest session fixture ──
+
+# pytest collects the plain test_* functions below but never runs the
+# `__main__` block, so without a fixture the server is never started and
+# every test fails with ConnectionRefused. This session-scoped autouse
+# fixture starts the server once and stops it at teardown. It is registered
+# lazily so bare `python3 test/cdc_integration_test.py` (script mode, which
+# drives start/stop itself) keeps working even where pytest is not
+# installed.
+try:
+    import pytest
+
+    @pytest.fixture(scope="session", autouse=True)
+    def _cdc_server_fixture():
+        if not start_server():
+            raise RuntimeError(
+                "FATAL: Could not start RethinkDB server — server "
+                "stdout/stderr are inherited, see the captured output above")
+        yield
+        stop_server()
+
+except ImportError:  # pragma: no cover - script mode without pytest
+    pass
 
 # ── Connection ──
 
