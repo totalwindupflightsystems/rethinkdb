@@ -494,3 +494,12 @@ tasks:
   status: complete
   created_at: '2026-08-12T14:49:15.064745+00:00'
   completed_at: '2026-08-12T14:49:20.596925+00:00'
+- id: RT-GAP-031
+  title: 'RT-GAP-031: E2E regression suite fails 100% - cdc_integration_test start_server
+    spawns rethinkdb into empty dir without ''rethinkdb create -d'''
+  criteria:
+  - pytest test/cdc_integration_test.py -q passes 5/5 on a clean checkout (no ConnectionRefused/ReqlDriver
+    errors); server child output no longer DEVNULL'd so harness failures surface
+  status: complete
+  created_at: '2026-08-20T17:26:49.091978+00:00'
+  completed_at: '2026-08-20T17:38:28.563314+00:00'

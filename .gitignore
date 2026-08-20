@@ -40,3 +40,4 @@ driver/python/
 
 # make-test / probe leftover (benign, untracked)
 dagger.db
+.gitreins/usage.jsonl
