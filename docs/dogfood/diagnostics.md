@@ -89,8 +89,14 @@ that answers "does it actually work" from the repo — read
 - **CDC:** DO NOT USE yet (RT-GAP-010). If you must probe: the API surface
   works (create/list/status/drop) but nothing streams. Re-check after the
   state machine lands.
+  ⚠️ **SUPERSEDED 2026-08-21:** CDC streaming is FIXED (RT-GAP-015) and
+  delivery is verified live (insert/update/delete source→target). See the
+  2026-08-21 section below for the working recipe and remaining caveats.
 - **Changefeeds (the reliable realtime path):** `table.changes()` with
-  `feed.next(wait=2)` — push delivery verified.
+  `feed.next(wait=2)` — push delivery verified. One connection per thread
+  (the driver is not thread-safe; sharing a connection corrupts framing with
+  `JSONDecodeError: Extra data` — that error is a USER trap, not a server
+  bug; separate writer/consumer connections work).
 - **Diagnosing the fork's own claims:** board ✅ rows for CDC say "delivery
   through ReQL path" — verify by writing to the SOURCE and reading the
   TARGET table, not by trusting suite names. The dogfood probes under
@@ -105,3 +111,43 @@ that answers "does it actually work" from the repo — read
 python3 -m venv /tmp/rt-venv && /tmp/rt-venv/bin/pip install driver/python3
 # then run the probe scripts referenced in docs/dogfood/2026-08-09-integration.md
 ```
+
+## 2026-08-21 — second dogfood run (RT-GAP-015 verified fixed; verdict ✅ SHIPPABLE)
+
+**What changed since 2026-08-09:** the CDC pump (`cdc_pump_t`) is wired.
+Verified live against `2.4.5-438-g381070` with a fresh venv driver:
+
+- publication reaches `state: 'ready'` (Raft-committed); subscription delivers
+  inserts, updates, AND deletes source→target within seconds (5/5 rows).
+- Server log shows the pump's lifecycle: `cdc_pump: subscription X streaming
+  from table Y` plus a transient `primary replica for shard ["", +inf) not
+  available` retry (recovery loop works; no data loss in delivery).
+- Remaining honest limitations: sinks are stubs (RT-GAP-038), subscription
+  status may stay `creating` while delivering (RT-GAP-037), snapshot is
+  `none` (no initial replay).
+
+**Errors hit this run and the right way:**
+
+1. `Unknown conflict resolution 'replace'` — docs/cdc-streaming.md example is
+   wrong; valid: `last_write_wins|primary_key_merge|custom` (RT-GAP-036).
+   The error message itself lists the valid values — good error UX.
+2. `table.merge_deep({...})` → `Expected type DATUM but found TABLE` —
+   MERGE_DEEP (term 217) is datum-level; the driver exposing it on Table
+   misleads (RT-GAP-039). Right way: `r.expr(base).merge_deep(over, deep=True)`.
+3. `table_create(generated_columns=...)` rejected; `r.row` in column
+   functions → `r.row is not defined in this context` — generated columns
+   are `set_generated_columns({'total': lambda row: ...})` post-create,
+   Python lambdas only (RT-GAP-041).
+4. `table_create(partitioning=...)` rejected — optarg is `partitions` with
+   `{by, type, ranges|modulus+partitions|values}` (docs/partitioning.md).
+5. `JSONDecodeError: Extra data` on a changefeed with a threaded consumer —
+   root-caused to MY probe sharing one connection across threads (driver not
+   thread-safe); separate connections per thread verified working. NOT a
+   server bug — recorded so future hunters don't re-file it.
+6. RT-GAP-033 premise drift: default bind is loopback (verified via `ss`),
+   startup warns about the empty admin password — the task's PASS criteria
+   are already met; remaining exposure requires explicit `--bind all`.
+
+**Right way, current:** see `docs/dogfood/2026-08-21-integration.md` for the
+full verified recipe. The `skills/rethinkdb-usage/SKILL.md` (v1.1.0) is the
+living cheat-sheet — it supersedes the 2026-08-09 CDC warnings.
