@@ -64,11 +64,20 @@ Web Admin UI
 ------------
 
 The bundled administrative web UI is served by the server on port
-`8080` by default. Start a server (see [Building](#building) below),
-then open <http://localhost:8080> in a browser — or, with the Python
+`8080` by default. First initialize a data directory — `rethinkdb
+serve` refuses to start in a directory that has not been created (it
+exits with `The directory rethinkdb_data does not exist, run rethinkdb
+create -d ...`, or `Inaccessible database file: metadata` on an empty
+directory). Then start a server (see [Building](#building) below) and
+open <http://localhost:8080> in a browser — or, with the Python
 driver, connect to the driver port (default `28015`):
 
+    rethinkdb create -d rethinkdb_data
     rethinkdb serve
+
+`create` only needs to run once per data directory; `serve` defaults
+to `-d rethinkdb_data`, so plain `rethinkdb serve` picks up the
+directory created above.
 
 To change the HTTP port (for example when `8080` is already taken by
 another service on the host, or when running multiple instances), pass
