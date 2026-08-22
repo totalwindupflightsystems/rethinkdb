@@ -87,3 +87,6 @@ feed = r.db('quickstart').table('messages').changes().run(conn)
   waits at most 5 seconds for the next element (ignoring `wait`), raising
   `ReqlTimeoutError` on expiry. A non-negative number is required; anything
   else raises `ReqlDriverError`. `timeout=0` is equivalent to `wait=False`.
+- `merge_deep` is a datum-level operator — call it on a datum/expression
+  (`r.expr(base).merge_deep(over, deep=True)`), not on a table. Calling it
+  on a table raises `ReqlQueryLogicError`.

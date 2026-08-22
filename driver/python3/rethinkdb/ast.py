@@ -28,7 +28,7 @@ import threading
 
 from rethinkdb import ql2_pb2
 from rethinkdb.errors import (QueryPrinter, ReqlDriverCompileError,
-                              ReqlDriverError, T)
+                              ReqlDriverError, ReqlQueryLogicError, T)
 
 if sys.version_info < (3, 3):
     # python < 3.3 uses collections
@@ -1411,6 +1411,12 @@ class Table(RqlQuery):
 
     def uuid(self, *args, **kwargs):
         return UUID(self, *args, **kwargs)
+
+    def merge_deep(self, *args, **kwargs):
+        raise ReqlQueryLogicError(
+            "merge_deep is a datum-level operator and cannot be called on a "
+            "table; use r.expr(base).merge_deep(over, deep=True) instead"
+        )
 
     def compose(self, args, optargs):
         args.extend([T(k, "=", v) for k, v in dict_items(optargs)])
