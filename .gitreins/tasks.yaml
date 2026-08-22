@@ -512,3 +512,12 @@ tasks:
   status: complete
   created_at: '2026-08-21T04:16:03.007516+00:00'
   completed_at: '2026-08-21T04:19:05.186160+00:00'
+- id: RT-GAP-039
+  title: merge_deep exposed as Table method but is datum-only
+  criteria:
+  - table.merge_deep(...) either works as a table write or raises a clear message
+    explaining merge_deep is datum-only; r.expr(base).merge_deep(over, deep=True)
+    still works; driver README documents the behavior
+  status: complete
+  created_at: '2026-08-22T23:13:30.029222+00:00'
+  completed_at: '2026-08-22T23:18:38.480574+00:00'
