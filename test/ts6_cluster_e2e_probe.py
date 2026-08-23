@@ -45,7 +45,11 @@ import uuid
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 from rethinkdb import r  # noqa: E402
 
-BIN = '/home/kara/rethinkdb/build/release/rethinkdb'
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'release', 'rethinkdb')
+if not os.path.exists(BIN):
+    raise RuntimeError(
+        f"rethinkdb binary not found at {BIN}; run `make -j4` "
+        "first (see AGENTS.md) before running this probe")
 BASE_HTTP = 29615
 BASE_DRIVER = 29715
 BASE_CLUSTER = 29815

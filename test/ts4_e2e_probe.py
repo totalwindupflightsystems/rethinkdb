@@ -54,7 +54,11 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 from rethinkdb import r  # noqa: E402
 
-BIN = '/home/kara/rethinkdb/build/release/rethinkdb'
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'release', 'rethinkdb')
+if not os.path.exists(BIN):
+    raise RuntimeError(
+        f"rethinkdb binary not found at {BIN}; run `make -j4` "
+        "first (see AGENTS.md) before running this probe")
 WORKDIR = tempfile.mkdtemp(prefix='ts4_e2e_')
 PORT, CLUSTER_PORT, HTTP_PORT = 39125, 39126, 39127
 

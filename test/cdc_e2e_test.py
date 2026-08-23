@@ -69,9 +69,9 @@ atexit.register(cleanup)
 def start_server():
     global server_proc, RETHINKDB_BIN
     if not os.path.exists(RETHINKDB_BIN):
-        alt = '/home/kara/rethinkdb/build/release/rethinkdb'
-        if os.path.exists(alt):
-            RETHINKDB_BIN = alt
+        raise RuntimeError(
+            f"rethinkdb binary not found at {RETHINKDB_BIN}; run `make -j4` "
+            "first (see AGENTS.md) before running this test")
     server_proc = subprocess.Popen(
         [RETHINKDB_BIN, '--no-update-check', '--bind', '127.0.0.1',
          '--http-port', str(HTTP_PORT), '--driver-port', str(DRIVER_PORT),
