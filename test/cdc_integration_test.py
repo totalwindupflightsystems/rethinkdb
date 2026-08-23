@@ -89,9 +89,9 @@ def start_server():
     global server_proc
     bin_path = RETHINKDB_BIN
     if not os.path.exists(bin_path):
-        alt = '/home/kara/rethinkdb/build/release/rethinkdb'
-        if os.path.exists(alt):
-            bin_path = alt
+        raise RuntimeError(
+            f"rethinkdb binary not found at {bin_path}; run `make -j4` "
+            "first (see AGENTS.md) before running this test")
     
     # Initialize the data directory before serving: upstream requires
     # `rethinkdb create -d <dir>` before `rethinkdb serve -d <dir>`, and a
