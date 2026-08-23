@@ -765,6 +765,21 @@ peer_address_t get_canonical_addresses(const std::map<std::string, options::valu
     return peer_address_t(result);
 }
 
+// Returns true if every address in `addresses` is a loopback address.  An
+// empty address set is the "bind all interfaces" wildcard (see
+// get_local_addresses()), so it is not loopback-only.
+static bool is_loopback_only_bind(const std::set<ip_address_t> &addresses) {
+    if (service_address_ports_t::is_bind_all(addresses)) {
+        return false;
+    }
+    for (const ip_address_t &addr : addresses) {
+        if (!addr.is_loopback()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 service_address_ports_t get_service_address_ports(const std::map<std::string, options::values_t> &opts) {
     const int port_offset = get_single_int(opts, "--port-offset");
     const int cluster_port = offseted_port(get_single_int(opts, "--cluster-port"), port_offset);
@@ -1166,6 +1181,19 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                          const cluster_semilattice_metadata_t *cluster_metadata,
                          directory_lock_t *data_directory_lock,
                          bool *const result_out) {
+    // RT-GAP-033: Refuse to expose the admin UI (HTTP) on a non-loopback
+    // address when no initial admin password was supplied.  Loopback-only
+    // binds and a disabled admin UI keep the historical behavior.  This runs
+    // before any socket is bound, so the refusal is clean.
+    if (initial_password.empty()
+        && !serve_info->ports.http_admin_is_disabled
+        && !is_loopback_only_bind(serve_info->ports.local_addresses_http)) {
+        fail_due_to_user_error(
+            "Refusing to bind the admin UI to a non-loopback address without "
+            "--initial-password. Pass --initial-password <password> or bind "
+            "the admin UI to loopback (default).");
+    }
+
     logNTC("Running %s...\n", RETHINKDB_VERSION_STR);
 #ifdef _WIN32
     logNTC("Running on %s", windows_version_string().c_str());
