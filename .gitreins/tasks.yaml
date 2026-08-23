@@ -521,3 +521,11 @@ tasks:
   status: complete
   created_at: '2026-08-22T23:13:30.029222+00:00'
   completed_at: '2026-08-22T23:18:38.480574+00:00'
+- id: RT-GAP-033
+  title: Enforce --initial-password on non-loopback admin bind
+  criteria:
+  - rethinkdb serve without --initial-password refuses to start (or warns and loopback-binds)
+    when the admin UI would bind non-loopback; empty password is rejected by the driver
+  status: complete
+  created_at: '2026-08-23T05:28:59.475203+00:00'
+  completed_at: '2026-08-23T05:40:54.087291+00:00'
