@@ -567,3 +567,11 @@ tasks:
   status: complete
   created_at: '2026-08-24T07:27:28.008740+00:00'
   completed_at: '2026-08-24T07:37:38.275247+00:00'
+- id: RT-GAP-046
+  title: P3 ruff debt in E2E test files (cdc_e2e_test.py + driver_e2e_test.py)
+  criteria:
+  - ruff check test/cdc_e2e_test.py test/driver_e2e_test.py exits 0; existing test
+    behavior unchanged
+  status: complete
+  created_at: '2026-08-24T11:17:48.848540+00:00'
+  completed_at: '2026-08-24T11:20:12.332424+00:00'
