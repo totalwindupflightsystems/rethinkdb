@@ -48,7 +48,8 @@ while time.time() < deadline:
     except Exception:
         time.sleep(0.5)
 if not conn:
-    print("FATAL: server did not start"); sys.exit(1)
+    print("FATAL: server did not start")
+    sys.exit(1)
 print("Server up.")
 
 db = f'drv_{uuid.uuid4().hex[:6]}'
@@ -168,5 +169,6 @@ conn.close()
 print(f"\n{'='*50}\nRESULT: {passed} passed, {failed} failed")
 if errors:
     print("FAILURES:")
-    for e in errors: print(f"  - {e}")
+    for e in errors:
+        print(f"  - {e}")
 sys.exit(1 if failed else 0)

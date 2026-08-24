@@ -16,7 +16,14 @@ Usage:
   PYTHONPATH=/tmp python3 test/cdc_e2e_test.py
 """
 
-import os, sys, time, signal, subprocess, tempfile, shutil, atexit, uuid
+import os
+import sys
+import time
+import subprocess
+import tempfile
+import shutil
+import atexit
+import uuid
 
 sys.path.insert(0, '/tmp')
 import rethinkdb as r
@@ -61,8 +68,11 @@ t = TestResult()
 def cleanup():
     global server_proc
     if server_proc:
-        try: server_proc.terminate(); server_proc.wait(timeout=5)
-        except: server_proc.kill()
+        try:
+            server_proc.terminate()
+            server_proc.wait(timeout=5)
+        except Exception:
+            server_proc.kill()
     shutil.rmtree(DATA_DIR, ignore_errors=True)
 
 atexit.register(cleanup)
@@ -86,7 +96,7 @@ def start_server():
             conn = r.r.connect(host='127.0.0.1', port=DRIVER_PORT, timeout=2)
             conn.close()
             return True
-        except:
+        except Exception:
             time.sleep(0.5)
     return False
 
@@ -94,8 +104,10 @@ def stop_server():
     global server_proc
     if server_proc:
         server_proc.terminate()
-        try: server_proc.wait(timeout=5)
-        except: server_proc.kill()
+        try:
+            server_proc.wait(timeout=5)
+        except Exception:
+            server_proc.kill()
         server_proc = None
 
 def connect():
