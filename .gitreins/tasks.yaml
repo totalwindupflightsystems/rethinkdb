@@ -548,3 +548,29 @@ tasks:
   status: complete
   created_at: '2026-08-24T00:17:25.681951+00:00'
   completed_at: '2026-08-24T00:18:44.631140+00:00'
+- id: RT-GAP-043
+  title: "CDC sinks are silent stubs \u2014 cdcSinkCreate must return an explicit\
+    \ not-implemented error"
+  criteria:
+  - cdcSinkCreate returns an explicit not-implemented error instead of a success state
+    that delivers nothing, and docs/cdc-streaming.md marks sink drivers experimental
+  status: complete
+  created_at: '2026-08-24T06:53:46.687979+00:00'
+  completed_at: '2026-08-24T07:12:14.601683+00:00'
+- id: RT-GAP-037
+  title: "subscription_status stuck in creating-forever \u2014 persist pump state\
+    \ transitions"
+  criteria:
+  - subscription_status reports state 'streaming' (not 'creating') within 5s of rows
+    flowing to the target table; cdc_e2e_test.py exits 0 including a new subscription-state
+    assertion
+  status: complete
+  created_at: '2026-08-24T07:27:28.008740+00:00'
+  completed_at: '2026-08-24T07:37:38.275247+00:00'
+- id: RT-GAP-035
+  title: 'Repair gitreins judge tier3 stage: cppcheck run line + clang-tidy bound'
+  criteria:
+  - 'gitreins judge on a trivial task prints Stage tier3: PASS (both cppcheck and
+    clang-tidy steps green) and Overall PASS'
+  status: in_progress
+  created_at: '2026-08-24T08:48:00.027106+00:00'
