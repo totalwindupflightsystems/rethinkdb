@@ -44,6 +44,34 @@ r.db("app").table("orders").setGeneratedColumns({})
 // → { dropped: 1 }
 ```
 
+## Python driver
+
+`set_generated_columns` is a **post-create call**, not a `table_create`
+optarg — passing `generated_columns=` to `table_create` is rejected. The
+Python driver takes lambdas over the row (the JS `r.row(...)` form fails
+with `r.row is not defined in this context`):
+
+```python
+from rethinkdb import r
+
+conn = r.connect()
+table = r.db("app").table("orders")
+
+# total = price * quantity, computed at write time
+table.set_generated_columns({
+    "total": lambda row: row["price"] * row["quantity"],
+    "has_tags": lambda row: row["tags"].count().gt(0),
+}).run(conn)
+# → {'created': 1}
+
+# Read the installed config
+table.get_generated_columns().run(conn)
+
+# Drop all generated columns
+table.set_generated_columns({}).run(conn)
+# → {'dropped': 1}
+```
+
 Rules (as implemented in `parse_generated_columns_raw`):
 
 - The argument must be an object mapping column names to functions —

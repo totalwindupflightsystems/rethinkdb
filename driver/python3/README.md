@@ -2,8 +2,8 @@
 
 This is the official `rethinkdb` Python driver, regenerated and upgraded to
 speak the v3 protocol of this fork. The bundled `ql2_pb2.py` is generated
-from `src/rdb_protocol/ql2.proto` and includes **all 18 new ReQL terms**
-(IDs 198–215):
+from `src/rdb_protocol/ql2.proto` and includes **all 22 new ReQL terms**
+(IDs 198–219):
 
 | # | Term | Python API |
 |---|------|-----------|
@@ -16,6 +16,14 @@ from `src/rdb_protocol/ql2.proto` and includes **all 18 new ReQL terms**
 | 204–207 | CDC publications | `table.publication_create/list/status/drop` |
 | 208–211 | CDC subscriptions | `table.subscription_create/list/status/drop` |
 | 212–215 | CDC sinks | `table.cdc_sink_create/list/status/drop` |
+| 216 | `UPSERT` | `table.upsert(doc)` — insert-or-replace by primary key (see below) |
+| 217 | `MERGE_DEEP` | `r.expr(base).merge_deep(over, deep=True)` — datum-level deep merge (see below) |
+| 218 | `SET_GENERATED_COLUMNS` | `table.set_generated_columns({'total': lambda row: row['price'] * row['qty']})` — post-create call, not a `table_create` optarg |
+| 219 | `GET_GENERATED_COLUMNS` | `table.get_generated_columns()` |
+
+`table_create` also accepts two fork optargs: `timeSeries=True` (chunked
+time-ordered storage with retention TTL) and `partitions={...}` (declarative
+partition layout).
 
 ## FTS indexes
 
@@ -90,3 +98,15 @@ feed = r.db('quickstart').table('messages').changes().run(conn)
 - `merge_deep` is a datum-level operator — call it on a datum/expression
   (`r.expr(base).merge_deep(over, deep=True)`), not on a table. Calling it
   on a table raises `ReqlQueryLogicError`.
+- `upsert` is an insert-or-replace by primary key: `table.upsert({'id': 1,
+  'count': 2})` inserts the doc or fully replaces the existing row with the
+  same primary key (no field-level merge, no conflict option).
+- Generated columns are configured with a **post-create** call
+  (`table.set_generated_columns({...})`) — passing `generated_columns=` to
+  `table_create` is rejected. The mapping values are Python lambdas over the
+  row: `table.set_generated_columns({'total': lambda row: row['price'] *
+  row['quantity']})`. `get_generated_columns()` returns the installed map.
+- `table_create(..., timeSeries=True)` enables chunked time-ordered storage
+  (retention TTL via the time-series config) and `table_create(...,
+  partitions={...})` installs a declarative partition layout. Both optargs
+  are fork extensions.

@@ -1,7 +1,10 @@
 # RethinkDB Time-Series Extension (PHASE3)
 
-**Status: in development — QUEUE #3 of PHASE3 (TS-1..TS-6).** This document
-tracks the extension as implemented in this fork. The upstream design spec
+**Status: implemented.** This document
+tracks the extension as implemented in this fork (chunked time-ordered
+storage, `between()` chunk pruning, retention TTL, downsampling; tests:
+`test/ts2_e2e_probe.py`, `test/ts3_e2e_probe.py`, `test/ts4_e2e_probe.py`,
+`test/ts6_chaos_probe.py`). The upstream design spec
 lives at `.coding-hermes/specs/phase3-timeseries.md`; this file is the
 user-facing companion.
 
