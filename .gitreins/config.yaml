@@ -62,13 +62,7 @@ pipeline:
           type: script
           run: |
             echo "=== cppcheck static analysis ==="
-            cppcheck --enable=warning,performance,portability,style \
-              --suppress=missingIncludeSystem \
-              --suppress=unusedFunction \
-              --suppress=noExplicitConstructor \
-              --inline-suppr \
-              --error-exitcode=0 \
-              -j4 src/ 2>&1 | head -100
+            cppcheck --enable=warning,performance,portability,style --suppress=missingIncludeSystem --suppress=unusedFunction --suppress=noExplicitConstructor --inline-suppr --error-exitcode=0 -j4 src/ 2>&1 | head -100
             echo "cppcheck done (informational only)"
           on_fail: continue
 
@@ -81,7 +75,7 @@ pipeline:
             if [ -z "$CLANG_TIDY" ]; then
               echo "clang-tidy not found — skipping"
             elif [ -f compile_commands.json ]; then
-              find src/ -name '*.cc' | head -20 | xargs -P4 -I{} "$CLANG_TIDY" {} -p . -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' -quiet 2>&1 | head -100
+              find src/ -name '*.cc' | head -20 | xargs -P2 -I{} timeout 60 "$CLANG_TIDY" {} -p . -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' -quiet 2>&1 | head -100
             else
               echo "No compile_commands.json — install bear and run: bear -- make -j4"
             fi
