@@ -529,3 +529,22 @@ tasks:
   status: complete
   created_at: '2026-08-23T05:28:59.475203+00:00'
   completed_at: '2026-08-23T05:40:54.087291+00:00'
+- id: RT-GAP-034
+  title: Drop hardcoded /home/kara fallback path in python E2E tests
+  criteria:
+  - grep -rn '/home/kara' test/ --include='*.py' returns nothing; test/cdc_integration_test.py
+    and test/vector_fts_integration_test.py no longer contain a hardcoded absolute
+    fallback path; both files fail loudly with a clear error naming the expected binary
+    and build command when ../build/release/rethinkdb is missing; the repo-relative
+    fallback (../build/release/rethinkdb) still works when present
+  status: complete
+  created_at: '2026-08-23T18:01:32.469653+00:00'
+  completed_at: '2026-08-23T18:07:58.810543+00:00'
+- id: RT-GAP-036
+  title: 'docs: fix subscription example conflict resolution (replace rejected)'
+  criteria:
+  - docs/cdc-streaming.md subscription example must use a valid CDC-09 resolver (last_write_wins)
+    and the documented subscription snippet must run unmodified against a live server
+  status: complete
+  created_at: '2026-08-24T00:17:25.681951+00:00'
+  completed_at: '2026-08-24T00:18:44.631140+00:00'
