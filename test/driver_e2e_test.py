@@ -14,6 +14,7 @@ import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'driver', 'python3'))
 import rethinkdb as r
+from rethinkdb.errors import ReqlOpFailedError
 
 BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'release', 'rethinkdb')
 DATA = tempfile.mkdtemp(prefix='driver_e2e_')
@@ -129,10 +130,15 @@ check("subscription_list contains sub1", 'sub1' in sub_names, sl)
 
 # ── 8. CDC SINKS (212-215) ──
 print("[CDC SINKS]")
-sk = r.r.db(db).table('items').cdc_sink_create(
-    name='sink1', publication='pub1', type='file',
-    path='/tmp/cdc_sink_test.log').run(conn)
-check("cdc_sink_create", isinstance(sk, dict) and 'created' in sk, sk)
+try:
+    sk = r.r.db(db).table('items').cdc_sink_create(
+        name='sink1', publication='pub1', type='file',
+        path='/tmp/cdc_sink_test.log').run(conn)
+    check("cdc_sink_create rejects with not-implemented error",
+          False, f"expected ReqlOpFailedError, got {sk!r}")
+except ReqlOpFailedError as e:
+    check("cdc_sink_create rejects with not-implemented error",
+          "not implemented" in str(e), str(e))
 skl = r.r.db(db).table('items').cdc_sink_list().run(conn)
 sink_names = [s.get('name') for s in skl] if isinstance(skl, list) else []
 check("cdc_sink_list contains sink1", 'sink1' in sink_names, skl)

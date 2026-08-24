@@ -20,6 +20,7 @@ import os, sys, time, signal, subprocess, tempfile, shutil, atexit, uuid
 
 sys.path.insert(0, '/tmp')
 import rethinkdb as r
+from rethinkdb.errors import ReqlOpFailedError
 
 # ── Test harness ──
 
@@ -165,7 +166,7 @@ def test_subscription_status(conn, db_name, table_name):
     t.assert_equal(status.get('name'), 'test_sub', "status returns correct subscription name")
 
 def test_cdc_sink_create(conn, db_name, table_name):
-    """Test cdc_sink_create creates a CDC sink."""
+    """Test cdc_sink_create rejects sink creation (RT-GAP-043: not implemented)."""
     print("\n[TEST] cdc_sink_create")
     sink_config = {
         "name": "test_sink",
@@ -174,9 +175,12 @@ def test_cdc_sink_create(conn, db_name, table_name):
         "format": "json",
         "path": "/tmp/cdc_sink_test"
     }
-    result = r.r.db(db_name).table(table_name).cdc_sink_create(sink_config).run(conn)
-    t.assert_equal(result.get('created'), 1.0, "sink created")
-    t.assert_true('sink' in result, "response has 'sink' key")
+    try:
+        result = r.r.db(db_name).table(table_name).cdc_sink_create(sink_config).run(conn)
+        t.assert_true(False, f"cdc_sink_create should raise ReqlOpFailedError, got {result!r}")
+    except ReqlOpFailedError as e:
+        t.assert_true("not implemented" in str(e),
+                      f"error message mentions 'not implemented': {e}")
 
 def test_cdc_sink_list(conn, db_name, table_name):
     """Test cdc_sink_list returns created sinks."""
