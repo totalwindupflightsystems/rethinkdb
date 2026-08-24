@@ -47,7 +47,10 @@ pipeline:
       on: [pre-eval]
       condition: "true"
       max_iterations: 100
-      max_input_tokens: "2M"
+      # 8M: raised from 2M (tick 194) — evaluator exploration of this large C++
+      # repo repeatedly hit "Input token budget (2.0M) exceeded" mid-eval,
+      # forcing every tier2 verdict to INCOMPLETE. Defaults block allows 16M.
+      max_input_tokens: "8M"
       tools: [read_file, run_command, search_pattern, read_diff, sandbox]
 
     # Stage 3: C++ deep static analysis (post-commit, informational)
