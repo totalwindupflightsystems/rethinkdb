@@ -127,6 +127,18 @@ check("subscription_create", isinstance(sub, dict) and 'created' in sub, sub)
 sl = r.r.db(db).table('items').subscription_list().run(conn)
 sub_names = [s.get('name') for s in sl] if isinstance(sl, list) else []
 check("subscription_list contains sub1", 'sub1' in sub_names, sl)
+# RT-GAP-037: the pump must flip the subscription to STREAMING once the
+# changefeed opens (a poll cycle after create; no rows needed — the
+# transition happens at changefeed-open, before any delivery).
+deadline = time.time() + 5
+ss = None
+while time.time() < deadline:
+    ss = r.r.db(db).table('items').subscription_status('sub1').run(conn)
+    if ss.get('state') == 'streaming':
+        break
+    time.sleep(0.5)
+check("subscription_status reports 'streaming'",
+      ss is not None and ss.get('state') == 'streaming', ss)
 
 # ── 8. CDC SINKS (212-215) ──
 print("[CDC SINKS]")

@@ -279,6 +279,30 @@ size_t cdc_pump_t::stream_subscription(subscription_handle_t *handle,
         changefeed_client_->new_stream(
             &env, streamspec, source_table_id, backtrace_id_t::empty());
 
+    /* RT-GAP-037: the changefeed is open — rows will now flow to the
+    target. Persist the STREAMING transition through Raft so
+    subscription_status reports 'streaming' instead of the hardcoded
+    CREATING that left every live subscription stuck in 'creating'
+    forever. Best-effort: on failure the data path keeps streaming and
+    the persisted state stays as-is (the pump never re-drives this
+    subscription while it is in flight). */
+    try {
+        table_config_and_shards_change_t state_change(
+            table_config_and_shards_change_t::subscription_set_state_t{
+                source_table_id, handle->config.subscription_id,
+                subscription_state_t::STREAMING});
+        table_meta_client_->set_config(
+            source_table_id, state_change, interruptor);
+    } catch (const no_such_table_exc_t &) {
+        logWRN("cdc_pump: subscription `%s` source table gone; "
+               "cannot persist STREAMING state",
+               handle->config.name.c_str());
+    } catch (const failed_table_op_exc_t &) {
+        logWRN("cdc_pump: subscription `%s` metadata update failed; "
+               "persisted state stays as-is",
+               handle->config.name.c_str());
+    }
+
     uuid_u shard_id = generate_uuid();
     log_sequence_number_t lsn{0};
     size_t applied = 0;

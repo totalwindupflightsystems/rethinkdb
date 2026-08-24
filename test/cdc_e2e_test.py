@@ -279,6 +279,10 @@ def test_cdc_subscription_delivery(conn, db_name, table_name):
     status = r.r.db(db_name).table(table_name).publication_status('test_pub').run(conn)
     t.assert_equal(status.get('state'), 'ready', "publication_status reports 'ready'")
 
+    # RT-GAP-037: subscription must report a live state once rows flow.
+    status = r.r.db(db_name).table(table_name).subscription_status('test_sub').run(conn)
+    t.assert_equal(status.get('state'), 'streaming', "subscription_status reports 'streaming' once the pump delivers")
+
 # ── Main ──
 
 if __name__ == '__main__':

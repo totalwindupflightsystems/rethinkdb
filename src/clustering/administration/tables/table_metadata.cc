@@ -169,6 +169,17 @@ public:
     }
 
     result_type operator()(
+            const subscription_set_state_t &subscription_set_state) const {
+        auto it = table_config_and_shards->subscriptions.find(
+            subscription_set_state.subscription_id);
+        if (it == table_config_and_shards->subscriptions.end()) {
+            return false;
+        }
+        it->second.state = subscription_set_state.state;
+        return true;
+    }
+
+    result_type operator()(
             const sink_create_t &sink_create) const {
         auto pair = table_config_and_shards->sinks.insert(
             std::make_pair(
@@ -515,6 +526,9 @@ RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     table_config_and_shards_change_t::subscription_drop_t,
     table_uuid, subscription_id, name);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    table_config_and_shards_change_t::subscription_set_state_t,
+    table_uuid, subscription_id, state);
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
     table_config_and_shards_change_t::sink_create_t, config);

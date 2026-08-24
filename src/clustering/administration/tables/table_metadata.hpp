@@ -258,6 +258,20 @@ public:
         name_string_t name;
     };
 
+    /* RT-GAP-037: flip a subscription's lifecycle state through Raft.
+    Mirrors publication_set_state_t. Issued by the CDC pump once the
+    changefeed stream on the source table is open; apply_change looks the
+    subscription up by id and overwrites its state, returning false if the
+    subscription does not exist. This is what makes subscription_status
+    report 'streaming' instead of the hardcoded CREATING that previously
+    left every live subscription stuck in 'creating' forever. */
+    class subscription_set_state_t {
+    public:
+        uuid_u table_uuid;
+        uuid_u subscription_id;
+        ql::subscription_state_t state;
+    };
+
     /* Register a CDC sink on this table. The sink is inserted into
     `table_config_and_shards_t::sinks` keyed by `config.sink_id`;
     apply_change returns false if a sink with that id already exists. */
@@ -304,6 +318,8 @@ public:
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(subscription_drop_t &&_change)
         : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(subscription_set_state_t &&_change)
+        : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(sink_create_t &&_change)
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(sink_drop_t &&_change)
@@ -334,6 +350,7 @@ private:
         publication_set_state_t,
         subscription_create_t,
         subscription_drop_t,
+        subscription_set_state_t,
         sink_create_t,
         sink_drop_t> change;
 
@@ -354,6 +371,7 @@ RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::publication_set_state_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_drop_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::subscription_set_state_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sink_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sink_drop_t);
 
