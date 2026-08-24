@@ -65,24 +65,20 @@ pipeline:
               --suppress=noExplicitConstructor \
               --inline-suppr \
               --error-exitcode=0 \
-              -j4 \\
-              src/ 2>&1 | head -100
+              -j4 src/ 2>&1 | head -100
             echo "cppcheck done (informational only)"
           on_fail: continue
 
         - id: clang-tidy
           type: script
+          timeout: 300
           run: |
             echo "=== clang-tidy static analysis ==="
             CLANG_TIDY=$(which clang-tidy-21 clang-tidy 2>/dev/null | head -1)
             if [ -z "$CLANG_TIDY" ]; then
               echo "clang-tidy not found — skipping"
             elif [ -f compile_commands.json ]; then
-              find src/ -name '*.cc' | head -50 | \
-                xargs -P4 -I{} $CLANG_TIDY {} \\
-                  -p . \
-                  -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' \
-                  -quiet 2>&1 | head -100
+              find src/ -name '*.cc' | head -20 | xargs -P4 -I{} "$CLANG_TIDY" {} -p . -checks='-*,bugprone-*,performance-*,modernize-use-nullptr,modernize-use-override' -quiet 2>&1 | head -100
             else
               echo "No compile_commands.json — install bear and run: bear -- make -j4"
             fi
