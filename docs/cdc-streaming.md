@@ -82,7 +82,7 @@ r.db("app").table("events").subscriptionCreate({
   name: "events_sub",
   publication: "events_pub",
   target: { db: "app", table: "events_sub" },   // or targetTable: "events_sub"
-  conflict: "replace",         // optional; conflict handling for target writes
+  conflict: "last_write_wins", // optional; conflict handling for target writes (CDC-09 resolvers: last_write_wins, primary_key_merge, custom)
   snapshot: "initial"          // optional; whether to apply the initial snapshot
 })
 // → { created: 1, subscription: "events_sub" }
