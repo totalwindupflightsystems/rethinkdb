@@ -70,11 +70,14 @@ or in CI without `conftest.py` on `PYTHONPATH`):
 PYTHONPATH=driver/python3 python3 -m pytest test/cdc_integration_test.py -q
 ```
 
-Running a probe in script mode (no pytest, no venv — the real check for
-probe files, which have no pytest test functions):
+Running a probe in script mode (no pytest — the real check for probe
+files, which have no pytest test functions). Use the repo venv
+(`.venv/bin/python`), NOT bare `python3`: on dev machines the system
+`python3` can resolve to an unrelated tooling venv that lacks the test
+deps (e.g. `ModuleNotFoundError: No module named 'looseversion'`):
 
 ```
-python3 test/merge_e2e_test.py    # uses the repo-relative sys.path line
+.venv/bin/python test/merge_e2e_test.py    # uses the repo-relative sys.path line
 ```
 
 Note: the probes spawn `build/release/rethinkdb` as a child process, so

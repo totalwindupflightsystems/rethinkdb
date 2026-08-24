@@ -9,7 +9,7 @@ features live under `.coding-hermes/specs/`, see the main README's
 
 | Doc | Status | Feature |
 |-----|--------|---------|
-| [cdc-streaming.md](cdc-streaming.md) | implemented | CDC / logical replication: publications, subscriptions, Kafka / Webhook / File-S3 sinks |
+| [cdc-streaming.md](cdc-streaming.md) | pump implemented / sinks not implemented | CDC / logical replication: publications, subscriptions; sink drivers (Kafka / Webhook / File-S3) are NOT implemented — `cdcSinkCreate` errors |
 | [merge-upsert.md](merge-upsert.md) | implemented | Deep merge (`merge_deep`) and upsert terms |
 | [time-series.md](time-series.md) | implemented | Chunked time-ordered storage, `between()` chunk pruning, retention TTL, downsampling |
 | [partitioning.md](partitioning.md) | implemented | Declarative table partitioning (`partitions` optarg, `partition_info`, `repartition`) |

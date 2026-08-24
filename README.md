@@ -170,7 +170,7 @@ table below summarizes the implemented features and the planned ones
 | Feature | Status | Documentation / Links |
 |---------|--------|-----------------------|
 | Time-series | Implemented | [docs/time-series.md](docs/time-series.md) — chunked time-ordered storage, `between()` chunk pruning, retention TTL, downsampling. Tests: `test/ts2_e2e_probe.py`, `test/ts3_e2e_probe.py`, `test/ts4_e2e_probe.py`, `test/ts6_chaos_probe.py` |
-| CDC streaming | Implemented | [docs/cdc-streaming.md](docs/cdc-streaming.md) — publications, subscriptions, Kafka/Webhook/File-S3 sinks. Tests: `test/cdc_e2e_test.py`, `test/cdc_integration_test.py` |
+| CDC streaming | Pump implemented / sinks not implemented (error on create) | [docs/cdc-streaming.md](docs/cdc-streaming.md) — publications, subscriptions; sink drivers (Kafka/Webhook/File-S3) are NOT implemented (`cdcSinkCreate` errors). Tests: `test/cdc_e2e_test.py`, `test/cdc_integration_test.py` |
 | Vector / FTS / BRIN indexes | Implemented | [docs/vector-fts.md](docs/vector-fts.md) — vector similarity search, full-text search, BRIN block-range indexes. Tests: `test/vector_fts_integration_test.py`, `test/vector_fts_brin_integration_test.py` |
 | MERGE / UPSERT | Implemented | [docs/merge-upsert.md](docs/merge-upsert.md) — deep merge and upsert terms. Test: `test/merge_e2e_test.py` |
 | Generated / virtual columns | Implemented | [docs/generated-columns.md](docs/generated-columns.md) — `SET_GENERATED_COLUMNS` / `GET_GENERATED_COLUMNS` terms. Source: `src/rdb_protocol/terms/generated_columns.cc` |
