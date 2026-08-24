@@ -1811,31 +1811,20 @@ bool real_reql_cluster_interface_t::sink_create(
     guarantee(db->name != name_string_t::guarantee_valid("rethinkdb"),
         "real_reql_cluster_interface_t should never get queries for system tables");
 
-    try {
-        cross_thread_signal_t interruptor_on_home(interruptor_on_caller, home_thread());
-        on_thread_t thread_switcher(home_thread());
-
-        namespace_id_t table_id;
-        m_table_meta_client->find(db->id, table, &table_id);
-
-        user_context.require_config_permission(m_rdb_context, db->id, table_id);
-
-        table_config_and_shards_change_t table_config_and_shards_change(
-            table_config_and_shards_change_t::sink_create_t{config});
-        m_table_meta_client->set_config(
-            table_id, table_config_and_shards_change, &interruptor_on_home);
-
-        return true;
-    } catch (const config_change_exc_t &) {
-        *error_out = admin_err_t{
-            strprintf("Sink `%s` already exists on table `%s.%s`.",
-                      config.name.c_str(), db->name.c_str(), table.c_str()),
-            query_state_t::FAILED};
-        return false;
-    } CATCH_NAME_ERRORS(db->name, table, error_out)
-      CATCH_OP_ERRORS(db->name, table, error_out,
-        "The sink was not created.",
-        "The sink may or may not have been created.")
+    /* RT-GAP-043: sink drivers are not implemented in this fork build. Fail
+     * loudly instead of recording a sink config that no driver will ever
+     * deliver — the previous behavior returned `{created: 1, state: 'creating'}`
+     * and no sink ever delivered data or reached a terminal state. */
+    (void)user_context;
+    (void)interruptor_on_caller;
+    *error_out = admin_err_t{
+        strprintf("Sink drivers are not implemented in this fork build. "
+                  "`cdcSinkCreate` cannot create sink `%s` on table `%s.%s`: "
+                  "no sink driver delivers data to an external destination. "
+                  "Use subscriptions (target-table delivery) instead.",
+                  config.name.c_str(), db->name.c_str(), table.c_str()),
+        query_state_t::FAILED};
+    return false;
 }
 
 bool real_reql_cluster_interface_t::sink_list(

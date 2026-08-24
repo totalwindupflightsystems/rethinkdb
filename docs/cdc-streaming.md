@@ -13,10 +13,11 @@ source-table changes to the target table through a changefeed-backed pump
 - **Snapshot mode is NONE**: only changes that occur AFTER the pump opens the
   stream are delivered — no initial-snapshot replay. Existing rows in the
   source table are not copied to the target on subscription start.
-- **Sink drivers are stubs**: `cdcSinkCreate` records sink configuration and
-  reports state, but Kafka/Webhook/S3/file delivery is not implemented — no
-  external destination receives data yet. Subscriptions (target-table delivery)
-  are the supported streaming path.
+- **Sink drivers are NOT implemented (experimental)**: `cdcSinkCreate` is
+  rejected with an explicit not-implemented error (RT-GAP-043) — it no longer
+  records sink configuration or reports a success state, because no
+  Kafka/Webhook/S3/file driver would ever deliver data. Subscriptions
+  (target-table delivery) are the supported streaming path.
 
 ## Overview
 
@@ -94,6 +95,14 @@ A subscription replays the publication into the target table. Manage it with
 
 ## Creating a sink
 
+> **⚠ Experimental — not implemented.** Sink drivers (Kafka, Webhook, file,
+> S3) are **not implemented** in this fork build. `cdcSinkCreate` does not
+> create a sink: it fails with a `ReqlError` whose message states that sink
+> drivers are not implemented (e.g. `Sink drivers are not implemented in this
+> fork build ...`). The examples below document the *intended* API shape for
+> when delivery is implemented; today they all fail with that error. Use
+> [subscriptions](#creating-a-subscription) for the supported streaming path.
+
 ```javascript
 // File sink (writes JSON records under a path)
 r.db("app").table("events").cdcSinkCreate({
@@ -130,7 +139,7 @@ r.db("app").table("events").cdcSinkCreate({
   prefix: "events",                             // or topic: "..."
   credentialRef: "my-s3-credentials"            // or credential_ref / credentialsRef
 })
-// → { created: true, sink: "file_sink", state: "creating" }
+// → ReqlError: Sink drivers are not implemented in this fork build. ... (RT-GAP-043)
 ```
 
 Sink types are `kafka`, `webhook`, `file`, and `s3` (unknown types are
@@ -160,7 +169,9 @@ r.db("app").table("events").cdcSinkCreate({
 ```
 
 Manage sinks with `cdcSinkList()`, `cdcSinkStatus("file_sink")`, and
-`cdcSinkDrop("file_sink")`.
+`cdcSinkDrop("file_sink")`. With `cdcSinkCreate` rejected, the list is empty
+for new tables; sinks recorded by older builds can still be listed, inspected,
+and dropped.
 
 ## Reading the stream
 
