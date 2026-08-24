@@ -141,7 +141,7 @@ except ReqlOpFailedError as e:
           "not implemented" in str(e), str(e))
 skl = r.r.db(db).table('items').cdc_sink_list().run(conn)
 sink_names = [s.get('name') for s in skl] if isinstance(skl, list) else []
-check("cdc_sink_list contains sink1", 'sink1' in sink_names, skl)
+check("cdc_sink_list empty after rejected create", len(sink_names) == 0, skl)
 
 # ── 9. Cleanup: drop everything ──
 print("[CLEANUP]")

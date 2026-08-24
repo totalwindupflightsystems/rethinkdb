@@ -197,11 +197,14 @@ def test_cdc_sink_list(conn, db_name, table_name):
         t.assert_true('test_sink' in names, "sink 'test_sink' is in the list")
 
 def test_cdc_sink_status(conn, db_name, table_name):
-    """Test cdc_sink_status shows the sink."""
+    """Test cdc_sink_status rejects for a sink never created (RT-GAP-043: not implemented)."""
     print("\n[TEST] cdc_sink_status")
-    status = r.r.db(db_name).table(table_name).cdc_sink_status('test_sink').run(conn)
-    t.assert_true(isinstance(status, dict), "cdc_sink_status returns an object")
-    t.assert_equal(status.get('name'), 'test_sink', "status returns correct sink name")
+    try:
+        status = r.r.db(db_name).table(table_name).cdc_sink_status('test_sink').run(conn)
+        t.assert_true(False, f"cdc_sink_status should raise ReqlOpFailedError, got {status!r}")
+    except ReqlOpFailedError as e:
+        t.assert_true("does not exist" in str(e),
+                      f"error message mentions 'does not exist': {e}")
 
 def test_publication_drop(conn, db_name, table_name):
     """Test publication_drop removes a publication."""
