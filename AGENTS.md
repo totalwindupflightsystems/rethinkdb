@@ -80,6 +80,25 @@ python3 test/merge_e2e_test.py    # uses the repo-relative sys.path line
 Note: the probes spawn `build/release/rethinkdb` as a child process, so
 running them end-to-end still requires `./configure && make -j4` first.
 
+### Quickstart (running a server)
+
+Initialize a data directory with `rethinkdb create -d <dir>`, then serve
+it with `rethinkdb serve -d <dir>` (defaults to `rethinkdb_data`). Two
+host-level caveats:
+
+- **Port conflict:** the web UI binds port `8080` by default (driver
+  `28015`, cluster `29015`). If `8080` is already occupied on your host,
+  the server logs `Could not bind to http port` and continues running
+  driver-only, so the web UI needs an explicit alternate port: run with
+  `--http-port <alt>` (add `--driver-port <alt>` / `--cluster-port <alt>`
+  if those are taken too).
+- **`--bind all` requires an admin password:** exposing the server beyond
+  loopback refuses to start without one — the server exits with a
+  user-error naming `--initial-password`, so run with
+  `--initial-password <pw>`. The default loopback-only bind boots fine
+  with the default empty admin password (and prints the `Using default
+  empty admin password` warning).
+
 ## Code Style Guidelines
 
 - Use braces for all control structures: `if (...) {`, `while (...) {`, etc.

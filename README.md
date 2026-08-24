@@ -79,6 +79,14 @@ driver, connect to the driver port (default `28015`):
 to `-d rethinkdb_data`, so plain `rethinkdb serve` picks up the
 directory created above.
 
+Note: if port `8080` is already occupied on your host, the server logs
+`Could not bind to http port` and runs driver-only — start it with
+`--http-port <alt>` instead (add `--driver-port`/`--cluster-port` if
+those are taken too). Binding beyond loopback (`--bind all`) requires an
+admin password — run with `--initial-password <pw>`, or the server
+refuses to start; the default loopback-only bind boots with the empty
+admin password.
+
 To change the HTTP port (for example when `8080` is already taken by
 another service on the host, or when running multiple instances), pass
 `--http-port`:
