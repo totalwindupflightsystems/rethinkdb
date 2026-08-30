@@ -3,6 +3,15 @@
 This fork extends upstream RethinkDB (v2.4.5 base) with PHASE3 extensions.
 See `docs/` and the README "Fork extensions" table for user-facing docs.
 
+* 2026-08-30 — Repo anchored to v2.5 revival line: VERSION.OVERRIDE=2.5.0, annotated tag v2.5.0, docs/roadmap.md (RT-GAP-050).
+
+# Release 2.5.0
+
+* Repository anchor: `VERSION.OVERRIDE` = `2.5.0` — `scripts/gen-version.sh` now prints clean `2.5.0` through existing plumbing (no `-dirty` suffix, cwd-independent, no fallback warning).
+* Annotated tag `v2.5.0` created on the anchor commit (RT-GAP-050).
+* `docs/roadmap.md` added, mapping the v2.5 revival line and the v3.0 flagship milestone with per-feature status.
+* Unblocks RT-GAP-054 (dirty/misidentified version output, e.g. `2.4.5-575-g337c9f-dirty`). `src/version.hpp` enums remain wire/disk serialization versions — untouched.
+
 * 2026-08-10 — Time-series cluster integration + chaos (`PHASE3-TS-6`, d8e6e78a5a); user-facing docs for CDC, vector/FTS, partitioning, MERGE/UPSERT, generated columns (50486886fb).
 * 2026-08-19 — Hygiene: one-off diagnostic scripts (`test/backfill_diag.py`, `test/fts_diag.py`, `test/partition_diag.py`) removed; `dagger.db` (make-test leftover) gitignored (RT-GAP-029).
 * 2026-08-07 — Time-series retention TTL + background jobs (`PHASE3-TS-4`, 071405cfa4); time-series downsampling pipeline (`PHASE3-TS-5`, 29a2f474e1); time-series config layer + chunked storage + `between()` pruning (`PHASE3-TS-1..3`).
