@@ -1,15 +1,15 @@
 # RethinkDB fork — single-node quickstart.
 #
-#   docker compose up -d --build   # build the image from source locally
+#   docker compose up -d   # builds the image from source and starts the server
 #
-# The prebuilt image at ghcr.io/totalwindupflightsystems/rethinkdb:latest is
-# currently PRIVATE — anonymous pulls fail and compose does NOT fall back to
-# building from source. Use `--build` unless you have registry auth
-# (maintainers: docker compose pull / up -d without --build).
+# The image is built from source via `build: .` — there is no public prebuilt
+# image. The ghcr.io/totalwindupflightsystems/rethinkdb:latest package is
+# private (anonymous pulls are denied) and CI has no publish workflow, so
+# compose always builds locally and never pulls. Maintainers who want a
+# registry copy must tag and push manually with registry auth.
 
 services:
   rethinkdb:
-    image: ghcr.io/totalwindupflightsystems/rethinkdb:latest
     build: .
     container_name: rethinkdb
     ports:

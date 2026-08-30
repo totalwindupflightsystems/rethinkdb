@@ -229,8 +229,9 @@ methods).
    (adjust paths to your install; verify the copy before continuing).
 3. **Install / build the fork server** — e.g. clone
    `totalwindupflightsystems/rethinkdb`, `./configure --allow-fetch`,
-   `make -j4` (see the repo README and AGENTS.md; a Docker image is also
-   published: `ghcr.io/totalwindupflightsystems/rethinkdb:latest`).
+   `make -j4` (see the repo README and AGENTS.md; a Docker image can be
+   built from source via `docker compose up -d` — see the repo README; no
+   public prebuilt image exists).
 4. **Point the fork at the SAME data directory** (no migration step):
    `build/release/rethinkdb serve -d /var/lib/rethinkdb/rethinkdb_data
    --driver-port 28015 --cluster-port 29015 --http-port 8080`
