@@ -32,13 +32,14 @@ jobs:
       # USER-scoped, private, repo-UNLINKED package (created 2026-08-10 by a manual
       # PAT push during RT-GAP-010, before this workflow existed) — the repo
       # GITHUB_TOKEN cannot read it, so buildx push was denied even though the
-      # multi-arch build succeeds. Remediation (external state, RT-CI-001): delete
-      # the stale package via `gh api -X DELETE /users/totalwindupflightsystems/
-      # packages/container/rethinkdb` — requires a classic PAT with the
-      # delete:packages scope (a repo GITHUB_TOKEN or write:packages-only PAT is
-      # NOT sufficient) — so the next workflow push recreates it repo-linked; then
-      # PATCH visibility to public to honor the publish-public-image intent
-      # (README/docker-compose/docs/migration guide reference unauthenticated pulls).
+      # multi-arch build succeeds. Remediation (external state, RT-CI-001):
+      # RE-CHECKED 2026-08-31: PATCH-visibility + repo-link REST endpoints are GONE
+      # from the current GitHub API (404; absent from api.github.com spec + docs)
+      # and no token has delete:packages — the stale package cannot be re-scoped or
+      # deleted via API. Required one-time step in package settings UI (github.com/
+      # users/totalwindupflightsystems/packages/container/rethinkdb/settings): link
+      # this repo (Manage Actions access) and set visibility public — then the next
+      # workflow push succeeds with the repo GITHUB_TOKEN.
       # Authenticate with the built-in GITHUB_TOKEN only (repo scoped,
       # expires with the run) — no long-lived credentials are stored.
       - name: Log in to GHCR
