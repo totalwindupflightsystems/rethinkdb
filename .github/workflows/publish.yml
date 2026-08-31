@@ -25,6 +25,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # RT-CI-001 root cause: pushes to ghcr.io/totalwindupflightsystems/rethinkdb
+      # failed with 'ERROR: failed to build: failed to solve: failed to push
+      # ghcr.io/totalwindupflightsystems/rethinkdb:latest: denied: permission_denied:
+      # read_package' because the package already existing in that namespace was a
+      # USER-scoped, private, repo-UNLINKED package (created 2026-08-10 by a manual
+      # PAT push during RT-GAP-010, before this workflow existed) — the repo
+      # GITHUB_TOKEN cannot read it, so buildx push was denied even though the
+      # multi-arch build succeeds. Remediation (external state, RT-CI-001): delete
+      # the stale package via `gh api -X DELETE /users/totalwindupflightsystems/
+      # packages/container/rethinkdb` — requires a classic PAT with the
+      # delete:packages scope (a repo GITHUB_TOKEN or write:packages-only PAT is
+      # NOT sufficient) — so the next workflow push recreates it repo-linked; then
+      # PATCH visibility to public to honor the publish-public-image intent
+      # (README/docker-compose/docs/migration guide reference unauthenticated pulls).
       # Authenticate with the built-in GITHUB_TOKEN only (repo scoped,
       # expires with the run) — no long-lived credentials are stored.
       - name: Log in to GHCR
