@@ -1,17 +1,27 @@
 # RethinkDB fork — single-node quickstart.
 #
-#   docker compose up -d   # builds the image from source and starts the server
+#   docker compose up -d   # pulls the prebuilt image, or builds from source
 #
-# The image is built from source via `build: .` — there is no public prebuilt
-# image. The ghcr.io/totalwindupflightsystems/rethinkdb:latest package is
-# private (anonymous pulls are denied) and CI has no publish workflow, so
-# compose always builds locally and never pulls. Maintainers who want a
-# registry copy must tag and push manually with registry auth.
+# The prebuilt multi-arch image (linux/amd64 + linux/arm64) is published to
+# ghcr.io/totalwindupflightsystems/rethinkdb by CI
+# (.github/workflows/publish.yml) on every push to main. When the image is
+# already available, compose pulls it; when it is not (e.g. the very first run
+# after a fresh checkout, before the workflow has published, or offline)
+# compose falls back to building from source via `build: .` (first build
+# ~8-10 min on a 16-core host).
+#
+# The server binds the driver and web UI beyond loopback, so it refuses to
+# boot without an admin password. RETHINKDB_PASSWORD (default `rethinkdb` —
+# override with a `.env` file or an exported shell variable) is passed to the
+# container, which hands it to the server as --initial-password.
 
 services:
   rethinkdb:
+    image: ghcr.io/totalwindupflightsystems/rethinkdb:latest
     build: .
     container_name: rethinkdb
+    environment:
+      RETHINKDB_PASSWORD: ${RETHINKDB_PASSWORD:-rethinkdb}
     ports:
       - "28015:28015"   # driver port (ReQL clients)
       - "8080:8080"     # web UI

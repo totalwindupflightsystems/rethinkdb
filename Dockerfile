@@ -75,5 +75,12 @@ VOLUME /data
 # 28015 driver, 29015 intra-cluster, 8080 web UI
 EXPOSE 28015 29015 8080
 
-ENTRYPOINT ["rethinkdb"]
-CMD ["--no-update-check", "--bind", "all", "--http-port", "8080", "--driver-port", "28015", "-d", "/data"]
+# The server refuses to bind the admin UI to a non-loopback address without
+# --initial-password (fail_due_to_user_error in
+# src/clustering/administration/main/command_line.cc) — with --bind all and an
+# empty password the container exits immediately. Read the password from
+# RETHINKDB_PASSWORD (default "rethinkdb"; docker-compose.yml passes it
+# through, or override with `docker run -e RETHINKDB_PASSWORD=...`) and hand
+# it to the server so the container boots with a reachable web UI.
+ENV RETHINKDB_PASSWORD=rethinkdb
+ENTRYPOINT ["/bin/sh", "-c", "exec rethinkdb --no-update-check --bind all --http-port 8080 --driver-port 28015 -d /data --initial-password \"$RETHINKDB_PASSWORD\""]
