@@ -28,26 +28,33 @@ jobs:
       # RT-CI-001 root cause: pushes to ghcr.io/totalwindupflightsystems/rethinkdb
       # failed with 'ERROR: failed to build: failed to solve: failed to push
       # ghcr.io/totalwindupflightsystems/rethinkdb:latest: denied: permission_denied:
-      # read_package' because the package already existing in that namespace was a
-      # USER-scoped, private, repo-UNLINKED package (created 2026-08-10 by a manual
-      # PAT push during RT-GAP-010, before this workflow existed) — the repo
-      # GITHUB_TOKEN cannot read it, so buildx push was denied even though the
-      # multi-arch build succeeds. Remediation (external state, RT-CI-001):
-      # RE-CHECKED 2026-08-31: PATCH-visibility + repo-link REST endpoints are GONE
-      # from the current GitHub API (404; absent from api.github.com spec + docs)
-      # and no token has delete:packages — the stale package cannot be re-scoped or
-      # deleted via API. Required one-time step in package settings UI (github.com/
-      # users/totalwindupflightsystems/packages/container/rethinkdb/settings): link
-      # this repo (Manage Actions access) and set visibility public — then the next
-      # workflow push succeeds with the repo GITHUB_TOKEN.
-      # Authenticate with the built-in GITHUB_TOKEN only (repo scoped,
-      # expires with the run) — no long-lived credentials are stored.
+      # read_package' because the package in that namespace is a USER-scoped,
+      # private, repo-UNLINKED package (created 2026-08-10 by a manual PAT push
+      # during RT-GAP-010, before this workflow existed) — the repo GITHUB_TOKEN
+      # cannot read it, so buildx push is denied even though the multi-arch build
+      # succeeds (proven: the build completes for both platforms in ~2h before the
+      # push step fails; CI runs 33346331718 and 33360124574).
+      #
+      # GitHub REST has REMOVED every API remediation (re-checked twice, most
+      # recently 2026-09-01): PATCH-visibility and repo-link endpoints 404 (absent
+      # from the api.github.com spec + docs), and no token has delete:packages —
+      # the stale package cannot be re-scoped, linked, or deleted via API.
+      # Package visibility/linking is UI-only (package settings page).
+      #
+      # Fix that works TODAY (proven 2026-08-31 local test push): authenticate the
+      # push as the package OWNER with a classic PAT (write:packages, stored as the
+      # GHCR_PAT repo secret). A PAT push authenticates as the USER, not the repo,
+      # so it has full R/W access to the user's own packages regardless of repo
+      # linking or visibility. Keep GITHUB_TOKEN as the fallback for the day the
+      # package gets linked+public via the UI (then `secrets.GHCR_PAT || secrets.`…
+      # …GITHUB_TOKEN` still resolves correctly and a green run with the repo token
+      # can be verified).
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Compute image tags
         id: meta
