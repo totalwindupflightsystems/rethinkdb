@@ -73,3 +73,5 @@ Remaining issues are docs/UX polish with clear error messages, no functional
 blockers. Foreman NOT woken: cooldown 21600 is the documented operator pin
 (gap-hunter cycles note "wake SKIP"); scheduler health verified (namespace
 coding-hermes live, decay 1, tick #179 completed/committed).
+2026-09-07 | PROMISING-BUT-ROUGH | 6s t2fs | friction 8 | 5 findings
+

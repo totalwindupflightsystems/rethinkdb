@@ -5855,3 +5855,12 @@ VERDICT: **PRODUCTIVE (board ops)** — 2 P1 gap tasks closed (007 removed, 005 
 - Events 29/30; header last_commit=117da580f7
 
 **Next queue:** RT-GAP-004 (README fork-extensions table) → RT-GAP-006 (docs/) → RT-GAP-008 (CI workflow vs AGENTS.md claims)
+
+## Dogfood Findings (2026-09-07)
+Verdict: PROMISING-BUT-ROUGH
+Promise: {"entry_point":"CLI binary  (built as build/release/rethinkdb) — a database server exposing driver port 28015, cluster port 29015, and web admin UI on 8080; programmatic access via the vendored Python driver (driver/python3/rethinkdb) and ReQL.","promise":"This project claims a user can b
+- [P1] docker compose up -d exits 0 but publishes no ports — server unreachable — Verified live: compose 'Started' with exit 0, but container NetworkSettings.Ports={} — driver port 28015 refused, and the 8080 docker-proxy belongs to another container (asce-krakend-1). No port-overr
+- [P1] Documented  fails on occupied 8081 — On this host 8081 is taken; the server logs 'Could not bind to http port' and exits 1 (report claimed exit-0 driver-only; either way the documented command fails with no pre-flight check or fallback i
+- [P1] serve forks a child; killing the launched PID may or may not stop the server — Verified: wrapper 1349510 spawned child 1349659; in my runs the wrapper held the listeners (SIGKILL on it took the server down), while the report's run found the child holding them — listener ownershi
+- [P2] Python driver on-ramp not covered by documented apt deps — Bare system python3 can't import the vendored driver (PEP-668, no six): ModuleNotFoundError. Requires venv + pip install six, which the documented apt list doesn't mention (AGENTS.md documents the ven
+- [P2] Admin HTTP API and cursor semantics undocumented for new users — POST /ajax/reql rejects raw curl with 'Required parameter conn_id missing' (no handshake docs); r.db('rethinkdb').table('server_config').run(conn) returns a DefaultCursor, not a list — subscripting ra
